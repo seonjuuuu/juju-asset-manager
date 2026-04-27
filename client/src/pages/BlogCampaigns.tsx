@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, CalendarIcon, BarChart2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, Circle, CalendarIcon, BarChart2, ChevronLeft, ChevronRight, BellRing, X } from "lucide-react";
 import { format } from "date-fns";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -141,6 +141,24 @@ export default function BlogCampaigns() {
 
   const [showStats, setShowStats] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
+  const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
+
+  // 마감 임박 체험단 (미완료, 마감일 기준 7일 이내)
+  const urgentCampaigns = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return campaigns
+      .filter((c) => {
+        if (c.completed) return false;
+        if (!c.endDate || !isValidDate(c.endDate)) return false;
+        if (dismissedAlerts.includes(c.id)) return false;
+        const end = new Date(c.endDate);
+        end.setHours(0, 0, 0, 0);
+        const diff = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return diff >= 0 && diff <= 7;
+      })
+      .sort((a, b) => (a.endDate ?? "").localeCompare(b.endDate ?? ""));
+  }, [campaigns, dismissedAlerts]);
 
   const filtered = campaigns.filter(c => {
     if (filterCompleted === "완료") return c.completed;
@@ -251,6 +269,45 @@ export default function BlogCampaigns() {
           <Plus className="w-4 h-4" /> 체험단 추가
         </Button>
       </div>
+
+      {/* D-day 알림 배너 */}
+      {urgentCampaigns.length > 0 && (
+        <div className="space-y-2">
+          {urgentCampaigns.map((c) => {
+            const dday = getDday(c.endDate);
+            const isToday = dday?.label === "D-day";
+            return (
+              <div
+                key={c.id}
+                className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${
+                  isToday
+                    ? "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800"
+                    : "border-orange-200 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-800"
+                }`}
+              >
+                <BellRing className={`w-4 h-4 flex-shrink-0 ${isToday ? "text-red-500" : "text-orange-500"}`} />
+                <div className="flex-1 min-w-0">
+                  <span className={`font-semibold mr-2 ${isToday ? "text-red-700 dark:text-red-400" : "text-orange-700 dark:text-orange-400"}`}>
+                    {dday?.label}
+                  </span>
+                  <span className="text-foreground font-medium truncate">
+                    {c.businessName ?? c.platform ?? "체험단"}
+                  </span>
+                  {c.endDate && (
+                    <span className="text-muted-foreground ml-2 text-xs">마감 {c.endDate}</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setDismissedAlerts((prev) => [...prev, c.id])}
+                  className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex-shrink-0 text-muted-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
