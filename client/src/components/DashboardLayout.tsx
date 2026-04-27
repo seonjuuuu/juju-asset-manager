@@ -20,6 +20,7 @@ import {
   RefreshCw,
   ArrowUpCircle,
   Landmark,
+  Tags,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -38,6 +39,7 @@ const navItems = [
   { href: "/subscriptions", icon: RefreshCw, label: "구독결제" },
   { href: "/side-income", icon: ArrowUpCircle, label: "부수입" },
   { href: "/installments", icon: Landmark, label: "대출/할부" },
+  { href: "/categories", icon: Tags, label: "카테고리 관리" },
 ];
 
 interface DashboardLayoutProps {

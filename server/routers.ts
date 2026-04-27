@@ -526,6 +526,34 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteInstallment(ctx.user.id, input.id)),
   }),
+  categories: router({
+    list: protectedProcedure
+      .query(({ ctx }) => db.listCategories(ctx.user.id)),
+    addMain: protectedProcedure
+      .input(z.object({ name: z.string().min(1), type: z.enum(["expense", "income", "both"]), sortOrder: z.number().default(0) }))
+      .mutation(({ input, ctx }) => db.createCategory(ctx.user.id, input)),
+    updateMain: protectedProcedure
+      .input(z.object({ id: z.number(), name: z.string().min(1).optional(), type: z.enum(["expense", "income", "both"]).optional(), sortOrder: z.number().optional() }))
+      .mutation(({ input, ctx }) => {
+        const { id, ...data } = input;
+        return db.updateCategory(ctx.user.id, id, data);
+      }),
+    deleteMain: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input, ctx }) => db.deleteCategory(ctx.user.id, input.id)),
+    addSub: protectedProcedure
+      .input(z.object({ categoryId: z.number(), name: z.string().min(1), sortOrder: z.number().default(0) }))
+      .mutation(({ input, ctx }) => db.createSubCategory(ctx.user.id, input)),
+    updateSub: protectedProcedure
+      .input(z.object({ id: z.number(), name: z.string().min(1).optional(), sortOrder: z.number().optional() }))
+      .mutation(({ input, ctx }) => {
+        const { id, ...data } = input;
+        return db.updateSubCategory(ctx.user.id, id, data);
+      }),
+    deleteSub: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input, ctx }) => db.deleteSubCategory(ctx.user.id, input.id)),
+  }),
   exchangeRate: router({
     get: protectedProcedure
       .input(z.object({ currency: z.string() }))

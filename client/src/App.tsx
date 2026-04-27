@@ -18,6 +18,7 @@ import Cards from "./pages/Cards";
 import Subscriptions from "./pages/Subscriptions";
 import SideIncome from "./pages/SideIncome";
 import Installments from "./pages/Installments";
+import Categories from "./pages/Categories";
 
 function Router() {
   return (
@@ -36,6 +37,7 @@ function Router() {
         <Route path="/subscriptions" component={Subscriptions} />
         <Route path="/side-income" component={SideIncome} />
         <Route path="/installments" component={Installments} />
+        <Route path="/categories" component={Categories} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

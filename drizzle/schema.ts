@@ -349,3 +349,28 @@ export const installments = mysqlTable("installments", {
 });
 export type Installment = typeof installments.$inferSelect;
 export type InsertInstallment = typeof installments.$inferInsert;
+
+// ─── 카테고리 (대분류 / 중분류) ──────────────────────────────────────────────
+export const categories = mysqlTable("categories", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
+  name: varchar("name", { length: 100 }).notNull(),
+  type: mysqlEnum("type", ["expense", "income", "both"]).notNull().default("expense"),
+  sortOrder: int("sort_order").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Category = typeof categories.$inferSelect;
+export type InsertCategory = typeof categories.$inferInsert;
+
+export const subCategories = mysqlTable("sub_categories", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
+  categoryId: int("category_id").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  sortOrder: int("sort_order").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SubCategory = typeof subCategories.$inferSelect;
+export type InsertSubCategory = typeof subCategories.$inferInsert;

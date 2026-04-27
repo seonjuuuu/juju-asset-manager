@@ -34,6 +34,10 @@ import {
   InsertAccount,
   installments,
   InsertInstallment,
+  categories,
+  subCategories,
+  InsertCategory,
+  InsertSubCategory,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -594,4 +598,54 @@ export async function deleteInstallment(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   return db.delete(installments).where(and(eq(installments.id, id), eq(installments.userId, userId)));
+}
+
+// ─── 카테고리 (대분류 / 중분류) ──────────────────────────────────────────────
+export async function listCategories(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const cats = await db.select().from(categories)
+    .where(eq(categories.userId, userId))
+    .orderBy(categories.sortOrder, categories.createdAt);
+  const subs = await db.select().from(subCategories)
+    .where(eq(subCategories.userId, userId))
+    .orderBy(subCategories.sortOrder, subCategories.createdAt);
+  return cats.map((c) => ({
+    ...c,
+    subCategories: subs.filter((s) => s.categoryId === c.id),
+  }));
+}
+export async function createCategory(userId: number, data: Pick<InsertCategory, "name" | "type" | "sortOrder">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(categories).values({ ...data, userId }).$returningId();
+  return result;
+}
+export async function updateCategory(userId: number, id: number, data: Partial<Pick<InsertCategory, "name" | "type" | "sortOrder">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.update(categories).set(data).where(and(eq(categories.id, id), eq(categories.userId, userId)));
+}
+export async function deleteCategory(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // 중분류도 함께 삭제
+  await db.delete(subCategories).where(and(eq(subCategories.categoryId, id), eq(subCategories.userId, userId)));
+  return db.delete(categories).where(and(eq(categories.id, id), eq(categories.userId, userId)));
+}
+export async function createSubCategory(userId: number, data: Pick<InsertSubCategory, "categoryId" | "name" | "sortOrder">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(subCategories).values({ ...data, userId }).$returningId();
+  return result;
+}
+export async function updateSubCategory(userId: number, id: number, data: Partial<Pick<InsertSubCategory, "name" | "sortOrder">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.update(subCategories).set(data).where(and(eq(subCategories.id, id), eq(subCategories.userId, userId)));
+}
+export async function deleteSubCategory(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.delete(subCategories).where(and(eq(subCategories.id, id), eq(subCategories.userId, userId)));
 }

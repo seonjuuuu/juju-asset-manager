@@ -1,7 +1,7 @@
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { formatAmount, currentYear, currentMonth, MONTH_NAMES, MAIN_CATEGORIES, VARIABLE_SUB_CATEGORIES, INCOME_SUB_CATEGORIES, FIXED_SUB_CATEGORIES, SAVINGS_SUB_CATEGORIES } from "@/lib/utils";
+import { formatAmount, currentYear, currentMonth, MONTH_NAMES } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -70,12 +70,11 @@ export default function Ledger() {
   const totalExp = fixedExp + varExp + savings;
   const balance = income - totalExp;
 
+  const { data: categoryList = [] } = trpc.categories.list.useQuery();
+  const mainCategoryNames = categoryList.map((c) => c.name);
   const getSubCategories = (main: string) => {
-    if (main === "수입") return INCOME_SUB_CATEGORIES;
-    if (main === "고정지출") return FIXED_SUB_CATEGORIES;
-    if (main === "변동지출") return VARIABLE_SUB_CATEGORIES;
-    if (main === "저축/투자") return SAVINGS_SUB_CATEGORIES;
-    return [];
+    const cat = categoryList.find((c) => c.name === main);
+    return cat ? cat.subCategories.map((s) => s.name) : [];
   };
 
   const openCreate = () => {
@@ -250,7 +249,7 @@ export default function Ledger() {
                 <Select value={form.mainCategory} onValueChange={v => setForm(f => ({ ...f, mainCategory: v, subCategory: "" }))}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {MAIN_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {mainCategoryNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

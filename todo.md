@@ -163,3 +163,13 @@
 - [x] 이번달 총 할부금액 및 카드별 할부 합계 표시
 - [x] App.tsx: /installments 라우트 추가
 - [x] DashboardLayout 사이드바: "대출/할부" 메뉴 추가
+
+## 카테고리 관리 기능 추가 (2026-04-27)
+- [ ] categories 테이블 (대분류) DB 스키마 추가
+- [ ] sub_categories 테이블 (중분류) DB 스키마 추가
+- [ ] 기본 카테고리 시드 데이터 삽입
+- [ ] db.ts 카테고리 CRUD 헬퍼 추가
+- [ ] tRPC categories 라우터 추가 (list, addMain, updateMain, deleteMain, addSub, updateSub, deleteSub)
+- [ ] 카테고리 관리 페이지 UI 구현
+- [ ] 가계부 입력 다이얼로그 카테고리 목록 연동
+- [ ] 사이드바 메뉴에 카테고리 관리 추가
