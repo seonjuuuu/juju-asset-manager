@@ -1061,9 +1061,6 @@ export default function Cards() {
           )}
         </TabsContent>
 
-      </Tabs>
-
-
         <TabsContent value="accounts" className="space-y-4">
           <div className="flex justify-end">
             <Button size="sm" onClick={() => setAccountDialog({ mode: "create", data: emptyAccount })}>
@@ -1185,6 +1182,8 @@ export default function Cards() {
             </div>
           )}
         </TabsContent>
+      </Tabs>
+
       {/* 카드 다이얼로그 */}
       {cardDialog && (
         <CardDialog
