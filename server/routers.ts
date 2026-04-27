@@ -306,7 +306,7 @@ export const appRouter = router({
     ),
   }),
 
-  // ─── 정기결제 서비스 ─────────────────────────────────────────────────────────
+  // ─── 구독결제 서비스 ─────────────────────────────────────────────────────────
   subscription: router({
     list: protectedProcedure.query(() => db.getSubscriptions()),
     create: protectedProcedure.input(subscriptionInput).mutation(({ input }) =>

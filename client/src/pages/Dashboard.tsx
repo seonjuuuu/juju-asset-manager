@@ -59,13 +59,13 @@ export default function Dashboard() {
   const { data: summary, isLoading: summaryLoading } = trpc.dashboard.summary.useQuery();
   const { data: yearly, isLoading: yearlyLoading } = trpc.dashboard.yearlySummary.useQuery({ year: currentYear });
 
-  // 정기결제 목록 (전체)
+  // 구독결제 목록 (전체)
   const { data: subscriptions, isLoading: subsLoading } = trpc.subscription.list.useQuery();
 
   // 부수입 연간 월별 합계
   const { data: sideIncomeSummary, isLoading: sideIncomeLoading } = trpc.sideIncome.yearlySummary.useQuery({ year: currentYear });
 
-  // 월별 정기결제 구독비 (모든 달에 동일하게 적용)
+  // 월별 구독결제 구독비 (모든 달에 동일하게 적용)
   const monthlySubCost = useMemo(() => {
     if (!subscriptions) return 0;
     return subscriptions.reduce((sum, sub) => sum + calcMonthlyCost(sub.price, sub.billingCycle), 0);
@@ -82,7 +82,7 @@ export default function Dashboard() {
     return map;
   }, [sideIncomeSummary]);
 
-  // 월별 수입/지출/저축 데이터 가공 (정기결제 + 부수입 통합)
+  // 월별 수입/지출/저축 데이터 가공 (구독결제 + 부수입 통합)
   const monthlyData = useMemo(() => {
     return MONTH_NAMES.map((name, idx) => {
       const month = idx + 1;
@@ -96,7 +96,7 @@ export default function Dashboard() {
       // 별도로 표시하기 위해 sideIncome 데이터를 추가로 합산)
       const sideIncome = sideIncomeByMonth[month] ?? 0;
 
-      // 정기결제 구독비를 지출에 합산
+      // 구독결제 구독비를 지출에 합산
       const totalExp = fixedExp + varExp + monthlySubCost;
 
       // 총 수입 = 가계부 수입 (부수입이 가계부에 자동 반영되므로 ledgerIncome 사용)
@@ -107,7 +107,7 @@ export default function Dashboard() {
     });
   }, [yearly, monthlySubCost, sideIncomeByMonth]);
 
-  // 이번 달 정기결제 총 구독비
+  // 이번 달 구독결제 총 구독비
   const currentMonthSubCost = monthlySubCost;
 
   // 이번 달 부수입 합계
@@ -191,7 +191,7 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* 이달 정기결제·부수입 요약 배너 */}
+      {/* 이달 구독결제·부수입 요약 배너 */}
       {(currentMonthSubCost > 0 || currentMonthSideIncome > 0) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {currentMonthSubCost > 0 && (

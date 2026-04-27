@@ -441,7 +441,7 @@ export async function deleteCardPoint(id: number) {
   await db.delete(cardPoints).where(eq(cardPoints.id, id));
 }
 
-// ─── 정기결제 서비스 ──────────────────────────────────────────────────────────
+// ─── 구독결제 서비스 ──────────────────────────────────────────────────────────
 export async function getSubscriptions() {
   const db = await getDb();
   if (!db) return [];

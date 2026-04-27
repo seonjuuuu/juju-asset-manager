@@ -294,7 +294,7 @@ function SubscriptionDialog({
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             ) : null}
-            정기결제 서비스
+            구독결제 서비스
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
@@ -454,7 +454,7 @@ function SubscriptionDialog({
 export default function Subscriptions() {
   const utils = trpc.useUtils();
 
-  // 정기결제 데이터
+  // 구독결제 데이터
   const { data: subList = [], isLoading: subsLoading } =
     trpc.subscription.list.useQuery();
 
@@ -509,7 +509,7 @@ export default function Subscriptions() {
           className="text-2xl font-bold text-foreground"
           style={{ fontFamily: "'Playfair Display', serif" }}
         >
-          정기결제 관리
+          구독결제 관리
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           구독 서비스의 결제 현황을 한눈에 관리합니다
@@ -575,7 +575,7 @@ export default function Subscriptions() {
       ) : (subList as SubscriptionRow[]).length === 0 ? (
         <div className="text-center py-20 text-muted-foreground">
           <RefreshCw className="w-12 h-12 mx-auto mb-4 opacity-25" />
-          <p className="text-sm font-medium">등록된 정기결제 서비스가 없습니다</p>
+          <p className="text-sm font-medium">등록된 구독결제 서비스가 없습니다</p>
           <p className="text-xs mt-1">구독 추가 버튼을 눌러 시작하세요</p>
         </div>
       ) : (
