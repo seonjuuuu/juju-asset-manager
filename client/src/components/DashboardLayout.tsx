@@ -58,7 +58,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="text-center space-y-6 max-w-sm mx-auto px-6">
           <div className="space-y-3">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-MYuBt2inWAURfLJjDV9pLA.webp" alt="Monelio" className="w-12 h-12 object-contain" />
+              <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-gold-66xeFmKPQdsqm8Tgcg76ZU.webp" alt="Monelio" className="w-12 h-12 object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Playfair Display', serif" }}>
               Monelio
@@ -102,16 +102,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           style={{ borderBottom: "1px solid var(--sidebar-border)" }}
         >
           {!collapsed && (
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
-                style={{
-                  backgroundColor: "var(--sidebar-primary)",
-                  color: "var(--sidebar-primary-foreground)",
-                }}
-              >
-                <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-MYuBt2inWAURfLJjDV9pLA.webp" alt="M" className="w-5 h-5 object-contain brightness-0 invert" />
-              </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <img
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-gold-66xeFmKPQdsqm8Tgcg76ZU.webp"
+                alt="Monelio"
+                className="w-8 h-8 object-contain flex-shrink-0"
+                
+              />
               <span
                 className="font-bold text-sm truncate"
                 style={{ fontFamily: "'Playfair Display', serif" }}
@@ -121,15 +118,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
           )}
           {collapsed && (
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden"
-              style={{
-                backgroundColor: "var(--sidebar-primary)",
-                color: "var(--sidebar-primary-foreground)",
-              }}
-            >
-              <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-MYuBt2inWAURfLJjDV9pLA.webp" alt="M" className="w-5 h-5 object-contain brightness-0 invert" />
-            </div>
+            <img
+              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-gold-66xeFmKPQdsqm8Tgcg76ZU.webp"
+              alt="M"
+              className="w-8 h-8 object-contain"
+              
+            />
           )}
           {!collapsed && (
             <button
