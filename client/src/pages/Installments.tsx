@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CreditCard, CheckCircle2, Clock } from "lucide-react";
+import { Plus, Pencil, Trash2, CreditCard, CheckCircle2, Clock, TrendingDown, Layers } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   BarChart,
@@ -402,7 +402,7 @@ export default function Installments() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">대출 / 할부</h1>
+          <h1 className="text-xl font-bold text-foreground">대출 / 할부</h1>
           <p className="text-muted-foreground text-sm mt-1">카드 할부 현황을 관리합니다</p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
@@ -411,23 +411,38 @@ export default function Installments() {
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-5">
-            <p className="text-sm text-muted-foreground">이번달 총 할부금</p>
-            <p className="text-2xl font-bold text-primary mt-1">{formatKRW(thisMonthTotal)}</p>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10"><TrendingDown className="w-5 h-5 text-primary" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">이번달 총 할부금</p>
+                <p className="text-xl font-bold text-foreground">{formatKRW(thisMonthTotal)}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-5">
-            <p className="text-sm text-muted-foreground">진행중 할부</p>
-            <p className="text-2xl font-bold mt-1">{activeInstallments.length}건</p>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-500/10"><Layers className="w-5 h-5 text-blue-500" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">진행중 할부</p>
+                <p className="text-xl font-bold text-foreground">{activeInstallments.length}건</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-5">
-            <p className="text-sm text-muted-foreground">완료된 할부</p>
-            <p className="text-2xl font-bold text-muted-foreground mt-1">{completedInstallments.length}건</p>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10"><CheckCircle2 className="w-5 h-5 text-emerald-500" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">완료된 할부</p>
+                <p className="text-xl font-bold text-foreground">{completedInstallments.length}건</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -782,13 +782,10 @@ export default function Cards() {
   );
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6">
       {/* 헤더 */}
       <div>
-        <h1
-          className="text-2xl font-bold text-foreground"
-          style={{ fontFamily: "'Playfair Display', serif" }}
-        >
+        <h1 className="text-xl font-bold text-foreground">
           보유카드 / 계좌
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -818,7 +815,7 @@ export default function Cards() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{item.label}</p>
-              <p className="font-bold text-sm">{item.value}</p>
+              <p className="text-xl font-bold text-foreground">{item.value}</p>
             </div>
           </div>
         ))}

@@ -274,11 +274,11 @@ export default function SideIncome() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="space-y-6">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>부수입 관리</h1>
+          <h1 className="text-xl font-bold text-foreground">부수입 관리</h1>
           <p className="text-sm text-muted-foreground mt-0.5">날짜별 부수입을 기록하고 가계부에 자동 반영합니다</p>
         </div>
         <Button onClick={() => setIncomeDialog({ open: true, item: null })} className="gap-1.5">

@@ -79,10 +79,10 @@ export default function OtherAssets() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-4xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>기타 자산 관리</h1>
+          <h1 className="text-xl font-bold text-foreground">기타 자산 관리</h1>
           <p className="text-sm text-muted-foreground mt-0.5">교직원공제회·저축성보험 등 현금화 불가 미래자산</p>
         </div>
         <Button onClick={openCreate} size="sm" className="gap-1.5">
@@ -93,7 +93,7 @@ export default function OtherAssets() {
       {/* Total */}
       <div className="bg-card border border-border rounded-xl p-5">
         <p className="text-xs text-muted-foreground mb-1">기타 자산 합계</p>
-        <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">₩{formatAmount(total)}</p>
+        <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">₩{formatAmount(total)}</p>
         <p className="text-xs text-muted-foreground mt-2">* 현금화 불가 미래자산으로 순자산 계산에서 제외될 수 있습니다</p>
       </div>
 

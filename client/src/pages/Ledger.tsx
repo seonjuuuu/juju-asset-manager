@@ -135,11 +135,11 @@ export default function Ledger() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>월별 가계부</h1>
+          <h1 className="text-xl font-bold text-foreground">월별 가계부</h1>
           <p className="text-sm text-muted-foreground mt-0.5">수입·지출·저축 내역 관리</p>
         </div>
         <Button onClick={openCreate} size="sm" className="gap-1.5">

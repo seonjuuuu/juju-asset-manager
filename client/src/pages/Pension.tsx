@@ -221,10 +221,10 @@ export default function Pension() {
   const isETF = form.assetType === "ETF";
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>연금 관리</h1>
+          <h1 className="text-xl font-bold text-foreground">연금 관리</h1>
           <p className="text-sm text-muted-foreground mt-0.5">개인연금·퇴직연금 종목 관리</p>
         </div>
         <div className="flex items-center gap-2">

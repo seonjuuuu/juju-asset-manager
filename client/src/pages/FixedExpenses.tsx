@@ -107,10 +107,10 @@ export default function FixedExpenses() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>고정지출 관리</h1>
+          <h1 className="text-xl font-bold text-foreground">고정지출 관리</h1>
           <p className="text-sm text-muted-foreground mt-0.5">매월 정기적으로 지출되는 항목</p>
         </div>
         <Button onClick={openCreate} size="sm" className="gap-1.5">
@@ -122,7 +122,7 @@ export default function FixedExpenses() {
       <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between">
         <div>
           <p className="text-xs text-muted-foreground mb-1">월 고정지출 합계</p>
-          <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">₩{formatAmount(totalMonthly)}</p>
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">₩{formatAmount(totalMonthly)}</p>
         </div>
         <div className="text-sm text-muted-foreground">{expenses.length}개 항목</div>
       </div>

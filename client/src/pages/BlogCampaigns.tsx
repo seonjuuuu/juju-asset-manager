@@ -121,10 +121,10 @@ export default function BlogCampaigns() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>블로그 체험단</h1>
+          <h1 className="text-xl font-bold text-foreground">블로그 체험단</h1>
           <p className="text-sm text-muted-foreground mt-0.5">체험단 활동 기록 및 관리</p>
         </div>
         <Button onClick={openCreate} size="sm" className="gap-1.5">

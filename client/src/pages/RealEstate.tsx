@@ -112,10 +112,10 @@ export default function RealEstate() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>부동산 정보 관리</h1>
+          <h1 className="text-xl font-bold text-foreground">부동산 정보 관리</h1>
           <p className="text-sm text-muted-foreground mt-0.5">아파트 정보 및 시세 기록</p>
         </div>
         <Button onClick={openCreate} size="sm" className="gap-1.5">

@@ -220,10 +220,10 @@ export default function StockPortfolio() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-6xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>주식 포트폴리오</h1>
+          <h1 className="text-xl font-bold text-foreground">주식 포트폴리오</h1>
           <p className="text-sm text-muted-foreground mt-0.5">국내·해외 주식 종목 관리</p>
         </div>
         <div className="flex items-center gap-2">

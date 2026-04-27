@@ -107,10 +107,10 @@ export default function Savings() {
   };
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>저축 및 현금성 자산</h1>
+          <h1 className="text-xl font-bold text-foreground">저축 및 현금성 자산</h1>
           <p className="text-sm text-muted-foreground mt-0.5">예적금·통장·기타 현금성 자산 관리</p>
         </div>
         <Button onClick={openCreate} size="sm" className="gap-1.5">
@@ -122,7 +122,7 @@ export default function Savings() {
       <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between">
         <div>
           <p className="text-xs text-muted-foreground mb-1">저축 및 현금성 자산 합계</p>
-          <p className="text-3xl font-bold text-teal-600 dark:text-teal-400">₩{formatAmount(total)}</p>
+          <p className="text-2xl font-bold text-teal-600 dark:text-teal-400">₩{formatAmount(total)}</p>
         </div>
         <div className="flex gap-4">
           {byCategory.map(({ cat, total: catTotal }) => (
