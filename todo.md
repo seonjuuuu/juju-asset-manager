@@ -114,3 +114,8 @@
 - [x] Cards.tsx 연회비/카드한도 필드에 CurrencyInput 적용
 - [x] Subscriptions.tsx 구독료 필드에 CurrencyInput 적용
 - [x] 가계부(Ledger), 고정지출, 부수입 등 금액 입력 필드 전체 적용
+
+## 구독결제 공유 인원 기능 (2026-04-27)
+- [x] DB subscriptions 테이블에 sharedCount 필드 추가 (기본값 1)
+- [x] Subscriptions.tsx 공유 인원 입력 UI 추가 및 실제 부담금 자동 계산 표시
+- [x] Dashboard.tsx 월 구독비를 실제 부담금 기준으로 계산

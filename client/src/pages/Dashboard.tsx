@@ -47,12 +47,10 @@ function StatCard({
   );
 }
 
-/** 결제주기별 월 비용 환산 */
-function calcMonthlyCost(price: number, billingCycle: string): number {
-  if (billingCycle === "매달") return price;
-  if (billingCycle === "매주") return Math.round(price * 4.33);
-  if (billingCycle === "매일") return price * 30;
-  return price;
+/** 결제주기별 월 비용 환산 (공유 인원 반영) */
+function calcMonthlyCost(price: number, billingCycle: string, sharedCount: number = 1): number {
+  const base = billingCycle === "매달" ? price : billingCycle === "매주" ? Math.round(price * 4.33) : billingCycle === "매일" ? price * 30 : price;
+  return Math.round(base / Math.max(1, sharedCount));
 }
 
 export default function Dashboard() {
@@ -68,7 +66,7 @@ export default function Dashboard() {
   // 월별 구독결제 구독비 (모든 달에 동일하게 적용)
   const monthlySubCost = useMemo(() => {
     if (!subscriptions) return 0;
-    return subscriptions.reduce((sum, sub) => sum + calcMonthlyCost(sub.price, sub.billingCycle), 0);
+    return subscriptions.reduce((sum, sub) => sum + calcMonthlyCost(sub.price, sub.billingCycle, (sub as { sharedCount?: number }).sharedCount ?? 1), 0);
   }, [subscriptions]);
 
   // 부수입 월별 합계 맵 (month → total)
@@ -200,7 +198,7 @@ export default function Dashboard() {
                 <Wallet className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">이달 정기구독비</p>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">이달 구독결제 부담액</p>
                 <p className="text-lg font-bold text-foreground">₩{formatAmount(currentMonthSubCost)}</p>
                 <p className="text-xs text-muted-foreground">{subscriptions?.length ?? 0}개 서비스 · 월 합산</p>
               </div>
@@ -227,7 +225,7 @@ export default function Dashboard() {
         <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-foreground mb-1">{currentYear}년 월별 수입 · 지출</h2>
           <p className="text-xs text-muted-foreground mb-4">
-            지출 = 가계부 지출 + 정기구독비(₩{formatAmount(monthlySubCost)}/월)
+            지출 = 가계부 지출 + 구독결제 부담액(₩{formatAmount(monthlySubCost)}/월)
           </p>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={monthlyData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>

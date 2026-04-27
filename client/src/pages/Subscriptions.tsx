@@ -196,20 +196,20 @@ function calcNextPaymentDate(
 
 function calcMonthlyCost(
   price: number,
-  billingCycle: "매달" | "매주" | "매일"
+  billingCycle: "매달" | "매주" | "매일",
+  sharedCount: number = 1
 ): number {
-  if (billingCycle === "매달") return price;
-  if (billingCycle === "매주") return Math.round((price * 52) / 12);
-  return price * 30;
+  const base = billingCycle === "매달" ? price : billingCycle === "매주" ? Math.round((price * 52) / 12) : price * 30;
+  return Math.round(base / Math.max(1, sharedCount));
 }
 
 function calcYearlyCost(
   price: number,
-  billingCycle: "매달" | "매주" | "매일"
+  billingCycle: "매달" | "매주" | "매일",
+  sharedCount: number = 1
 ): number {
-  if (billingCycle === "매달") return price * 12;
-  if (billingCycle === "매주") return price * 52;
-  return price * 365;
+  const base = billingCycle === "매달" ? price * 12 : billingCycle === "매주" ? price * 52 : price * 365;
+  return Math.round(base / Math.max(1, sharedCount));
 }
 
 // ─── 타입 ────────────────────────────────────────────────────────────────────
@@ -219,6 +219,7 @@ type SubscriptionRow = {
   category: "비즈니스" | "미디어" | "자기계발" | "기타";
   billingCycle: "매달" | "매주" | "매일";
   price: number;
+  sharedCount: number;
   startDate: string | null;
   paymentMethod: string | null;
   note: string | null;
@@ -236,6 +237,7 @@ const emptySubscription = {
   category: "기타" as "비즈니스" | "미디어" | "자기계발" | "기타",
   billingCycle: "매달" as "매달" | "매주" | "매일",
   price: 0,
+  sharedCount: 1,
   startDate: "",
   paymentMethod: "",
   note: "",
@@ -266,8 +268,8 @@ function SubscriptionDialog({
   const set = (k: keyof typeof emptySubscription, v: unknown) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const monthlyCost = calcMonthlyCost(form.price, form.billingCycle);
-  const yearlyCost = calcYearlyCost(form.price, form.billingCycle);
+  const monthlyCost = calcMonthlyCost(form.price, form.billingCycle, form.sharedCount);
+  const yearlyCost = calcYearlyCost(form.price, form.billingCycle, form.sharedCount);
   const nextPayment = calcNextPaymentDate(form.startDate, form.billingCycle);
 
   // 결제방법 옵션: 보유카드 + 현금 + 계좌출금
@@ -363,6 +365,38 @@ function SubscriptionDialog({
               placeholder="0"
               suffix="원"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              공유 인원
+              <span className="text-xs text-muted-foreground font-normal">(혼자 쓰면 1)</span>
+            </Label>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 flex-shrink-0"
+                onClick={() => set("sharedCount", Math.max(1, form.sharedCount - 1))}
+              >
+                -
+              </Button>
+              <div className="flex-1 text-center font-semibold text-lg">{form.sharedCount}명</div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 flex-shrink-0"
+                onClick={() => set("sharedCount", form.sharedCount + 1)}
+              >
+                +
+              </Button>
+            </div>
+            {form.sharedCount > 1 && form.price > 0 && (
+              <p className="text-xs text-muted-foreground">
+                실제 내 부담: ₩{Math.round(form.price / form.sharedCount).toLocaleString("ko-KR")} / 회
+              </p>
+            )}
           </div>
 
           {/* 자동 계산 미리보기 */}
@@ -493,11 +527,11 @@ export default function Subscriptions() {
 
   // 집계
   const totalMonthly = (subList as SubscriptionRow[]).reduce(
-    (s, sub) => s + calcMonthlyCost(sub.price, sub.billingCycle),
+    (s, sub) => s + calcMonthlyCost(sub.price, sub.billingCycle, sub.sharedCount),
     0
   );
   const totalYearly = (subList as SubscriptionRow[]).reduce(
-    (s, sub) => s + calcYearlyCost(sub.price, sub.billingCycle),
+    (s, sub) => s + calcYearlyCost(sub.price, sub.billingCycle, sub.sharedCount),
     0
   );
 
@@ -587,7 +621,7 @@ export default function Subscriptions() {
             if (items.length === 0) return null;
             const catColor = CATEGORY_COLORS[cat];
             const catMonthly = items.reduce(
-              (s, sub) => s + calcMonthlyCost(sub.price, sub.billingCycle),
+              (s, sub) => s + calcMonthlyCost(sub.price, sub.billingCycle, sub.sharedCount),
               0
             );
             return (
@@ -619,9 +653,10 @@ export default function Subscriptions() {
                   {items.map((sub) => {
                     const monthly = calcMonthlyCost(
                       sub.price,
-                      sub.billingCycle
+                      sub.billingCycle,
+                      sub.sharedCount
                     );
-                    const yearly = calcYearlyCost(sub.price, sub.billingCycle);
+                    const yearly = calcYearlyCost(sub.price, sub.billingCycle, sub.sharedCount);
                     const nextDate = calcNextPaymentDate(
                       sub.startDate ?? "",
                       sub.billingCycle
@@ -654,6 +689,11 @@ export default function Subscriptions() {
                                 <span className="text-xs text-muted-foreground">
                                   ₩{sub.price.toLocaleString("ko-KR")}
                                 </span>
+                                {sub.sharedCount > 1 && (
+                                  <Badge variant="outline" className="text-xs px-1.5 py-0 text-blue-500 border-blue-300">
+                                    {sub.sharedCount}명 공유
+                                  </Badge>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -671,6 +711,7 @@ export default function Subscriptions() {
                                     category: sub.category,
                                     billingCycle: sub.billingCycle,
                                     price: sub.price,
+                                    sharedCount: sub.sharedCount ?? 1,
                                     startDate: sub.startDate ?? "",
                                     paymentMethod: sub.paymentMethod ?? "",
                                     note: sub.note ?? "",
@@ -701,10 +742,13 @@ export default function Subscriptions() {
                           style={{ borderColor: "var(--border)" }}
                         >
                           <div>
-                            <p className="text-muted-foreground">월 비용</p>
+                            <p className="text-muted-foreground">{sub.sharedCount > 1 ? "내 부담 (월)" : "월 비용"}</p>
                             <p className="font-semibold">
                               ₩{monthly.toLocaleString("ko-KR")}
                             </p>
+                            {sub.sharedCount > 1 && (
+                              <p className="text-muted-foreground" style={{fontSize: "10px"}}>총 ₩{calcMonthlyCost(sub.price, sub.billingCycle).toLocaleString("ko-KR")}</p>
+                            )}
                           </div>
                           <div>
                             <p className="text-muted-foreground">연 비용</p>

@@ -11,6 +11,7 @@ const subscriptionInput = z.object({
   category: z.enum(["비즈니스", "미디어", "자기계발", "기타"]).default("기타"),
   billingCycle: z.enum(["매달", "매주", "매일"]).default("매달"),
   price: z.number().default(0),
+  sharedCount: z.number().int().min(1).default(1),
   startDate: z.string().optional(),
   paymentMethod: z.string().optional(),
   note: z.string().optional(),

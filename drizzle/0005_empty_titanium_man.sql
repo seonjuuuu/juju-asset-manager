@@ -1,0 +1,1 @@
+ALTER TABLE `subscriptions` ADD `shared_count` int DEFAULT 1 NOT NULL;
