@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#5b7cfa", "#4ecdc4", "#45b7d1", "#f9ca24", "#f0932b", "#6c5ce7", "#fd79a8", "#00b894", "#e17055", "#74b9ff"];
@@ -45,6 +46,12 @@ export default function FixedExpenses() {
 
   const utils = trpc.useUtils();
   const { data: expenses = [], isLoading } = trpc.fixedExpense.list.useQuery();
+  const { data: categoryList = [] } = trpc.categories.list.useQuery();
+  const mainCategoryNames = categoryList.map((c) => c.name);
+  const getSubCategories = (main: string) => {
+    const cat = categoryList.find((c) => c.name === main);
+    return cat ? cat.subCategories.map((s) => s.name) : [];
+  };
 
   const createMutation = trpc.fixedExpense.create.useMutation({
     onSuccess: () => { utils.fixedExpense.list.invalidate(); toast.success("추가되었습니다"); setDialogOpen(false); },
@@ -198,11 +205,21 @@ export default function FixedExpenses() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">대분류</Label>
-                <Input value={form.mainCategory} onChange={e => setForm(f => ({ ...f, mainCategory: e.target.value }))} placeholder="예: 주거비" className="mt-1" />
+                <Select value={form.mainCategory} onValueChange={v => setForm(f => ({ ...f, mainCategory: v, subCategory: "" }))}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="선택" /></SelectTrigger>
+                  <SelectContent>
+                    {mainCategoryNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label className="text-xs">중분류</Label>
-                <Input value={form.subCategory} onChange={e => setForm(f => ({ ...f, subCategory: e.target.value }))} placeholder="예: 관리비" className="mt-1" />
+                <Select value={form.subCategory} onValueChange={v => setForm(f => ({ ...f, subCategory: v }))}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="선택" /></SelectTrigger>
+                  <SelectContent>
+                    {getSubCategories(form.mainCategory).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>
