@@ -165,6 +165,7 @@ export default function Dashboard() {
       const r = row as { month: number; subCategory?: string | null; total: number };
       allKeysSet.add(r.subCategory?.trim() || "미분류");
     }
+    if ((subscriptions ?? []).length > 0) allKeysSet.add("구독서비스");
     const allKeys = Array.from(allKeysSet);
 
     // 월별 데이터 빌드
@@ -185,6 +186,13 @@ export default function Dashboard() {
         entry["보험"] = ((entry["보험"] as number) || 0) + insuranceMonthly;
       }
 
+      // 구독서비스 (월별 실제 발생 비용)
+      const subCost = (subscriptions ?? []).reduce((sum, sub) => {
+        const s = sub as { price: number; billingCycle: string; sharedCount?: number; billingDay?: number | null; startDate?: string | null };
+        return sum + calcSubCostForMonth(s.price, s.billingCycle, s.sharedCount ?? 1, s.billingDay, s.startDate, month);
+      }, 0);
+      if (subCost > 0) entry["구독서비스"] = ((entry["구독서비스"] as number) || 0) + subCost;
+
       return entry;
     });
 
@@ -198,7 +206,7 @@ export default function Dashboard() {
     const sortedKeys = allKeys.sort((a, b) => (keyTotals[b] ?? 0) - (keyTotals[a] ?? 0));
 
     return { expenseStackData: data, expenseSubCatKeys: sortedKeys };
-  }, [subCatExpense, insuranceList]);
+  }, [subCatExpense, insuranceList, subscriptions]);
 
   // 이번 달 구독결제 총 구독비 (monthlySubCost가 이미 현재 월 기준으로 계산됨)
   const currentMonthSubCost = monthlySubCost;
