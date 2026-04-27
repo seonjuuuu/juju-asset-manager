@@ -273,20 +273,20 @@ export default function SideIncome() {
   };
 
   return (
-    <div className="space-y-6">
-        {/* 헤더 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">부수입 관리</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">부수입을 날짜별로 기록하고 가계부에 자동 반영합니다</p>
-          </div>
-          <Button onClick={() => setIncomeDialog({ open: true, item: null })}>
-            <Plus className="w-4 h-4 mr-1.5" /> 부수입 추가
-          </Button>
+    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>부수입 관리</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">날짜별 부수입을 기록하고 가계부에 자동 반영합니다</p>
         </div>
+        <Button onClick={() => setIncomeDialog({ open: true, item: null })} className="gap-1.5">
+          <Plus className="w-4 h-4" /> 부수입 추가
+        </Button>
+      </div>
 
-        {/* 요약 카드 */}
-        <div className="grid grid-cols-3 gap-4">
+      {/* 요약 카드 */}
+      <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardContent className="pt-5">
               <div className="flex items-center gap-3">
@@ -322,7 +322,7 @@ export default function SideIncome() {
           </Card>
         </div>
 
-        <Tabs defaultValue="monthly">
+      <Tabs defaultValue="monthly">
           <TabsList>
             <TabsTrigger value="monthly">월별 내역</TabsTrigger>
             <TabsTrigger value="chart">그래프</TabsTrigger>
