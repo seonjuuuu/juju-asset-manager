@@ -86,6 +86,20 @@ function formatAmount(v: number | null | undefined) {
 }
 
 // ─── 카드 다이얼로그 ───────────────────────────────────────────────────────────
+/** 유효기간 입력 포맷: 숫자만 입력받아 MM/YY 자동 삽입 */
+function formatExpiryInput(raw: string): string {
+  // 숫자만 추출
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return digits.slice(0, 2) + "/" + digits.slice(2);
+}
+
+/** 결제일 입력: 숫자만 추출 (1~31) */
+function formatPaymentDayInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 2);
+  return digits;
+}
+
 function CardDialog({
   open,
   onClose,
@@ -207,20 +221,31 @@ function CardDialog({
             <Label>유효기간 (MM/YY)</Label>
             <Input
               value={form.expiryDate}
-              onChange={(e) => set("expiryDate", e.target.value)}
-              placeholder="예: 12/28"
+              onChange={(e) => set("expiryDate", formatExpiryInput(e.target.value))}
+              placeholder="예: 1228 → 12/28 자동 변환"
               maxLength={5}
+              inputMode="numeric"
             />
           </div>
 
           {/* 결제일 */}
           <div className="space-y-1.5">
             <Label>결제일</Label>
-            <Input
-              value={form.paymentDate}
-              onChange={(e) => set("paymentDate", e.target.value)}
-              placeholder="예: 매월 15일"
-            />
+            <div className="relative">
+              <Input
+                value={form.paymentDate}
+                onChange={(e) => set("paymentDate", formatPaymentDayInput(e.target.value))}
+                placeholder="예: 15"
+                maxLength={2}
+                inputMode="numeric"
+                className="pr-8"
+              />
+              {form.paymentDate && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+                  일
+                </span>
+              )}
+            </div>
           </div>
 
           {/* 결제계좌 */}
@@ -417,7 +442,9 @@ function CardItem({
             </div>
             <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
               {card.purpose && <span>용도: {card.purpose}</span>}
-              {card.paymentDate && <span>결제일: {card.paymentDate}</span>}
+              {card.paymentDate && (
+                <span>결제일: 매월 {card.paymentDate}일</span>
+              )}
               {card.expiryDate && <span>유효기간: {card.expiryDate}</span>}
             </div>
           </div>
