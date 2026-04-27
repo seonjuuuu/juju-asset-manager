@@ -14,6 +14,7 @@ import {
   Legend,
 } from "recharts";
 import { TrendingUp, TrendingDown, Wallet, PiggyBank, Shield, Coins, Building2 } from "lucide-react";
+import { useMemo } from "react";
 
 const COLORS = ["#5b7cfa", "#4ecdc4", "#45b7d1", "#f9ca24", "#f0932b"];
 
@@ -46,21 +47,72 @@ function StatCard({
   );
 }
 
+/** 결제주기별 월 비용 환산 */
+function calcMonthlyCost(price: number, billingCycle: string): number {
+  if (billingCycle === "매달") return price;
+  if (billingCycle === "매주") return Math.round(price * 4.33);
+  if (billingCycle === "매일") return price * 30;
+  return price;
+}
+
 export default function Dashboard() {
   const { data: summary, isLoading: summaryLoading } = trpc.dashboard.summary.useQuery();
   const { data: yearly, isLoading: yearlyLoading } = trpc.dashboard.yearlySummary.useQuery({ year: currentYear });
 
-  // 월별 수입/지출/저축 데이터 가공
-  const monthlyData = MONTH_NAMES.map((name, idx) => {
-    const month = idx + 1;
-    const rows = (yearly ?? []).filter((r) => r.month === month);
-    const income = rows.find((r) => r.mainCategory === "수입")?.total ?? 0;
-    const fixedExp = rows.find((r) => r.mainCategory === "고정지출")?.total ?? 0;
-    const varExp = rows.find((r) => r.mainCategory === "변동지출")?.total ?? 0;
-    const savings = rows.find((r) => r.mainCategory === "저축/투자")?.total ?? 0;
-    const totalExp = fixedExp + varExp;
-    return { name, income, expense: totalExp, savings };
-  });
+  // 정기결제 목록 (전체)
+  const { data: subscriptions, isLoading: subsLoading } = trpc.subscription.list.useQuery();
+
+  // 부수입 연간 월별 합계
+  const { data: sideIncomeSummary, isLoading: sideIncomeLoading } = trpc.sideIncome.yearlySummary.useQuery({ year: currentYear });
+
+  // 월별 정기결제 구독비 (모든 달에 동일하게 적용)
+  const monthlySubCost = useMemo(() => {
+    if (!subscriptions) return 0;
+    return subscriptions.reduce((sum, sub) => sum + calcMonthlyCost(sub.price, sub.billingCycle), 0);
+  }, [subscriptions]);
+
+  // 부수입 월별 합계 맵 (month → total)
+  const sideIncomeByMonth = useMemo(() => {
+    const map: Record<number, number> = {};
+    if (!sideIncomeSummary) return map;
+    for (const row of sideIncomeSummary) {
+      const m = row.month;
+      map[m] = (map[m] ?? 0) + (row.amount ?? 0);
+    }
+    return map;
+  }, [sideIncomeSummary]);
+
+  // 월별 수입/지출/저축 데이터 가공 (정기결제 + 부수입 통합)
+  const monthlyData = useMemo(() => {
+    return MONTH_NAMES.map((name, idx) => {
+      const month = idx + 1;
+      const rows = (yearly ?? []).filter((r) => r.month === month);
+      const ledgerIncome = rows.find((r) => r.mainCategory === "수입")?.total ?? 0;
+      const fixedExp = rows.find((r) => r.mainCategory === "고정지출")?.total ?? 0;
+      const varExp = rows.find((r) => r.mainCategory === "변동지출")?.total ?? 0;
+      const savings = rows.find((r) => r.mainCategory === "저축/투자")?.total ?? 0;
+
+      // 부수입 합산 (가계부에 자동 반영되므로 ledgerIncome에 이미 포함될 수 있으나,
+      // 별도로 표시하기 위해 sideIncome 데이터를 추가로 합산)
+      const sideIncome = sideIncomeByMonth[month] ?? 0;
+
+      // 정기결제 구독비를 지출에 합산
+      const totalExp = fixedExp + varExp + monthlySubCost;
+
+      // 총 수입 = 가계부 수입 (부수입이 가계부에 자동 반영되므로 ledgerIncome 사용)
+      // 단, 부수입이 가계부에 반영되지 않은 경우를 대비해 sideIncome도 함께 표시
+      const totalIncome = ledgerIncome;
+
+      return { name, income: totalIncome, expense: totalExp, savings, sideIncome };
+    });
+  }, [yearly, monthlySubCost, sideIncomeByMonth]);
+
+  // 이번 달 정기결제 총 구독비
+  const currentMonthSubCost = monthlySubCost;
+
+  // 이번 달 부수입 합계
+  const currentMonth = new Date().getMonth() + 1;
+  const currentMonthSideIncome = sideIncomeByMonth[currentMonth] ?? 0;
 
   // 자산 구성 파이 차트 데이터
   const assetPieData = summary
@@ -76,7 +128,7 @@ export default function Dashboard() {
     ? summary.stockTotal + summary.savingsTotal + summary.pensionTotal + summary.otherTotal
     : 0;
 
-  if (summaryLoading || yearlyLoading) {
+  if (summaryLoading || yearlyLoading || subsLoading || sideIncomeLoading) {
     return (
       <div className="p-6 space-y-6">
         <div className="h-8 w-48 bg-muted rounded animate-pulse" />
@@ -139,11 +191,44 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* 이달 정기결제·부수입 요약 배너 */}
+      {(currentMonthSubCost > 0 || currentMonthSideIncome > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {currentMonthSubCost > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">이달 정기구독비</p>
+                <p className="text-lg font-bold text-foreground">₩{formatAmount(currentMonthSubCost)}</p>
+                <p className="text-xs text-muted-foreground">{subscriptions?.length ?? 0}개 서비스 · 월 합산</p>
+              </div>
+            </div>
+          )}
+          {currentMonthSideIncome > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">이달 부수입</p>
+                <p className="text-lg font-bold text-foreground">₩{formatAmount(currentMonthSideIncome)}</p>
+                <p className="text-xs text-muted-foreground">{currentYear}년 {currentMonth}월 합계</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 차트 영역 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 월별 수입/지출 바 차트 */}
         <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4">{currentYear}년 월별 수입 · 지출</h2>
+          <h2 className="text-sm font-semibold text-foreground mb-1">{currentYear}년 월별 수입 · 지출</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            지출 = 가계부 지출 + 정기구독비(₩{formatAmount(monthlySubCost)}/월)
+          </p>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={monthlyData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -153,7 +238,14 @@ export default function Dashboard() {
                 tickFormatter={(v) => `${Math.round(v / 10000)}만`}
               />
               <Tooltip
-                formatter={(value: number) => [`₩${formatAmount(value)}`, ""]}
+                formatter={(value: number, name: string) => {
+                  const labels: Record<string, string> = {
+                    income: "수입",
+                    expense: "지출(구독포함)",
+                    savings: "저축",
+                  };
+                  return [`₩${formatAmount(value)}`, labels[name] ?? name];
+                }}
                 contentStyle={{
                   backgroundColor: "var(--card)",
                   border: "1px solid var(--border)",
@@ -161,10 +253,20 @@ export default function Dashboard() {
                   fontSize: "12px",
                 }}
               />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Bar dataKey="income" name="수입" fill="var(--chart-3)" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="expense" name="지출" fill="var(--chart-5)" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="savings" name="저축" fill="var(--chart-1)" radius={[3, 3, 0, 0]} />
+              <Legend
+                wrapperStyle={{ fontSize: "12px" }}
+                formatter={(value) => {
+                  const labels: Record<string, string> = {
+                    income: "수입",
+                    expense: "지출(구독포함)",
+                    savings: "저축",
+                  };
+                  return labels[value] ?? value;
+                }}
+              />
+              <Bar dataKey="income" name="income" fill="var(--chart-3)" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="expense" name="expense" fill="var(--chart-5)" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="savings" name="savings" fill="var(--chart-1)" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
