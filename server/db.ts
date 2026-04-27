@@ -34,6 +34,8 @@ import {
   InsertAccount,
   installments,
   InsertInstallment,
+  insurance,
+  InsertInsurance,
   categories,
   subCategories,
   InsertCategory,
@@ -98,6 +100,21 @@ export async function getUserByOpenId(openId: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateUserProfile(userId: number, data: { birthDate?: string | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(users).set(data).where(eq(users.id, userId));
+  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return result[0];
 }
 
 // ─── 가계부 ───────────────────────────────────────────────────────────────────
@@ -681,4 +698,34 @@ export async function seedDefaultCategories(userId: number) {
       await db.insert(subCategories).values({ categoryId: result.id, name: cat.subs[j], sortOrder: j, userId });
     }
   }
+}
+
+// ─── 보험 ─────────────────────────────────────────────────────────────────────
+export async function listInsurance(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(insurance).where(eq(insurance.userId, userId)).orderBy(desc(insurance.createdAt));
+}
+
+export async function createInsurance(userId: number, data: Omit<InsertInsurance, "userId" | "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(insurance).values({ ...data, userId });
+  const result = await db.select().from(insurance).where(eq(insurance.userId, userId)).orderBy(desc(insurance.createdAt)).limit(1);
+  return result[0];
+}
+
+export async function updateInsurance(userId: number, id: number, data: Partial<Omit<InsertInsurance, "userId" | "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(insurance).set(data).where(and(eq(insurance.id, id), eq(insurance.userId, userId)));
+  const result = await db.select().from(insurance).where(eq(insurance.id, id)).limit(1);
+  return result[0];
+}
+
+export async function deleteInsurance(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(insurance).where(and(eq(insurance.id, id), eq(insurance.userId, userId)));
+  return { id };
 }

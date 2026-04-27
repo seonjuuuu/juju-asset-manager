@@ -18,6 +18,7 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  birthDate: varchar("birth_date", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -351,6 +352,25 @@ export const installments = mysqlTable("installments", {
 });
 export type Installment = typeof installments.$inferSelect;
 export type InsertInstallment = typeof installments.$inferInsert;
+
+// ─── 보험 ─────────────────────────────────────────────────────────────────────
+export const insurance = mysqlTable("insurance", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
+  name: varchar("name", { length: 200 }).notNull(),
+  paymentMethod: varchar("payment_method", { length: 200 }),
+  startDate: varchar("start_date", { length: 20 }).notNull(),
+  endDate: varchar("end_date", { length: 20 }),
+  paymentType: mysqlEnum("payment_type", ["monthly", "annual"]).notNull().default("monthly"),
+  paymentDay: int("payment_day"),
+  paymentAmount: bigint("payment_amount", { mode: "number" }).notNull().default(0),
+  durationYears: int("duration_years"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type InsuranceRecord = typeof insurance.$inferSelect;
+export type InsertInsurance = typeof insurance.$inferInsert;
 
 // ─── 카테고리 (대분류 / 중분류) ──────────────────────────────────────────────
 export const categories = mysqlTable("categories", {

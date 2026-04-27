@@ -21,6 +21,8 @@ import {
   ArrowUpCircle,
   Landmark,
   Tags,
+  ShieldCheck,
+  UserCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -36,6 +38,7 @@ const navItems = [
   { href: "/subscriptions", icon: RefreshCw, label: "구독결제" },
   { href: "/side-income", icon: ArrowUpCircle, label: "부수입" },
   { href: "/installments", icon: Landmark, label: "대출/할부" },
+  { href: "/insurance", icon: ShieldCheck, label: "보험" },
 ];
 
 const recordItems = [
@@ -46,6 +49,7 @@ const recordItems = [
 const settingItems = [
   { href: "/cards", icon: CreditCard, label: "보유카드/계좌" },
   { href: "/categories", icon: Tags, label: "카테고리 관리" },
+  { href: "/profile", icon: UserCircle, label: "내 정보" },
 ];
 
 interface DashboardLayoutProps {

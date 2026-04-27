@@ -7,6 +7,18 @@ import * as db from "./db";
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 
+const insuranceInput = z.object({
+  name: z.string(),
+  paymentMethod: z.string().nullable().optional(),
+  startDate: z.string(),
+  endDate: z.string().nullable().optional(),
+  paymentType: z.enum(["monthly", "annual"]).default("monthly"),
+  paymentDay: z.number().int().min(1).max(31).nullable().optional(),
+  paymentAmount: z.number().default(0),
+  durationYears: z.number().int().min(1).nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+
 const accountInput = z.object({
   bankName: z.string(),
   accountType: z.enum(["입출금", "저축", "CMA", "파킹통장", "청약", "기타"]).default("입출금"),
@@ -195,6 +207,9 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+    updateProfile: protectedProcedure
+      .input(z.object({ birthDate: z.string().nullable().optional() }))
+      .mutation(({ input, ctx }) => db.updateUserProfile(ctx.user.id, input)),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -558,6 +573,18 @@ export const appRouter = router({
     deleteSub: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteSubCategory(ctx.user.id, input.id)),
+  }),
+  insurance: router({
+    list: protectedProcedure.query(({ ctx }) => db.listInsurance(ctx.user.id)),
+    create: protectedProcedure
+      .input(insuranceInput)
+      .mutation(({ input, ctx }) => db.createInsurance(ctx.user.id, input)),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: insuranceInput.partial() }))
+      .mutation(({ input, ctx }) => db.updateInsurance(ctx.user.id, input.id, input.data)),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input, ctx }) => db.deleteInsurance(ctx.user.id, input.id)),
   }),
   exchangeRate: router({
     get: protectedProcedure

@@ -1,6 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
+import { getUserById, getUserByOpenId } from "../db";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -8,38 +9,37 @@ export type TrpcContext = {
   user: User | null;
 };
 
-// ─── 로컬 개발용 더미 유저 ────────────────────────────────────────────────────
-// NODE_ENV=development 일 때만 활성화됩니다.
-// 절대 production 환경에서는 사용되지 않습니다.
-const DEV_USER: User = {
-  id: 1,
-  openId: "jY7bjoHqY74ENsqhHuGYab",
-  name: "seonju Moon",
-  email: "seonjuuu116@gmail.com",
-  loginMethod: null,
-  role: "admin",
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  lastSignedIn: new Date(),
-};
+const DEV_USER_ID = 1;
 
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
-  // 로컬 개발 환경에서는 OAuth 없이 자동으로 로그인 처리
+  // 로컬 개발 환경에서는 DB에서 실제 유저를 읽어 최신 정보를 반영
   if (process.env.NODE_ENV === "development") {
-    return {
-      req: opts.req,
-      res: opts.res,
-      user: DEV_USER,
+    const dbUser = await getUserById(DEV_USER_ID);
+    const user: User = dbUser ?? {
+      id: DEV_USER_ID,
+      openId: "jY7bjoHqY74ENsqhHuGYab",
+      name: "seonju Moon",
+      email: "seonjuuu116@gmail.com",
+      loginMethod: null,
+      role: "admin",
+      birthDate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
     };
+    return { req: opts.req, res: opts.res, user };
   }
 
   let user: User | null = null;
   try {
-    user = await sdk.authenticateRequest(opts.req);
+    const sessionUser = await sdk.authenticateRequest(opts.req);
+    if (sessionUser?.openId) {
+      const dbUser = await getUserByOpenId(sessionUser.openId);
+      user = dbUser ?? sessionUser;
+    }
   } catch (error) {
-    // Authentication is optional for public procedures.
     user = null;
   }
   return {
