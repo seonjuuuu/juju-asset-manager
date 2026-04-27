@@ -50,6 +50,13 @@
       "when": 1777285553685,
       "tag": "0006_classy_groot",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1777286198289,
+      "tag": "0007_chief_mysterio",
+      "breakpoints": true
     }
   ]
 }

@@ -30,6 +30,8 @@ import {
   sideIncomes,
   InsertSideIncomeCategory,
   InsertSideIncome,
+  accounts,
+  InsertAccount,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -524,3 +526,26 @@ export async function getSideIncomeMonthlySummary(year: number) {
     .where(eq(sideIncomes.year, year))
     .orderBy(sideIncomes.month, desc(sideIncomes.incomeDate));
 }
+
+// ─── 계좌 ─────────────────────────────────────────────────────────────────────
+export async function listAccounts() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(accounts).orderBy(accounts.createdAt);
+}
+export async function createAccount(data: InsertAccount) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.insert(accounts).values(data);
+}
+export async function updateAccount(id: number, data: Partial<InsertAccount>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.update(accounts).set(data).where(eq(accounts.id, id));
+}
+export async function deleteAccount(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.delete(accounts).where(eq(accounts.id, id));
+}
+

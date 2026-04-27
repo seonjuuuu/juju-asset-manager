@@ -298,3 +298,20 @@ export const sideIncomes = mysqlTable("side_incomes", {
 });
 export type SideIncome = typeof sideIncomes.$inferSelect;
 export type InsertSideIncome = typeof sideIncomes.$inferInsert;
+
+// ─── 보유 계좌 ────────────────────────────────────────────────────────────────
+export const accounts = mysqlTable("accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  bankName: varchar("bank_name", { length: 100 }).notNull(),           // 은행/금융기관명
+  accountType: mysqlEnum("account_type", ["입출금", "저축", "CMA", "파킹통장", "청약", "기타"]).notNull().default("입출금"),
+  accountNumber: varchar("account_number", { length: 100 }),           // 계좌번호 (선택)
+  accountHolder: varchar("account_holder", { length: 100 }),           // 예금주
+  balance: bigint("balance", { mode: "number" }).notNull().default(0), // 현재 잔액
+  interestRate: varchar("interest_rate", { length: 20 }),              // 금리 (예: 3.5%)
+  linkedCard: varchar("linked_card", { length: 200 }),                 // 연결 카드명
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Account = typeof accounts.$inferSelect;
+export type InsertAccount = typeof accounts.$inferInsert;

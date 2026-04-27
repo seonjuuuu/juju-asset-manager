@@ -129,3 +129,9 @@
 - [x] Subscriptions.tsx 시작일 입력 시 결제일 자동 채움, 직접 수정 가능
 - [x] Subscriptions.tsx 매년 주기 추가 및 다음 결제일 계산 반영
 - [x] Dashboard.tsx 구독비를 실제 결제 발생 월에만 반영 (월 환산 제거)
+
+## 보유카드/계좌 통합 (2026-04-27)
+- [x] DB accounts 테이블 추가 (은행명, 계좌종류, 계좌번호, 잔액, 메모 등)
+- [x] server/routers.ts account CRUD 프로시저 추가
+- [x] Cards.tsx 탭 구조로 카드/계좌 통합 UI 구현
+- [x] 사이드바 메뉴명 "보유카드" → "보유카드/계좌" 변경

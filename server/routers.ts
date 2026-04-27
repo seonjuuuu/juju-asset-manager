@@ -6,6 +6,17 @@ import { z } from "zod";
 import * as db from "./db";
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
+
+const accountInput = z.object({
+  bankName: z.string(),
+  accountType: z.enum(["입출금", "저축", "CMA", "파킹통장", "청약", "기타"]).default("입출금"),
+  accountNumber: z.string().optional(),
+  accountHolder: z.string().optional(),
+  balance: z.number().default(0),
+  interestRate: z.string().optional(),
+  linkedCard: z.string().optional(),
+  note: z.string().optional(),
+});
 const subscriptionInput = z.object({
   serviceName: z.string(),
   category: z.enum(["비즈니스", "미디어", "자기계발", "기타"]).default("기타"),
@@ -474,6 +485,16 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input }) => db.deleteSideIncome(input.id)),
+  }),
+  account: router({
+    list: protectedProcedure.query(() => db.listAccounts()),
+    create: protectedProcedure.input(accountInput).mutation(({ input }) => db.createAccount(input)),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: accountInput.partial() }))
+      .mutation(({ input }) => db.updateAccount(input.id, input.data)),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input }) => db.deleteAccount(input.id)),
   }),
 });
 

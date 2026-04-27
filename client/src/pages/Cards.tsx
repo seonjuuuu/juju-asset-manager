@@ -29,6 +29,8 @@ import {
   Coins,
   ChevronDown,
   ChevronUp,
+  Building2,
+  Wallet,
 } from "lucide-react";
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
@@ -81,11 +83,153 @@ const emptyPoint = {
 };
 
 
+
+type AccountRow = {
+  id: number;
+  bankName: string;
+  accountType: "입출금" | "저축" | "CMA" | "파킹통장" | "청약" | "기타";
+  accountNumber: string | null;
+  accountHolder: string | null;
+  balance: number;
+  interestRate: string | null;
+  linkedCard: string | null;
+  note: string | null;
+};
+const emptyAccount = {
+  bankName: "",
+  accountType: "입출금" as "입출금" | "저축" | "CMA" | "파킹통장" | "청약" | "기타",
+  accountNumber: "",
+  accountHolder: "",
+  balance: 0,
+  interestRate: "",
+  linkedCard: "",
+  note: "",
+};
+const ACCOUNT_TYPE_COLORS: Record<string, string> = {
+  입출금: "var(--primary)",
+  저축: "oklch(0.50 0.14 150)",
+  CMA: "oklch(0.55 0.14 200)",
+  파킹통장: "oklch(0.58 0.16 30)",
+  청약: "oklch(0.55 0.10 260)",
+  기타: "oklch(0.50 0.08 0)",
+};
 function formatAmount(v: number | null | undefined) {
   if (!v) return "-";
   return "₩" + v.toLocaleString("ko-KR");
 }
 
+// ─── 계좌 다이얼로그 ───────────────────────────────────────────────────────────
+function AccountDialog({
+  open,
+  onClose,
+  initial,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initial: typeof emptyAccount;
+  onSave: (data: typeof emptyAccount) => void;
+}) {
+  const [form, setForm] = useState(initial);
+  const set = (k: keyof typeof emptyAccount, v: unknown) =>
+    setForm((f) => ({ ...f, [k]: v }));
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{initial.bankName ? "계좌 수정" : "계좌 추가"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div>
+            <Label>은행/금융기관명 *</Label>
+            <Input
+              className="mt-1"
+              placeholder="예: 카카오뱅크, 토스뱅크"
+              value={form.bankName}
+              onChange={(e) => set("bankName", e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>계좌 종류</Label>
+            <Select value={form.accountType} onValueChange={(v) => set("accountType", v)}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["입출금", "저축", "CMA", "파킹통장", "청약", "기타"].map((t) => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>계좌번호 (선택)</Label>
+            <Input
+              className="mt-1"
+              placeholder="예: 3333-01-1234567"
+              value={form.accountNumber}
+              onChange={(e) => set("accountNumber", e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>예금주 (선택)</Label>
+            <Input
+              className="mt-1"
+              placeholder="예금주명"
+              value={form.accountHolder}
+              onChange={(e) => set("accountHolder", e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>현재 잔액</Label>
+            <CurrencyInput
+              className="mt-1"
+              value={form.balance}
+              onChange={(v) => set("balance", v)}
+            />
+          </div>
+          <div>
+            <Label>금리 (선택)</Label>
+            <Input
+              className="mt-1"
+              placeholder="예: 3.5%"
+              value={form.interestRate}
+              onChange={(e) => set("interestRate", e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>연결 카드 (선택)</Label>
+            <Input
+              className="mt-1"
+              placeholder="연결된 카드명"
+              value={form.linkedCard}
+              onChange={(e) => set("linkedCard", e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>메모</Label>
+            <Textarea
+              className="mt-1"
+              rows={2}
+              value={form.note ?? ""}
+              onChange={(e) => set("note", e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>취소</Button>
+            <Button
+              className="flex-1"
+              disabled={!form.bankName.trim()}
+              onClick={() => onSave(form)}
+            >
+              저장
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 // ─── 카드 다이얼로그 ───────────────────────────────────────────────────────────
 /** 유효기간 입력 포맷: 숫자만 입력받아 MM/YY 자동 삽입 */
 function formatExpiryInput(raw: string): string {
@@ -589,6 +733,21 @@ export default function Cards() {
   });
 
 
+
+  // 계좌
+  const { data: accountList = [], isLoading: accountsLoading } = trpc.account.list.useQuery();
+  const createAccount = trpc.account.create.useMutation({
+    onSuccess: () => { utils.account.list.invalidate(); toast.success("계좌가 추가되었습니다"); setAccountDialog(null); },
+    onError: () => toast.error("저장에 실패했습니다"),
+  });
+  const updateAccount = trpc.account.update.useMutation({
+    onSuccess: () => { utils.account.list.invalidate(); toast.success("계좌가 수정되었습니다"); setAccountDialog(null); },
+    onError: () => toast.error("수정에 실패했습니다"),
+  });
+  const deleteAccount = trpc.account.delete.useMutation({
+    onSuccess: () => { utils.account.list.invalidate(); toast.success("계좌가 삭제되었습니다"); },
+    onError: () => toast.error("삭제에 실패했습니다"),
+  });
   // 다이얼로그 상태
   const [cardDialog, setCardDialog] = useState<{
     mode: "create" | "edit";
@@ -598,6 +757,11 @@ export default function Cards() {
   const [pointDialog, setPointDialog] = useState<{
     mode: "create" | "edit";
     data: typeof emptyPoint;
+    id?: number;
+  } | null>(null);
+  const [accountDialog, setAccountDialog] = useState<{
+    mode: "create" | "edit";
+    data: typeof emptyAccount;
     id?: number;
   } | null>(null);
 
@@ -612,6 +776,10 @@ export default function Cards() {
     (s, p) => s + (p.balance ?? 0),
     0
   );
+  const totalAccountBalance = (accountList as AccountRow[]).reduce(
+    (s, a) => s + (a.balance ?? 0),
+    0
+  );
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
@@ -621,10 +789,10 @@ export default function Cards() {
           className="text-2xl font-bold text-foreground"
           style={{ fontFamily: "'Playfair Display', serif" }}
         >
-          보유카드 관리
+          보유카드 / 계좌
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          신용카드·체크카드 정보 및 포인트/마일리지를 관리합니다
+          신용카드·체크카드·계좌 정보 및 포인트/마일리지를 관리합니다
         </p>
       </div>
 
@@ -635,6 +803,7 @@ export default function Cards() {
           { label: "체크카드", value: `${checkCards.length}장`, icon: CreditCard, color: "oklch(0.50 0.14 150)" },
           { label: "연간 연회비", value: formatAmount(totalAnnualFee), icon: CreditCard, color: "oklch(0.58 0.16 30)" },
           { label: "포인트/마일리지", value: `${totalPoints.toLocaleString("ko-KR")}P`, icon: Coins, color: "var(--gold)" },
+          { label: "계좌 총 잔액", value: "₩" + totalAccountBalance.toLocaleString("ko-KR"), icon: Wallet, color: "oklch(0.50 0.14 150)" },
         ].map((item) => (
           <div
             key={item.label}
@@ -658,6 +827,10 @@ export default function Cards() {
       {/* 탭 */}
       <Tabs defaultValue="cards">
         <TabsList className="mb-4">
+          <TabsTrigger value="accounts">
+            <Building2 className="w-3.5 h-3.5 mr-1.5" />
+            계좌
+          </TabsTrigger>
           <TabsTrigger value="cards">
             <CreditCard className="w-4 h-4 mr-1.5" />
             보유카드 ({(cardList as CardRow[]).length})
@@ -890,6 +1063,128 @@ export default function Cards() {
 
       </Tabs>
 
+
+        <TabsContent value="accounts" className="space-y-4">
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setAccountDialog({ mode: "create", data: emptyAccount })}>
+              <Plus className="w-4 h-4 mr-1" /> 계좌 추가
+            </Button>
+          </div>
+          {accountsLoading ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-3" />
+              <p className="text-sm">불러오는 중...</p>
+            </div>
+          ) : (accountList as AccountRow[]).length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <Building2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">등록된 계좌가 없습니다</p>
+              <p className="text-xs mt-1">추가 버튼을 눌러 시작하세요</p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(accountList as AccountRow[]).map((acc) => (
+                <div
+                  key={acc.id}
+                  className="rounded-xl border bg-card p-4 space-y-3"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: ACCOUNT_TYPE_COLORS[acc.accountType] + "22" }}
+                      >
+                        <Building2 className="w-4.5 h-4.5" style={{ color: ACCOUNT_TYPE_COLORS[acc.accountType] }} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm truncate">{acc.bankName}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                            style={{
+                              backgroundColor: ACCOUNT_TYPE_COLORS[acc.accountType] + "22",
+                              color: ACCOUNT_TYPE_COLORS[acc.accountType],
+                            }}
+                          >
+                            {acc.accountType}
+                          </span>
+                          {acc.accountHolder && (
+                            <span className="text-xs text-muted-foreground">{acc.accountHolder}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() =>
+                          setAccountDialog({
+                            mode: "edit",
+                            id: acc.id,
+                            data: {
+                              bankName: acc.bankName,
+                              accountType: acc.accountType,
+                              accountNumber: acc.accountNumber ?? "",
+                              accountHolder: acc.accountHolder ?? "",
+                              balance: acc.balance,
+                              interestRate: acc.interestRate ?? "",
+                              linkedCard: acc.linkedCard ?? "",
+                              note: acc.note ?? "",
+                            },
+                          })
+                        }
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => {
+                          if (confirm("삭제하시겠습니까?")) {
+                            deleteAccount.mutate({ id: acc.id });
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">잔액</span>
+                    <span className="font-bold text-base" style={{ color: ACCOUNT_TYPE_COLORS[acc.accountType] }}>
+                      ₩{acc.balance.toLocaleString("ko-KR")}
+                    </span>
+                  </div>
+                  {acc.accountNumber && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">계좌번호</span>
+                      <span className="text-xs font-mono">{acc.accountNumber}</span>
+                    </div>
+                  )}
+                  {acc.interestRate && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">금리</span>
+                      <span className="text-xs font-medium text-green-600">{acc.interestRate}</span>
+                    </div>
+                  )}
+                  {acc.linkedCard && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">연결 카드</span>
+                      <span className="text-xs">{acc.linkedCard}</span>
+                    </div>
+                  )}
+                  {acc.note && (
+                    <p className="text-xs text-muted-foreground border-t pt-2">{acc.note}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
       {/* 카드 다이얼로그 */}
       {cardDialog && (
         <CardDialog
@@ -906,6 +1201,22 @@ export default function Cards() {
         />
       )}
 
+      {/* 계좌 다이얼로그 */}
+      {accountDialog && (
+        <AccountDialog
+          key={accountDialog.mode + (accountDialog.id ?? "new")}
+          open={true}
+          onClose={() => setAccountDialog(null)}
+          initial={accountDialog.data}
+          onSave={(data) => {
+            if (accountDialog.mode === "create") {
+              createAccount.mutate(data);
+            } else if (accountDialog.id) {
+              updateAccount.mutate({ id: accountDialog.id, data });
+            }
+          }}
+        />
+      )}
       {/* 포인트 다이얼로그 */}
       {pointDialog && (
         <PointDialog
