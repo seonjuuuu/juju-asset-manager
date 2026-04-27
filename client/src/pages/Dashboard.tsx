@@ -13,7 +13,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { TrendingUp, TrendingDown, Wallet, PiggyBank, Shield, Coins, Building2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, PiggyBank, Shield, Coins } from "lucide-react";
 import { useMemo } from "react";
 
 const COLORS = ["#5b7cfa", "#4ecdc4", "#45b7d1", "#f9ca24", "#f0932b"];
@@ -77,6 +77,12 @@ function calcSubCostForMonth(
   return 0;
 }
 
+const EXPENSE_COLORS = [
+  "#5b7cfa","#f97316","#22c55e","#a855f7","#ec4899",
+  "#14b8a6","#f59e0b","#ef4444","#06b6d4","#84cc16",
+  "#8b5cf6","#f43f5e",
+];
+
 export default function Dashboard() {
   const { data: summary, isLoading: summaryLoading } = trpc.dashboard.summary.useQuery();
   const { data: yearly, isLoading: yearlyLoading } = trpc.dashboard.yearlySummary.useQuery({ year: currentYear });
@@ -86,6 +92,13 @@ export default function Dashboard() {
 
   // 부수입 연간 월별 합계
   const { data: sideIncomeSummary, isLoading: sideIncomeLoading } = trpc.sideIncome.yearlySummary.useQuery({ year: currentYear });
+
+  // 중분류별 연간 지출 (스택 바 차트용)
+  const currentMonth = new Date().getMonth() + 1;
+  const { data: subCatExpense = [] } = trpc.ledger.yearlySubCatExpense.useQuery({ year: currentYear });
+
+  // 보험 목록
+  const { data: insuranceList = [] } = trpc.insurance.list.useQuery();
 
   // 월별 구독결제 구독비 (모든 달에 동일하게 적용)
   const monthlySubCost = useMemo(() => {
@@ -137,11 +150,60 @@ export default function Dashboard() {
     });
   }, [yearly, monthlySubCost, sideIncomeByMonth]);
 
+  // 연간 중분류별 지출 → 월별 스택 바 차트 데이터
+  const { expenseStackData, expenseSubCatKeys } = useMemo(() => {
+    // 보험 월 환산액
+    const insuranceMonthly = insuranceList.reduce((sum, ins) => {
+      const i = ins as { paymentType: string; paymentAmount: number };
+      return sum + (i.paymentType === "monthly" ? i.paymentAmount : Math.round(i.paymentAmount / 12));
+    }, 0);
+
+    // 전체 중분류 키 집계
+    const allKeysSet = new Set<string>();
+    if (insuranceMonthly > 0) allKeysSet.add("보험");
+    for (const row of subCatExpense) {
+      const r = row as { month: number; subCategory?: string | null; total: number };
+      allKeysSet.add(r.subCategory?.trim() || "미분류");
+    }
+    const allKeys = Array.from(allKeysSet);
+
+    // 월별 데이터 빌드
+    const data = MONTH_NAMES.map((name, idx) => {
+      const month = idx + 1;
+      const entry: Record<string, number | string> = { name };
+
+      // 가계부 중분류
+      for (const row of subCatExpense) {
+        const r = row as { month: number; subCategory?: string | null; total: number };
+        if (r.month !== month) continue;
+        const key = r.subCategory?.trim() || "미분류";
+        entry[key] = ((entry[key] as number) || 0) + r.total;
+      }
+
+      // 보험 (매월 동일)
+      if (insuranceMonthly > 0) {
+        entry["보험"] = ((entry["보험"] as number) || 0) + insuranceMonthly;
+      }
+
+      return entry;
+    });
+
+    // 합계 기준으로 키 정렬 (큰 것이 먼저)
+    const keyTotals: Record<string, number> = {};
+    for (const row of data) {
+      for (const k of allKeys) {
+        keyTotals[k] = (keyTotals[k] ?? 0) + ((row[k] as number) || 0);
+      }
+    }
+    const sortedKeys = allKeys.sort((a, b) => (keyTotals[b] ?? 0) - (keyTotals[a] ?? 0));
+
+    return { expenseStackData: data, expenseSubCatKeys: sortedKeys };
+  }, [subCatExpense, insuranceList]);
+
   // 이번 달 구독결제 총 구독비 (monthlySubCost가 이미 현재 월 기준으로 계산됨)
   const currentMonthSubCost = monthlySubCost;
 
   // 이번 달 부수입 합계
-  const currentMonth = new Date().getMonth() + 1;
   const currentMonthSideIncome = sideIncomeByMonth[currentMonth] ?? 0;
 
   // 자산 구성 파이 차트 데이터
@@ -348,6 +410,45 @@ export default function Dashboard() {
             <h2 className="text-sm font-semibold text-foreground">부채 현황</h2>
           </div>
           <p className="text-2xl font-bold text-red-500">₩{formatAmount(summary?.debtTotal ?? 0)}</p>
+        </div>
+      )}
+
+      {/* 연간 지출 중분류 현황 (스택 바) */}
+      {expenseSubCatKeys.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-foreground mb-0.5">
+            {currentYear}년 월별 지출 현황
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">중분류 기준 · 가계부 지출 + 보험 월 납입액</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={expenseStackData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+              <YAxis
+                tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                tickFormatter={(v) => `${Math.round(v / 10000)}만`}
+              />
+              <Tooltip
+                formatter={(value: number, name: string) => [`₩${formatAmount(value)}`, name]}
+                contentStyle={{
+                  backgroundColor: "var(--card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: "11px" }} />
+              {expenseSubCatKeys.map((key, idx) => (
+                <Bar
+                  key={key}
+                  dataKey={key}
+                  stackId="expense"
+                  fill={EXPENSE_COLORS[idx % EXPENSE_COLORS.length]}
+                  radius={idx === expenseSubCatKeys.length - 1 ? [3, 3, 0, 0] : undefined}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>

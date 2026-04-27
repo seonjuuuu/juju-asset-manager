@@ -245,6 +245,9 @@ export const appRouter = router({
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
       db.deleteLedgerEntry(ctx.user.id, input.id)
     ),
+    yearlySubCatExpense: protectedProcedure
+      .input(z.object({ year: z.number() }))
+      .query(({ input, ctx }) => db.getYearlySubCatExpenseSummary(ctx.user.id, input.year)),
   }),
 
   // ─── 고정지출 ───────────────────────────────────────────────────────────────

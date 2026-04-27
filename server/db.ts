@@ -156,6 +156,27 @@ export async function getYearlySummary(userId: number, year: number) {
     .orderBy(ledgerEntries.month);
 }
 
+export async function getYearlySubCatExpenseSummary(userId: number, year: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      month: ledgerEntries.month,
+      subCategory: ledgerEntries.subCategory,
+      total: sql<number>`SUM(${ledgerEntries.amount})`,
+    })
+    .from(ledgerEntries)
+    .where(
+      and(
+        eq(ledgerEntries.userId, userId),
+        eq(ledgerEntries.year, year),
+        sql`${ledgerEntries.mainCategory} IN ('고정지출', '변동지출')`
+      )
+    )
+    .groupBy(ledgerEntries.month, ledgerEntries.subCategory)
+    .orderBy(ledgerEntries.month);
+}
+
 export async function createLedgerEntry(userId: number, data: InsertLedgerEntry) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
