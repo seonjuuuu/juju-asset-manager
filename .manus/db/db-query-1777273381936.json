@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `blog_campaigns` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`platform` varchar(100),\n\t`campaign_type` varchar(50),\n\t`category` varchar(50),\n\t`business_name` varchar(200),\n\t`amount` bigint DEFAULT 0,\n\t`start_date` varchar(20),\n\t`end_date` varchar(20),\n\t`visit_date` varchar(20),\n\t`review_done` boolean DEFAULT false,\n\t`completed` boolean DEFAULT false,\n\t`note` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `blog_campaigns_id` PRIMARY KEY(`id`)\n)",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2XrzDhHx1WaUb8Q.5559adff0250 --database NNNgtb3Z4keER7ESAY7Eaj --execute CREATE TABLE `blog_campaigns` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`platform` varchar(100),\n\t`campaign_type` varchar(50),\n\t`category` varchar(50),\n\t`business_name` varchar(200),\n\t`amount` bigint DEFAULT 0,\n\t`start_date` varchar(20),\n\t`end_date` varchar(20),\n\t`visit_date` varchar(20),\n\t`review_done` boolean DEFAULT false,\n\t`completed` boolean DEFAULT false,\n\t`note` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `blog_campaigns_id` PRIMARY KEY(`id`)\n)",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1598
+}

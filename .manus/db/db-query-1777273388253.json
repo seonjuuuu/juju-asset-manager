@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `debts` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`category` varchar(100) NOT NULL,\n\t`description` varchar(200),\n\t`debt_type` varchar(50),\n\t`principal` bigint DEFAULT 0,\n\t`monthly_payment` bigint DEFAULT 0,\n\t`interest_rate` decimal(10,4),\n\t`balance` bigint DEFAULT 0,\n\t`expiry_date` varchar(50),\n\t`note` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `debts_id` PRIMARY KEY(`id`)\n)",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2XrzDhHx1WaUb8Q.5559adff0250 --database NNNgtb3Z4keER7ESAY7Eaj --execute CREATE TABLE `debts` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`category` varchar(100) NOT NULL,\n\t`description` varchar(200),\n\t`debt_type` varchar(50),\n\t`principal` bigint DEFAULT 0,\n\t`monthly_payment` bigint DEFAULT 0,\n\t`interest_rate` decimal(10,4),\n\t`balance` bigint DEFAULT 0,\n\t`expiry_date` varchar(50),\n\t`note` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `debts_id` PRIMARY KEY(`id`)\n)",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1624
+}
