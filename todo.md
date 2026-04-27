@@ -135,3 +135,8 @@
 - [x] server/routers.ts account CRUD 프로시저 추가
 - [x] Cards.tsx 탭 구조로 카드/계좌 통합 UI 구현
 - [x] 사이드바 메뉴명 "보유카드" → "보유카드/계좌" 변경
+
+## 사용자별 데이터 완전 분리 (userId) (2026-04-27)
+- [x] 모든 테이블에 userId 컬럼 추가 및 마이그레이션 적용
+- [x] server/db.ts 모든 CRUD 함수에 userId 파라미터 추가 및 WHERE 필터 적용
+- [x] server/routers.ts 모든 프로시저에서 ctx.user.id 전달

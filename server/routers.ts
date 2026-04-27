@@ -191,9 +191,9 @@ export const appRouter = router({
 
   // ─── 대시보드 ───────────────────────────────────────────────────────────────
   dashboard: router({
-    summary: protectedProcedure.query(() => db.getDashboardSummary()),
-    yearlySummary: protectedProcedure.input(z.object({ year: z.number() })).query(({ input }) =>
-      db.getYearlySummary(input.year)
+    summary: protectedProcedure.query(({ ctx }) => db.getDashboardSummary(ctx.user.id)),
+    yearlySummary: protectedProcedure.input(z.object({ year: z.number() })).query(({ input, ctx }) =>
+      db.getYearlySummary(ctx.user.id, input.year)
     ),
   }),
 
@@ -201,163 +201,163 @@ export const appRouter = router({
   ledger: router({
     list: protectedProcedure
       .input(z.object({ year: z.number(), month: z.number() }))
-      .query(({ input }) => db.getLedgerEntries(input.year, input.month)),
+      .query(({ input, ctx }) => db.getLedgerEntries(ctx.user.id, input.year, input.month)),
     monthSummary: protectedProcedure
       .input(z.object({ year: z.number(), month: z.number() }))
-      .query(({ input }) => db.getLedgerMonthSummary(input.year, input.month)),
-    create: protectedProcedure.input(ledgerEntryInput).mutation(({ input }) =>
-      db.createLedgerEntry({
+      .query(({ input, ctx }) => db.getLedgerMonthSummary(ctx.user.id, input.year, input.month)),
+    create: protectedProcedure.input(ledgerEntryInput).mutation(({ input, ctx }) =>
+      db.createLedgerEntry(ctx.user.id, {
         ...input,
         entryDate: input.entryDate as unknown as Date,
       })
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: ledgerEntryInput.partial() }))
-      .mutation(({ input }) => db.updateLedgerEntry(input.id, input.data as Parameters<typeof db.updateLedgerEntry>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteLedgerEntry(input.id)
+      .mutation(({ input, ctx }) => db.updateLedgerEntry(ctx.user.id, input.id, input.data as Parameters<typeof db.updateLedgerEntry>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteLedgerEntry(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 고정지출 ───────────────────────────────────────────────────────────────
   fixedExpense: router({
-    list: protectedProcedure.query(() => db.getFixedExpenses()),
-    create: protectedProcedure.input(fixedExpenseInput).mutation(({ input }) =>
-      db.createFixedExpense(input as Parameters<typeof db.createFixedExpense>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getFixedExpenses(ctx.user.id)),
+    create: protectedProcedure.input(fixedExpenseInput).mutation(({ input, ctx }) =>
+      db.createFixedExpense(ctx.user.id, input as Parameters<typeof db.createFixedExpense>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: fixedExpenseInput.partial() }))
-      .mutation(({ input }) => db.updateFixedExpense(input.id, input.data as Parameters<typeof db.updateFixedExpense>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteFixedExpense(input.id)
+      .mutation(({ input, ctx }) => db.updateFixedExpense(ctx.user.id, input.id, input.data as Parameters<typeof db.updateFixedExpense>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteFixedExpense(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 주식 포트폴리오 ─────────────────────────────────────────────────────────
   stock: router({
-    list: protectedProcedure.input(z.object({ snapshotMonth: z.string().optional() })).query(({ input }) =>
-      db.getStockPortfolio(input.snapshotMonth)
+    list: protectedProcedure.input(z.object({ snapshotMonth: z.string().optional() })).query(({ input, ctx }) =>
+      db.getStockPortfolio(ctx.user.id, input.snapshotMonth)
     ),
-    create: protectedProcedure.input(stockInput).mutation(({ input }) =>
-      db.createStockEntry(input as Parameters<typeof db.createStockEntry>[0])
+    create: protectedProcedure.input(stockInput).mutation(({ input, ctx }) =>
+      db.createStockEntry(ctx.user.id, input as Parameters<typeof db.createStockEntry>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: stockInput.partial() }))
-      .mutation(({ input }) => db.updateStockEntry(input.id, input.data as Parameters<typeof db.updateStockEntry>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteStockEntry(input.id)
+      .mutation(({ input, ctx }) => db.updateStockEntry(ctx.user.id, input.id, input.data as Parameters<typeof db.updateStockEntry>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteStockEntry(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 저축 및 현금성 자산 ──────────────────────────────────────────────────────
   savings: router({
-    list: protectedProcedure.query(() => db.getSavingsAssets()),
-    create: protectedProcedure.input(savingsInput).mutation(({ input }) =>
-      db.createSavingsAsset(input as Parameters<typeof db.createSavingsAsset>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getSavingsAssets(ctx.user.id)),
+    create: protectedProcedure.input(savingsInput).mutation(({ input, ctx }) =>
+      db.createSavingsAsset(ctx.user.id, input as Parameters<typeof db.createSavingsAsset>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: savingsInput.partial() }))
-      .mutation(({ input }) => db.updateSavingsAsset(input.id, input.data as Parameters<typeof db.updateSavingsAsset>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteSavingsAsset(input.id)
+      .mutation(({ input, ctx }) => db.updateSavingsAsset(ctx.user.id, input.id, input.data as Parameters<typeof db.updateSavingsAsset>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteSavingsAsset(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 연금 ───────────────────────────────────────────────────────────────────
   pension: router({
-    list: protectedProcedure.query(() => db.getPensionAssets()),
-    create: protectedProcedure.input(pensionInput).mutation(({ input }) =>
-      db.createPensionAsset(input as Parameters<typeof db.createPensionAsset>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getPensionAssets(ctx.user.id)),
+    create: protectedProcedure.input(pensionInput).mutation(({ input, ctx }) =>
+      db.createPensionAsset(ctx.user.id, input as Parameters<typeof db.createPensionAsset>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: pensionInput.partial() }))
-      .mutation(({ input }) => db.updatePensionAsset(input.id, input.data as Parameters<typeof db.updatePensionAsset>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deletePensionAsset(input.id)
+      .mutation(({ input, ctx }) => db.updatePensionAsset(ctx.user.id, input.id, input.data as Parameters<typeof db.updatePensionAsset>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deletePensionAsset(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 기타 자산 ──────────────────────────────────────────────────────────────
   otherAsset: router({
-    list: protectedProcedure.query(() => db.getOtherAssets()),
-    create: protectedProcedure.input(otherAssetInput).mutation(({ input }) =>
-      db.createOtherAsset(input as Parameters<typeof db.createOtherAsset>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getOtherAssets(ctx.user.id)),
+    create: protectedProcedure.input(otherAssetInput).mutation(({ input, ctx }) =>
+      db.createOtherAsset(ctx.user.id, input as Parameters<typeof db.createOtherAsset>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: otherAssetInput.partial() }))
-      .mutation(({ input }) => db.updateOtherAsset(input.id, input.data as Parameters<typeof db.updateOtherAsset>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteOtherAsset(input.id)
+      .mutation(({ input, ctx }) => db.updateOtherAsset(ctx.user.id, input.id, input.data as Parameters<typeof db.updateOtherAsset>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteOtherAsset(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 부동산 ─────────────────────────────────────────────────────────────────
   realEstate: router({
-    list: protectedProcedure.query(() => db.getRealEstates()),
-    create: protectedProcedure.input(realEstateInput).mutation(({ input }) =>
-      db.createRealEstate(input as Parameters<typeof db.createRealEstate>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getRealEstates(ctx.user.id)),
+    create: protectedProcedure.input(realEstateInput).mutation(({ input, ctx }) =>
+      db.createRealEstate(ctx.user.id, input as Parameters<typeof db.createRealEstate>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: realEstateInput.partial() }))
-      .mutation(({ input }) => db.updateRealEstate(input.id, input.data as Parameters<typeof db.updateRealEstate>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteRealEstate(input.id)
+      .mutation(({ input, ctx }) => db.updateRealEstate(ctx.user.id, input.id, input.data as Parameters<typeof db.updateRealEstate>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteRealEstate(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 블로그 체험단 ───────────────────────────────────────────────────────────
   blogCampaign: router({
-    list: protectedProcedure.query(() => db.getBlogCampaigns()),
-    create: protectedProcedure.input(blogCampaignInput).mutation(({ input }) =>
-      db.createBlogCampaign(input as Parameters<typeof db.createBlogCampaign>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getBlogCampaigns(ctx.user.id)),
+    create: protectedProcedure.input(blogCampaignInput).mutation(({ input, ctx }) =>
+      db.createBlogCampaign(ctx.user.id, input as Parameters<typeof db.createBlogCampaign>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: blogCampaignInput.partial() }))
-      .mutation(({ input }) => db.updateBlogCampaign(input.id, input.data as Parameters<typeof db.updateBlogCampaign>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteBlogCampaign(input.id)
+      .mutation(({ input, ctx }) => db.updateBlogCampaign(ctx.user.id, input.id, input.data as Parameters<typeof db.updateBlogCampaign>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteBlogCampaign(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 구독결제 서비스 ─────────────────────────────────────────────────────────
   subscription: router({
-    list: protectedProcedure.query(() => db.getSubscriptions()),
-    create: protectedProcedure.input(subscriptionInput).mutation(({ input }) =>
-      db.createSubscription(input as Parameters<typeof db.createSubscription>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getSubscriptions(ctx.user.id)),
+    create: protectedProcedure.input(subscriptionInput).mutation(({ input, ctx }) =>
+      db.createSubscription(ctx.user.id, input as Parameters<typeof db.createSubscription>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: subscriptionInput.partial() }))
-      .mutation(({ input }) => db.updateSubscription(input.id, input.data as Parameters<typeof db.updateSubscription>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteSubscription(input.id)
+      .mutation(({ input, ctx }) => db.updateSubscription(ctx.user.id, input.id, input.data as Parameters<typeof db.updateSubscription>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteSubscription(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 보유카드 ──────────────────────────────────────────────────────────────
   card: router({
-    list: protectedProcedure.query(() => db.getCards()),
-    create: protectedProcedure.input(cardInput).mutation(({ input }) =>
-      db.createCard(input as Parameters<typeof db.createCard>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getCards(ctx.user.id)),
+    create: protectedProcedure.input(cardInput).mutation(({ input, ctx }) =>
+      db.createCard(ctx.user.id, input as Parameters<typeof db.createCard>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: cardInput.partial() }))
-      .mutation(({ input }) => db.updateCard(input.id, input.data as Parameters<typeof db.updateCard>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteCard(input.id)
+      .mutation(({ input, ctx }) => db.updateCard(ctx.user.id, input.id, input.data as Parameters<typeof db.updateCard>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteCard(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 포인트/마일리지 ─────────────────────────────────────────────────────────
   cardPoint: router({
-    list: protectedProcedure.query(() => db.getCardPoints()),
-    create: protectedProcedure.input(cardPointInput).mutation(({ input }) =>
-      db.createCardPoint(input as Parameters<typeof db.createCardPoint>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getCardPoints(ctx.user.id)),
+    create: protectedProcedure.input(cardPointInput).mutation(({ input, ctx }) =>
+      db.createCardPoint(ctx.user.id, input as Parameters<typeof db.createCardPoint>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: cardPointInput.partial() }))
-      .mutation(({ input }) => db.updateCardPoint(input.id, input.data as Parameters<typeof db.updateCardPoint>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteCardPoint(input.id)
+      .mutation(({ input, ctx }) => db.updateCardPoint(ctx.user.id, input.id, input.data as Parameters<typeof db.updateCardPoint>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteCardPoint(ctx.user.id, input.id)
     ),
   }),
 
@@ -395,40 +395,40 @@ export const appRouter = router({
 
   // ─── 부체 ───────────────────────────────────────────────────────────────────────────
   debt: router({
-    list: protectedProcedure.query(() => db.getDebts()),
-    create: protectedProcedure.input(debtInput).mutation(({ input }) =>
-      db.createDebt(input as Parameters<typeof db.createDebt>[0])
+    list: protectedProcedure.query(({ ctx }) => db.getDebts(ctx.user.id)),
+    create: protectedProcedure.input(debtInput).mutation(({ input, ctx }) =>
+      db.createDebt(ctx.user.id, input as Parameters<typeof db.createDebt>[1])
     ),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: debtInput.partial() }))
-      .mutation(({ input }) => db.updateDebt(input.id, input.data as Parameters<typeof db.updateDebt>[1])),
-    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
-      db.deleteDebt(input.id)
+      .mutation(({ input, ctx }) => db.updateDebt(ctx.user.id, input.id, input.data as Parameters<typeof db.updateDebt>[2])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteDebt(ctx.user.id, input.id)
     ),
   }),
 
   // ─── 부수입 카테고리 ───────────────────────────────────────────────────────────
   sideIncomeCategory: router({
-    list: protectedProcedure.query(() => db.getSideIncomeCategories()),
+    list: protectedProcedure.query(({ ctx }) => db.getSideIncomeCategories(ctx.user.id)),
     create: protectedProcedure
       .input(z.object({ name: z.string().min(1), color: z.string().optional() }))
-      .mutation(({ input }) => db.createSideIncomeCategory(input)),
+      .mutation(({ input, ctx }) => db.createSideIncomeCategory(ctx.user.id, input)),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: z.object({ name: z.string().optional(), color: z.string().optional() }) }))
-      .mutation(({ input }) => db.updateSideIncomeCategory(input.id, input.data)),
+      .mutation(({ input, ctx }) => db.updateSideIncomeCategory(ctx.user.id, input.id, input.data)),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => db.deleteSideIncomeCategory(input.id)),
+      .mutation(({ input, ctx }) => db.deleteSideIncomeCategory(ctx.user.id, input.id)),
   }),
 
   // ─── 부수입 내역 ───────────────────────────────────────────────────────────────
   sideIncome: router({
     list: protectedProcedure
       .input(z.object({ year: z.number(), month: z.number() }))
-      .query(({ input }) => db.getSideIncomes(input.year, input.month)),
+      .query(({ input, ctx }) => db.getSideIncomes(ctx.user.id, input.year, input.month)),
     yearlySummary: protectedProcedure
       .input(z.object({ year: z.number() }))
-      .query(({ input }) => db.getSideIncomeMonthlySummary(input.year)),
+      .query(({ input, ctx }) => db.getSideIncomeMonthlySummary(ctx.user.id, input.year)),
     create: protectedProcedure
       .input(z.object({
         incomeDate: z.string(),
@@ -441,9 +441,9 @@ export const appRouter = router({
         isRegular: z.boolean().default(false),
         note: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         // 가계부 수입 항목 자동 추가
-        const ledgerResult = await db.createLedgerEntry({
+        const ledgerResult = await db.createLedgerEntry(ctx.user.id, {
           entryDate: input.incomeDate as unknown as Date,
           year: input.year,
           month: input.month,
@@ -454,7 +454,7 @@ export const appRouter = router({
           note: `[부수입 자동연동] ${input.note ?? ""}`.trim(),
         }) as { insertId?: number } | undefined;
         const ledgerEntryId = ledgerResult?.insertId;
-        return db.createSideIncome({
+        return db.createSideIncome(ctx.user.id, {
           ...input,
           incomeDate: input.incomeDate as unknown as Date,
           ledgerEntryId,
@@ -475,26 +475,26 @@ export const appRouter = router({
           note: z.string().optional(),
         }),
       }))
-      .mutation(({ input }) => {
+      .mutation(({ input, ctx }) => {
         const { incomeDate, ...rest } = input.data;
-        return db.updateSideIncome(input.id, {
+        return db.updateSideIncome(ctx.user.id, input.id, {
           ...rest,
           ...(incomeDate ? { incomeDate: incomeDate as unknown as Date } : {}),
         });
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => db.deleteSideIncome(input.id)),
+      .mutation(({ input, ctx }) => db.deleteSideIncome(ctx.user.id, input.id)),
   }),
   account: router({
-    list: protectedProcedure.query(() => db.listAccounts()),
-    create: protectedProcedure.input(accountInput).mutation(({ input }) => db.createAccount(input)),
+    list: protectedProcedure.query(({ ctx }) => db.listAccounts(ctx.user.id)),
+    create: protectedProcedure.input(accountInput).mutation(({ input, ctx }) => db.createAccount(ctx.user.id, input)),
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: accountInput.partial() }))
-      .mutation(({ input }) => db.updateAccount(input.id, input.data)),
+      .mutation(({ input, ctx }) => db.updateAccount(ctx.user.id, input.id, input.data)),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => db.deleteAccount(input.id)),
+      .mutation(({ input, ctx }) => db.deleteAccount(ctx.user.id, input.id)),
   }),
 });
 

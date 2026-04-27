@@ -95,17 +95,17 @@ export async function getUserByOpenId(openId: string) {
 }
 
 // ─── 가계부 ───────────────────────────────────────────────────────────────────
-export async function getLedgerEntries(year: number, month: number) {
+export async function getLedgerEntries(userId: number, year: number, month: number) {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
     .from(ledgerEntries)
-    .where(and(eq(ledgerEntries.year, year), eq(ledgerEntries.month, month)))
+    .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.year, year), eq(ledgerEntries.month, month)))
     .orderBy(ledgerEntries.entryDate);
 }
 
-export async function getLedgerMonthSummary(year: number, month: number) {
+export async function getLedgerMonthSummary(userId: number, year: number, month: number) {
   const db = await getDb();
   if (!db) return [];
   return db
@@ -114,11 +114,11 @@ export async function getLedgerMonthSummary(year: number, month: number) {
       total: sql<number>`SUM(${ledgerEntries.amount})`,
     })
     .from(ledgerEntries)
-    .where(and(eq(ledgerEntries.year, year), eq(ledgerEntries.month, month)))
+    .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.year, year), eq(ledgerEntries.month, month)))
     .groupBy(ledgerEntries.mainCategory);
 }
 
-export async function getYearlySummary(year: number) {
+export async function getYearlySummary(userId: number, year: number) {
   const db = await getDb();
   if (!db) return [];
   return db
@@ -128,253 +128,264 @@ export async function getYearlySummary(year: number) {
       total: sql<number>`SUM(${ledgerEntries.amount})`,
     })
     .from(ledgerEntries)
-    .where(eq(ledgerEntries.year, year))
+    .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.year, year)))
     .groupBy(ledgerEntries.month, ledgerEntries.mainCategory)
     .orderBy(ledgerEntries.month);
 }
 
-export async function createLedgerEntry(data: InsertLedgerEntry) {
+export async function createLedgerEntry(userId: number, data: InsertLedgerEntry) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(ledgerEntries).values(data);
+  await db.insert(ledgerEntries).values({ ...data, userId });
 }
 
-export async function updateLedgerEntry(id: number, data: Partial<InsertLedgerEntry>) {
+export async function updateLedgerEntry(userId: number, id: number, data: Partial<InsertLedgerEntry>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(ledgerEntries).set(data).where(eq(ledgerEntries.id, id));
+  await db.update(ledgerEntries).set(data).where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.userId, userId)));
 }
 
-export async function deleteLedgerEntry(id: number) {
+export async function deleteLedgerEntry(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(ledgerEntries).where(eq(ledgerEntries.id, id));
+  await db.delete(ledgerEntries).where(and(eq(ledgerEntries.id, id), eq(ledgerEntries.userId, userId)));
 }
 
 // ─── 고정지출 ─────────────────────────────────────────────────────────────────
-export async function getFixedExpenses() {
+export async function getFixedExpenses(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(fixedExpenses).where(eq(fixedExpenses.isActive, true)).orderBy(fixedExpenses.mainCategory);
+  return db.select().from(fixedExpenses)
+    .where(and(eq(fixedExpenses.userId, userId), eq(fixedExpenses.isActive, true)))
+    .orderBy(fixedExpenses.mainCategory);
 }
 
-export async function createFixedExpense(data: InsertFixedExpense) {
+export async function createFixedExpense(userId: number, data: InsertFixedExpense) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(fixedExpenses).values(data);
+  await db.insert(fixedExpenses).values({ ...data, userId });
 }
 
-export async function updateFixedExpense(id: number, data: Partial<InsertFixedExpense>) {
+export async function updateFixedExpense(userId: number, id: number, data: Partial<InsertFixedExpense>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(fixedExpenses).set(data).where(eq(fixedExpenses.id, id));
+  await db.update(fixedExpenses).set(data).where(and(eq(fixedExpenses.id, id), eq(fixedExpenses.userId, userId)));
 }
 
-export async function deleteFixedExpense(id: number) {
+export async function deleteFixedExpense(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(fixedExpenses).set({ isActive: false }).where(eq(fixedExpenses.id, id));
+  await db.update(fixedExpenses).set({ isActive: false }).where(and(eq(fixedExpenses.id, id), eq(fixedExpenses.userId, userId)));
 }
 
 // ─── 주식 포트폴리오 ──────────────────────────────────────────────────────────
-export async function getStockPortfolio(snapshotMonth?: string) {
+export async function getStockPortfolio(userId: number, snapshotMonth?: string) {
   const db = await getDb();
   if (!db) return [];
   if (snapshotMonth) {
-    return db.select().from(stockPortfolio).where(eq(stockPortfolio.snapshotMonth, snapshotMonth));
+    return db.select().from(stockPortfolio)
+      .where(and(eq(stockPortfolio.userId, userId), eq(stockPortfolio.snapshotMonth, snapshotMonth)));
   }
-  // 최신 스냅샷 월 조회
   const latest = await db
     .select({ snapshotMonth: stockPortfolio.snapshotMonth })
     .from(stockPortfolio)
+    .where(eq(stockPortfolio.userId, userId))
     .orderBy(desc(stockPortfolio.snapshotMonth))
     .limit(1);
   if (latest.length === 0) return [];
   return db
     .select()
     .from(stockPortfolio)
-    .where(eq(stockPortfolio.snapshotMonth, latest[0].snapshotMonth!));
+    .where(and(eq(stockPortfolio.userId, userId), eq(stockPortfolio.snapshotMonth, latest[0].snapshotMonth!)));
 }
 
-export async function createStockEntry(data: InsertStockPortfolio) {
+export async function createStockEntry(userId: number, data: InsertStockPortfolio) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(stockPortfolio).values(data);
+  await db.insert(stockPortfolio).values({ ...data, userId });
 }
 
-export async function updateStockEntry(id: number, data: Partial<InsertStockPortfolio>) {
+export async function updateStockEntry(userId: number, id: number, data: Partial<InsertStockPortfolio>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(stockPortfolio).set(data).where(eq(stockPortfolio.id, id));
+  await db.update(stockPortfolio).set(data).where(and(eq(stockPortfolio.id, id), eq(stockPortfolio.userId, userId)));
 }
 
-export async function deleteStockEntry(id: number) {
+export async function deleteStockEntry(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(stockPortfolio).where(eq(stockPortfolio.id, id));
+  await db.delete(stockPortfolio).where(and(eq(stockPortfolio.id, id), eq(stockPortfolio.userId, userId)));
 }
 
 // ─── 저축 및 현금성 자산 ──────────────────────────────────────────────────────
-export async function getSavingsAssets() {
+export async function getSavingsAssets(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(savingsAssets).where(eq(savingsAssets.isActive, true)).orderBy(savingsAssets.category);
+  return db.select().from(savingsAssets)
+    .where(and(eq(savingsAssets.userId, userId), eq(savingsAssets.isActive, true)))
+    .orderBy(savingsAssets.category);
 }
 
-export async function createSavingsAsset(data: InsertSavingsAsset) {
+export async function createSavingsAsset(userId: number, data: InsertSavingsAsset) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(savingsAssets).values(data);
+  await db.insert(savingsAssets).values({ ...data, userId });
 }
 
-export async function updateSavingsAsset(id: number, data: Partial<InsertSavingsAsset>) {
+export async function updateSavingsAsset(userId: number, id: number, data: Partial<InsertSavingsAsset>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(savingsAssets).set(data).where(eq(savingsAssets.id, id));
+  await db.update(savingsAssets).set(data).where(and(eq(savingsAssets.id, id), eq(savingsAssets.userId, userId)));
 }
 
-export async function deleteSavingsAsset(id: number) {
+export async function deleteSavingsAsset(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(savingsAssets).set({ isActive: false }).where(eq(savingsAssets.id, id));
+  await db.update(savingsAssets).set({ isActive: false }).where(and(eq(savingsAssets.id, id), eq(savingsAssets.userId, userId)));
 }
 
 // ─── 연금 ─────────────────────────────────────────────────────────────────────
-export async function getPensionAssets() {
+export async function getPensionAssets(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(pensionAssets).orderBy(pensionAssets.pensionType);
+  return db.select().from(pensionAssets)
+    .where(eq(pensionAssets.userId, userId))
+    .orderBy(pensionAssets.pensionType);
 }
 
-export async function createPensionAsset(data: InsertPensionAsset) {
+export async function createPensionAsset(userId: number, data: InsertPensionAsset) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(pensionAssets).values(data);
+  await db.insert(pensionAssets).values({ ...data, userId });
 }
 
-export async function updatePensionAsset(id: number, data: Partial<InsertPensionAsset>) {
+export async function updatePensionAsset(userId: number, id: number, data: Partial<InsertPensionAsset>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(pensionAssets).set(data).where(eq(pensionAssets.id, id));
+  await db.update(pensionAssets).set(data).where(and(eq(pensionAssets.id, id), eq(pensionAssets.userId, userId)));
 }
 
-export async function deletePensionAsset(id: number) {
+export async function deletePensionAsset(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(pensionAssets).where(eq(pensionAssets.id, id));
+  await db.delete(pensionAssets).where(and(eq(pensionAssets.id, id), eq(pensionAssets.userId, userId)));
 }
 
 // ─── 기타 자산 ────────────────────────────────────────────────────────────────
-export async function getOtherAssets() {
+export async function getOtherAssets(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(otherAssets);
+  return db.select().from(otherAssets).where(eq(otherAssets.userId, userId));
 }
 
-export async function createOtherAsset(data: InsertOtherAsset) {
+export async function createOtherAsset(userId: number, data: InsertOtherAsset) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(otherAssets).values(data);
+  await db.insert(otherAssets).values({ ...data, userId });
 }
 
-export async function updateOtherAsset(id: number, data: Partial<InsertOtherAsset>) {
+export async function updateOtherAsset(userId: number, id: number, data: Partial<InsertOtherAsset>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(otherAssets).set(data).where(eq(otherAssets.id, id));
+  await db.update(otherAssets).set(data).where(and(eq(otherAssets.id, id), eq(otherAssets.userId, userId)));
 }
 
-export async function deleteOtherAsset(id: number) {
+export async function deleteOtherAsset(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(otherAssets).where(eq(otherAssets.id, id));
+  await db.delete(otherAssets).where(and(eq(otherAssets.id, id), eq(otherAssets.userId, userId)));
 }
 
 // ─── 부동산 ───────────────────────────────────────────────────────────────────
-export async function getRealEstates() {
+export async function getRealEstates(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(realEstates).orderBy(realEstates.aptName);
+  return db.select().from(realEstates)
+    .where(eq(realEstates.userId, userId))
+    .orderBy(realEstates.aptName);
 }
 
-export async function createRealEstate(data: InsertRealEstate) {
+export async function createRealEstate(userId: number, data: InsertRealEstate) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(realEstates).values(data);
+  await db.insert(realEstates).values({ ...data, userId });
 }
 
-export async function updateRealEstate(id: number, data: Partial<InsertRealEstate>) {
+export async function updateRealEstate(userId: number, id: number, data: Partial<InsertRealEstate>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(realEstates).set(data).where(eq(realEstates.id, id));
+  await db.update(realEstates).set(data).where(and(eq(realEstates.id, id), eq(realEstates.userId, userId)));
 }
 
-export async function deleteRealEstate(id: number) {
+export async function deleteRealEstate(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(realEstates).where(eq(realEstates.id, id));
+  await db.delete(realEstates).where(and(eq(realEstates.id, id), eq(realEstates.userId, userId)));
 }
 
 // ─── 블로그 체험단 ────────────────────────────────────────────────────────────
-export async function getBlogCampaigns() {
+export async function getBlogCampaigns(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(blogCampaigns).orderBy(desc(blogCampaigns.createdAt));
+  return db.select().from(blogCampaigns)
+    .where(eq(blogCampaigns.userId, userId))
+    .orderBy(desc(blogCampaigns.createdAt));
 }
 
-export async function createBlogCampaign(data: InsertBlogCampaign) {
+export async function createBlogCampaign(userId: number, data: InsertBlogCampaign) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(blogCampaigns).values(data);
+  await db.insert(blogCampaigns).values({ ...data, userId });
 }
 
-export async function updateBlogCampaign(id: number, data: Partial<InsertBlogCampaign>) {
+export async function updateBlogCampaign(userId: number, id: number, data: Partial<InsertBlogCampaign>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(blogCampaigns).set(data).where(eq(blogCampaigns.id, id));
+  await db.update(blogCampaigns).set(data).where(and(eq(blogCampaigns.id, id), eq(blogCampaigns.userId, userId)));
 }
 
-export async function deleteBlogCampaign(id: number) {
+export async function deleteBlogCampaign(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(blogCampaigns).where(eq(blogCampaigns.id, id));
+  await db.delete(blogCampaigns).where(and(eq(blogCampaigns.id, id), eq(blogCampaigns.userId, userId)));
 }
 
 // ─── 부채 ─────────────────────────────────────────────────────────────────────
-export async function getDebts() {
+export async function getDebts(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(debts);
+  return db.select().from(debts).where(eq(debts.userId, userId));
 }
 
-export async function createDebt(data: InsertDebt) {
+export async function createDebt(userId: number, data: InsertDebt) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(debts).values(data);
+  await db.insert(debts).values({ ...data, userId });
 }
 
-export async function updateDebt(id: number, data: Partial<InsertDebt>) {
+export async function updateDebt(userId: number, id: number, data: Partial<InsertDebt>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(debts).set(data).where(eq(debts.id, id));
+  await db.update(debts).set(data).where(and(eq(debts.id, id), eq(debts.userId, userId)));
 }
 
-export async function deleteDebt(id: number) {
+export async function deleteDebt(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(debts).where(eq(debts.id, id));
+  await db.delete(debts).where(and(eq(debts.id, id), eq(debts.userId, userId)));
 }
 
 // ─── 대시보드 집계 ────────────────────────────────────────────────────────────
-export async function getDashboardSummary() {
+export async function getDashboardSummary(userId: number) {
   const db = await getDb();
   if (!db) return null;
 
   const [stocks, savings, pension, other, debt] = await Promise.all([
-    getStockPortfolio(),
-    getSavingsAssets(),
-    getPensionAssets(),
-    getOtherAssets(),
-    getDebts(),
+    getStockPortfolio(userId),
+    getSavingsAssets(userId),
+    getPensionAssets(userId),
+    getOtherAssets(userId),
+    getDebts(userId),
   ]);
 
   const stockTotal = stocks.reduce((s, r) => s + (r.currentAmount ?? 0), 0);
@@ -394,158 +405,167 @@ export async function getDashboardSummary() {
 }
 
 // ─── 보유카드 ─────────────────────────────────────────────────────────────────
-export async function getCards() {
+export async function getCards(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(cards).orderBy(desc(cards.createdAt));
+  return db.select().from(cards)
+    .where(eq(cards.userId, userId))
+    .orderBy(desc(cards.createdAt));
 }
 
-export async function createCard(data: InsertCard) {
+export async function createCard(userId: number, data: InsertCard) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(cards).values(data);
+  await db.insert(cards).values({ ...data, userId });
 }
 
-export async function updateCard(id: number, data: Partial<InsertCard>) {
+export async function updateCard(userId: number, id: number, data: Partial<InsertCard>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(cards).set(data).where(eq(cards.id, id));
+  await db.update(cards).set(data).where(and(eq(cards.id, id), eq(cards.userId, userId)));
 }
 
-export async function deleteCard(id: number) {
+export async function deleteCard(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(cards).where(eq(cards.id, id));
+  await db.delete(cards).where(and(eq(cards.id, id), eq(cards.userId, userId)));
 }
 
 // ─── 포인트/마일리지 ──────────────────────────────────────────────────────────
-export async function getCardPoints() {
+export async function getCardPoints(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(cardPoints).orderBy(desc(cardPoints.createdAt));
+  return db.select().from(cardPoints)
+    .where(eq(cardPoints.userId, userId))
+    .orderBy(desc(cardPoints.createdAt));
 }
 
-export async function createCardPoint(data: InsertCardPoint) {
+export async function createCardPoint(userId: number, data: InsertCardPoint) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(cardPoints).values(data);
+  await db.insert(cardPoints).values({ ...data, userId });
 }
 
-export async function updateCardPoint(id: number, data: Partial<InsertCardPoint>) {
+export async function updateCardPoint(userId: number, id: number, data: Partial<InsertCardPoint>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(cardPoints).set(data).where(eq(cardPoints.id, id));
+  await db.update(cardPoints).set(data).where(and(eq(cardPoints.id, id), eq(cardPoints.userId, userId)));
 }
 
-export async function deleteCardPoint(id: number) {
+export async function deleteCardPoint(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(cardPoints).where(eq(cardPoints.id, id));
+  await db.delete(cardPoints).where(and(eq(cardPoints.id, id), eq(cardPoints.userId, userId)));
 }
 
 // ─── 구독결제 서비스 ──────────────────────────────────────────────────────────
-export async function getSubscriptions() {
+export async function getSubscriptions(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(subscriptions).orderBy(desc(subscriptions.createdAt));
+  return db.select().from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .orderBy(desc(subscriptions.createdAt));
 }
 
-export async function createSubscription(data: InsertSubscription) {
+export async function createSubscription(userId: number, data: InsertSubscription) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(subscriptions).values(data);
+  await db.insert(subscriptions).values({ ...data, userId });
 }
 
-export async function updateSubscription(id: number, data: Partial<InsertSubscription>) {
+export async function updateSubscription(userId: number, id: number, data: Partial<InsertSubscription>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(subscriptions).set(data).where(eq(subscriptions.id, id));
+  await db.update(subscriptions).set(data).where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)));
 }
 
-export async function deleteSubscription(id: number) {
+export async function deleteSubscription(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(subscriptions).where(eq(subscriptions.id, id));
+  await db.delete(subscriptions).where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)));
 }
 
 // ─── 부수입 카테고리 ──────────────────────────────────────────────────────────
-export async function getSideIncomeCategories() {
+export async function getSideIncomeCategories(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(sideIncomeCategories).orderBy(sideIncomeCategories.name);
+  return db.select().from(sideIncomeCategories)
+    .where(eq(sideIncomeCategories.userId, userId))
+    .orderBy(sideIncomeCategories.name);
 }
-export async function createSideIncomeCategory(data: InsertSideIncomeCategory) {
+export async function createSideIncomeCategory(userId: number, data: InsertSideIncomeCategory) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(sideIncomeCategories).values(data);
+  await db.insert(sideIncomeCategories).values({ ...data, userId });
 }
-export async function updateSideIncomeCategory(id: number, data: Partial<InsertSideIncomeCategory>) {
+export async function updateSideIncomeCategory(userId: number, id: number, data: Partial<InsertSideIncomeCategory>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(sideIncomeCategories).set(data).where(eq(sideIncomeCategories.id, id));
+  await db.update(sideIncomeCategories).set(data).where(and(eq(sideIncomeCategories.id, id), eq(sideIncomeCategories.userId, userId)));
 }
-export async function deleteSideIncomeCategory(id: number) {
+export async function deleteSideIncomeCategory(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(sideIncomeCategories).where(eq(sideIncomeCategories.id, id));
+  await db.delete(sideIncomeCategories).where(and(eq(sideIncomeCategories.id, id), eq(sideIncomeCategories.userId, userId)));
 }
 
 // ─── 부수입 내역 ──────────────────────────────────────────────────────────────
-export async function getSideIncomes(year: number, month: number) {
+export async function getSideIncomes(userId: number, year: number, month: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(sideIncomes)
-    .where(and(eq(sideIncomes.year, year), eq(sideIncomes.month, month)))
+    .where(and(eq(sideIncomes.userId, userId), eq(sideIncomes.year, year), eq(sideIncomes.month, month)))
     .orderBy(desc(sideIncomes.incomeDate));
 }
-export async function createSideIncome(data: InsertSideIncome) {
+export async function createSideIncome(userId: number, data: InsertSideIncome) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(sideIncomes).values(data).$returningId();
+  const [result] = await db.insert(sideIncomes).values({ ...data, userId }).$returningId();
   return result;
 }
-export async function updateSideIncome(id: number, data: Partial<InsertSideIncome>) {
+export async function updateSideIncome(userId: number, id: number, data: Partial<InsertSideIncome>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(sideIncomes).set(data).where(eq(sideIncomes.id, id));
+  await db.update(sideIncomes).set(data).where(and(eq(sideIncomes.id, id), eq(sideIncomes.userId, userId)));
 }
-export async function deleteSideIncome(id: number) {
+export async function deleteSideIncome(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  // 연결된 가계부 항목도 삭제
-  const [entry] = await db.select().from(sideIncomes).where(eq(sideIncomes.id, id)).limit(1);
+  const [entry] = await db.select().from(sideIncomes)
+    .where(and(eq(sideIncomes.id, id), eq(sideIncomes.userId, userId))).limit(1);
   if (entry?.ledgerEntryId) {
-    await db.delete(ledgerEntries).where(eq(ledgerEntries.id, entry.ledgerEntryId));
+    await db.delete(ledgerEntries).where(and(eq(ledgerEntries.id, entry.ledgerEntryId), eq(ledgerEntries.userId, userId)));
   }
-  await db.delete(sideIncomes).where(eq(sideIncomes.id, id));
+  await db.delete(sideIncomes).where(and(eq(sideIncomes.id, id), eq(sideIncomes.userId, userId)));
 }
-export async function getSideIncomeMonthlySummary(year: number) {
+export async function getSideIncomeMonthlySummary(userId: number, year: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(sideIncomes)
-    .where(eq(sideIncomes.year, year))
+    .where(and(eq(sideIncomes.userId, userId), eq(sideIncomes.year, year)))
     .orderBy(sideIncomes.month, desc(sideIncomes.incomeDate));
 }
 
 // ─── 계좌 ─────────────────────────────────────────────────────────────────────
-export async function listAccounts() {
+export async function listAccounts(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(accounts).orderBy(accounts.createdAt);
+  return db.select().from(accounts)
+    .where(eq(accounts.userId, userId))
+    .orderBy(accounts.createdAt);
 }
-export async function createAccount(data: InsertAccount) {
+export async function createAccount(userId: number, data: InsertAccount) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.insert(accounts).values(data);
+  return db.insert(accounts).values({ ...data, userId });
 }
-export async function updateAccount(id: number, data: Partial<InsertAccount>) {
+export async function updateAccount(userId: number, id: number, data: Partial<InsertAccount>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.update(accounts).set(data).where(eq(accounts.id, id));
+  return db.update(accounts).set(data).where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
 }
-export async function deleteAccount(id: number) {
+export async function deleteAccount(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.delete(accounts).where(eq(accounts.id, id));
+  return db.delete(accounts).where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
 }
-

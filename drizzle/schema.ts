@@ -29,10 +29,11 @@ export type InsertUser = typeof users.$inferInsert;
 // ─── 가계부 ───────────────────────────────────────────────────────────────────
 export const ledgerEntries = mysqlTable("ledger_entries", {
   id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
   entryDate: date("entry_date").notNull(),
   year: int("year").notNull(),
   month: int("month").notNull(),
-  mainCategory: varchar("main_category", { length: 50 }).notNull(), // 수입, 고정지출, 변동지출, 저축/투자
+  mainCategory: varchar("main_category", { length: 50 }).notNull(),
   subCategory: varchar("sub_category", { length: 100 }),
   description: text("description"),
   amount: bigint("amount", { mode: "number" }).notNull().default(0),
@@ -47,7 +48,8 @@ export type InsertLedgerEntry = typeof ledgerEntries.$inferInsert;
 // ─── 고정지출 ─────────────────────────────────────────────────────────────────
 export const fixedExpenses = mysqlTable("fixed_expenses", {
   id: int("id").autoincrement().primaryKey(),
-  mainCategory: varchar("main_category", { length: 100 }).notNull(), // 주거비, 통신비, 보험료 등
+  userId: int("user_id").notNull().default(0),
+  mainCategory: varchar("main_category", { length: 100 }).notNull(),
   subCategory: varchar("sub_category", { length: 100 }),
   paymentAccount: varchar("payment_account", { length: 100 }),
   monthlyAmount: bigint("monthly_amount", { mode: "number" }).notNull().default(0),
@@ -67,7 +69,8 @@ export type InsertFixedExpense = typeof fixedExpenses.$inferInsert;
 // ─── 주식 포트폴리오 ──────────────────────────────────────────────────────────
 export const stockPortfolio = mysqlTable("stock_portfolio", {
   id: int("id").autoincrement().primaryKey(),
-  market: varchar("market", { length: 20 }), // NASDAQ, KRX 등
+  userId: int("user_id").notNull().default(0),
+  market: varchar("market", { length: 20 }),
   broker: varchar("broker", { length: 50 }),
   sector: varchar("sector", { length: 50 }),
   stockName: varchar("stock_name", { length: 100 }).notNull(),
@@ -79,7 +82,7 @@ export const stockPortfolio = mysqlTable("stock_portfolio", {
   currentAmount: bigint("current_amount", { mode: "number" }).default(0),
   returnRate: decimal("return_rate", { precision: 10, scale: 6 }).default("0"),
   note: text("note"),
-  snapshotMonth: varchar("snapshot_month", { length: 7 }), // YYYY-MM (월별 스냅샷)
+  snapshotMonth: varchar("snapshot_month", { length: 7 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -90,11 +93,12 @@ export type InsertStockPortfolio = typeof stockPortfolio.$inferInsert;
 // ─── 저축 및 현금성 자산 ──────────────────────────────────────────────────────
 export const savingsAssets = mysqlTable("savings_assets", {
   id: int("id").autoincrement().primaryKey(),
-  category: varchar("category", { length: 50 }).notNull(), // 예적금, 입출금통장, 기타
+  userId: int("user_id").notNull().default(0),
+  category: varchar("category", { length: 50 }).notNull(),
   description: varchar("description", { length: 100 }).notNull(),
   bank: varchar("bank", { length: 100 }),
   accountNumber: varchar("account_number", { length: 100 }),
-  monthlyDeposit: varchar("monthly_deposit", { length: 50 }), // 변동금액 등 텍스트도 허용
+  monthlyDeposit: varchar("monthly_deposit", { length: 50 }),
   interestRate: decimal("interest_rate", { precision: 10, scale: 4 }),
   totalAmount: decimal("total_amount", { precision: 20, scale: 4 }).default("0"),
   expiryDate: varchar("expiry_date", { length: 50 }),
@@ -110,9 +114,10 @@ export type InsertSavingsAsset = typeof savingsAssets.$inferInsert;
 // ─── 연금 ─────────────────────────────────────────────────────────────────────
 export const pensionAssets = mysqlTable("pension_assets", {
   id: int("id").autoincrement().primaryKey(),
-  pensionType: varchar("pension_type", { length: 50 }).notNull(), // 개인연금, 퇴직연금
+  userId: int("user_id").notNull().default(0),
+  pensionType: varchar("pension_type", { length: 50 }).notNull(),
   company: varchar("company", { length: 100 }),
-  assetType: varchar("asset_type", { length: 20 }), // ETF, 펀드, 예적금
+  assetType: varchar("asset_type", { length: 20 }),
   stockName: varchar("stock_name", { length: 100 }),
   ticker: varchar("ticker", { length: 20 }),
   avgBuyPrice: bigint("avg_buy_price", { mode: "number" }).default(0),
@@ -132,7 +137,8 @@ export type InsertPensionAsset = typeof pensionAssets.$inferInsert;
 // ─── 기타 자산 ────────────────────────────────────────────────────────────────
 export const otherAssets = mysqlTable("other_assets", {
   id: int("id").autoincrement().primaryKey(),
-  category: varchar("category", { length: 100 }).notNull(), // 교직원공제회, 저축성보험 등
+  userId: int("user_id").notNull().default(0),
+  category: varchar("category", { length: 100 }).notNull(),
   monthlyDeposit: bigint("monthly_deposit", { mode: "number" }).default(0),
   paidAmount: bigint("paid_amount", { mode: "number" }).default(0),
   totalAmount: bigint("total_amount", { mode: "number" }).default(0),
@@ -147,24 +153,25 @@ export type InsertOtherAsset = typeof otherAssets.$inferInsert;
 // ─── 부동산 ───────────────────────────────────────────────────────────────────
 export const realEstates = mysqlTable("real_estates", {
   id: int("id").autoincrement().primaryKey(),
-  district: varchar("district", { length: 100 }), // 구
-  dong: varchar("dong", { length: 100 }), // 동
-  aptName: varchar("apt_name", { length: 100 }).notNull(), // 아파트명
+  userId: int("user_id").notNull().default(0),
+  district: varchar("district", { length: 100 }),
+  dong: varchar("dong", { length: 100 }),
+  aptName: varchar("apt_name", { length: 100 }).notNull(),
   builtYear: varchar("built_year", { length: 20 }),
   households: int("households"),
-  areaSize: decimal("area_size", { precision: 10, scale: 2 }), // 평(㎡)
+  areaSize: decimal("area_size", { precision: 10, scale: 2 }),
   floor: varchar("floor", { length: 20 }),
   direction: varchar("direction", { length: 20 }),
-  salePrice: bigint("sale_price", { mode: "number" }).default(0), // 매매가 (만원)
-  leasePrice: bigint("lease_price", { mode: "number" }).default(0), // 전세가 (만원)
-  leaseRatio: decimal("lease_ratio", { precision: 10, scale: 6 }), // 전세가율
-  gap: bigint("gap", { mode: "number" }).default(0), // 갭
-  pricePerPyeong: decimal("price_per_pyeong", { precision: 15, scale: 4 }), // 평당가
-  price201912: bigint("price_201912", { mode: "number" }).default(0), // 19.12 실거래가
-  price202112: bigint("price_202112", { mode: "number" }).default(0), // 21.12 실거래가
-  currentPrice: bigint("current_price", { mode: "number" }).default(0), // 현재가
-  riseFrom201912: decimal("rise_from_201912", { precision: 10, scale: 6 }), // 19.12~현재 상승률
-  riseFrom202112: decimal("rise_from_202112", { precision: 10, scale: 6 }), // 21.12~현재 상승률
+  salePrice: bigint("sale_price", { mode: "number" }).default(0),
+  leasePrice: bigint("lease_price", { mode: "number" }).default(0),
+  leaseRatio: decimal("lease_ratio", { precision: 10, scale: 6 }),
+  gap: bigint("gap", { mode: "number" }).default(0),
+  pricePerPyeong: decimal("price_per_pyeong", { precision: 15, scale: 4 }),
+  price201912: bigint("price_201912", { mode: "number" }).default(0),
+  price202112: bigint("price_202112", { mode: "number" }).default(0),
+  currentPrice: bigint("current_price", { mode: "number" }).default(0),
+  riseFrom201912: decimal("rise_from_201912", { precision: 10, scale: 6 }),
+  riseFrom202112: decimal("rise_from_202112", { precision: 10, scale: 6 }),
   note: text("note"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -176,9 +183,10 @@ export type InsertRealEstate = typeof realEstates.$inferInsert;
 // ─── 블로그 체험단 ────────────────────────────────────────────────────────────
 export const blogCampaigns = mysqlTable("blog_campaigns", {
   id: int("id").autoincrement().primaryKey(),
-  platform: varchar("platform", { length: 100 }), // 디너의여왕, 리뷰노트 등
-  campaignType: varchar("campaign_type", { length: 50 }), // 방문형, 배송형 등
-  category: varchar("category", { length: 50 }), // 카페, 맛집, 숙소 등
+  userId: int("user_id").notNull().default(0),
+  platform: varchar("platform", { length: 100 }),
+  campaignType: varchar("campaign_type", { length: 50 }),
+  category: varchar("category", { length: 50 }),
   businessName: varchar("business_name", { length: 200 }),
   amount: bigint("amount", { mode: "number" }).default(0),
   startDate: varchar("start_date", { length: 20 }),
@@ -197,6 +205,7 @@ export type InsertBlogCampaign = typeof blogCampaigns.$inferInsert;
 // ─── 부채 ─────────────────────────────────────────────────────────────────────
 export const debts = mysqlTable("debts", {
   id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
   category: varchar("category", { length: 100 }).notNull(),
   description: varchar("description", { length: 200 }),
   debtType: varchar("debt_type", { length: 50 }),
@@ -216,18 +225,19 @@ export type InsertDebt = typeof debts.$inferInsert;
 // ─── 보유카드 ─────────────────────────────────────────────────────────────────
 export const cards = mysqlTable("cards", {
   id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
   cardType: mysqlEnum("card_type", ["신용카드", "체크카드"]).notNull().default("신용카드"),
-  cardCompany: varchar("card_company", { length: 100 }).notNull(), // 카드사
-  cardName: varchar("card_name", { length: 200 }),                 // 카드명
-  benefits: text("benefits"),                                       // 혜택 (textarea)
-  annualFee: bigint("annual_fee", { mode: "number" }).default(0),  // 연회비
-  performance: varchar("performance", { length: 200 }),             // 실적
-  purpose: varchar("purpose", { length: 200 }),                    // 용도
-  creditLimit: bigint("credit_limit", { mode: "number" }).default(0), // 카드한도
-  expiryDate: varchar("expiry_date", { length: 10 }),               // 유효기간 DD/YY
-  paymentDate: varchar("payment_date", { length: 50 }),             // 결제일
-  paymentAccount: varchar("payment_account", { length: 200 }),      // 결제계좌
-  note: text("note"),                                               // 비고
+  cardCompany: varchar("card_company", { length: 100 }).notNull(),
+  cardName: varchar("card_name", { length: 200 }),
+  benefits: text("benefits"),
+  annualFee: bigint("annual_fee", { mode: "number" }).default(0),
+  performance: varchar("performance", { length: 200 }),
+  purpose: varchar("purpose", { length: 200 }),
+  creditLimit: bigint("credit_limit", { mode: "number" }).default(0),
+  expiryDate: varchar("expiry_date", { length: 10 }),
+  paymentDate: varchar("payment_date", { length: 50 }),
+  paymentAccount: varchar("payment_account", { length: 200 }),
+  note: text("note"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -238,10 +248,11 @@ export type InsertCard = typeof cards.$inferInsert;
 // ─── 포인트/마일리지 ──────────────────────────────────────────────────────────
 export const cardPoints = mysqlTable("card_points", {
   id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 200 }).notNull(),   // 카드/포인트명
-  benefits: text("benefits"),                          // 혜택
-  balance: bigint("balance", { mode: "number" }).default(0), // 잔액
-  purpose: varchar("purpose", { length: 200 }),        // 용도
+  userId: int("user_id").notNull().default(0),
+  name: varchar("name", { length: 200 }).notNull(),
+  benefits: text("benefits"),
+  balance: bigint("balance", { mode: "number" }).default(0),
+  purpose: varchar("purpose", { length: 200 }),
   note: text("note"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -250,17 +261,18 @@ export const cardPoints = mysqlTable("card_points", {
 export type CardPoint = typeof cardPoints.$inferSelect;
 export type InsertCardPoint = typeof cardPoints.$inferInsert;
 
-// ─── 정기결제 서비스 ──────────────────────────────────────────────────────────
+// ─── 구독결제 서비스 ──────────────────────────────────────────────────────────
 export const subscriptions = mysqlTable("subscriptions", {
   id: int("id").autoincrement().primaryKey(),
-  serviceName: varchar("service_name", { length: 200 }).notNull(),           // 구독 서비스명
+  userId: int("user_id").notNull().default(0),
+  serviceName: varchar("service_name", { length: 200 }).notNull(),
   category: mysqlEnum("category", ["비즈니스", "미디어", "자기계발", "기타"]).notNull().default("기타"),
   billingCycle: mysqlEnum("billing_cycle", ["매달", "매주", "매일", "매년"]).notNull().default("매달"),
-  price: bigint("price", { mode: "number" }).notNull().default(0),           // 구독료
-  sharedCount: int("shared_count").notNull().default(1),                       // 공유 인원 (1=혼자, 2이상=공유)
-  billingDay: int("billing_day"),                                             // 매월/매년 결제일 (1~31, 매년은 월일 MMDD 형식)
-  startDate: varchar("start_date", { length: 20 }),                          // 구독시작일 YYYY-MM-DD
-  paymentMethod: varchar("payment_method", { length: 200 }),                 // 결제방법 (카드명/현금/계좌출금)
+  price: bigint("price", { mode: "number" }).notNull().default(0),
+  sharedCount: int("shared_count").notNull().default(1),
+  billingDay: int("billing_day"),
+  startDate: varchar("start_date", { length: 20 }),
+  paymentMethod: varchar("payment_method", { length: 200 }),
   note: text("note"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -272,8 +284,9 @@ export type InsertSubscription = typeof subscriptions.$inferInsert;
 // ─── 부수입 카테고리 ──────────────────────────────────────────────────────────
 export const sideIncomeCategories = mysqlTable("side_income_categories", {
   id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),          // 카테고리명 (예: 블로그, 유튜브)
-  color: varchar("color", { length: 20 }).default("#5b7cfa"), // 표시 색상
+  userId: int("user_id").notNull().default(0),
+  name: varchar("name", { length: 100 }).notNull(),
+  color: varchar("color", { length: 20 }).default("#5b7cfa"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -283,16 +296,17 @@ export type InsertSideIncomeCategory = typeof sideIncomeCategories.$inferInsert;
 // ─── 부수입 내역 ──────────────────────────────────────────────────────────────
 export const sideIncomes = mysqlTable("side_incomes", {
   id: int("id").autoincrement().primaryKey(),
-  incomeDate: date("income_date").notNull(),                  // 수입 날짜
+  userId: int("user_id").notNull().default(0),
+  incomeDate: date("income_date").notNull(),
   year: int("year").notNull(),
   month: int("month").notNull(),
-  categoryId: int("category_id"),                            // side_income_categories.id (nullable)
-  categoryName: varchar("category_name", { length: 100 }),   // 카테고리명 스냅샷
-  amount: bigint("amount", { mode: "number" }).notNull().default(0), // 금액
-  description: varchar("description", { length: 300 }),      // 내용
-  isRegular: boolean("is_regular").notNull().default(false),  // 정기 여부
+  categoryId: int("category_id"),
+  categoryName: varchar("category_name", { length: 100 }),
+  amount: bigint("amount", { mode: "number" }).notNull().default(0),
+  description: varchar("description", { length: 300 }),
+  isRegular: boolean("is_regular").notNull().default(false),
   note: text("note"),
-  ledgerEntryId: int("ledger_entry_id"),                     // 가계부 연동 ID
+  ledgerEntryId: int("ledger_entry_id"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -302,13 +316,14 @@ export type InsertSideIncome = typeof sideIncomes.$inferInsert;
 // ─── 보유 계좌 ────────────────────────────────────────────────────────────────
 export const accounts = mysqlTable("accounts", {
   id: int("id").autoincrement().primaryKey(),
-  bankName: varchar("bank_name", { length: 100 }).notNull(),           // 은행/금융기관명
+  userId: int("user_id").notNull().default(0),
+  bankName: varchar("bank_name", { length: 100 }).notNull(),
   accountType: mysqlEnum("account_type", ["입출금", "저축", "CMA", "파킹통장", "청약", "기타"]).notNull().default("입출금"),
-  accountNumber: varchar("account_number", { length: 100 }),           // 계좌번호 (선택)
-  accountHolder: varchar("account_holder", { length: 100 }),           // 예금주
-  balance: bigint("balance", { mode: "number" }).notNull().default(0), // 현재 잔액
-  interestRate: varchar("interest_rate", { length: 20 }),              // 금리 (예: 3.5%)
-  linkedCard: varchar("linked_card", { length: 200 }),                 // 연결 카드명
+  accountNumber: varchar("account_number", { length: 100 }),
+  accountHolder: varchar("account_holder", { length: 100 }),
+  balance: bigint("balance", { mode: "number" }).notNull().default(0),
+  interestRate: varchar("interest_rate", { length: 20 }),
+  linkedCard: varchar("linked_card", { length: 200 }),
   note: text("note"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
