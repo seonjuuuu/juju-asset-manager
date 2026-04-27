@@ -9,9 +9,10 @@ import * as db from "./db";
 const subscriptionInput = z.object({
   serviceName: z.string(),
   category: z.enum(["비즈니스", "미디어", "자기계발", "기타"]).default("기타"),
-  billingCycle: z.enum(["매달", "매주", "매일"]).default("매달"),
+  billingCycle: z.enum(["매달", "매주", "매일", "매년"]).default("매달"),
   price: z.number().default(0),
   sharedCount: z.number().int().min(1).default(1),
+  billingDay: z.number().int().min(1).max(1231).nullable().optional(),
   startDate: z.string().optional(),
   paymentMethod: z.string().optional(),
   note: z.string().optional(),

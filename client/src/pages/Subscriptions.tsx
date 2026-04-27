@@ -168,35 +168,44 @@ function ServiceLogo({
 // ─── 유틸리티 ────────────────────────────────────────────────────────────────
 function calcNextPaymentDate(
   startDate: string,
-  billingCycle: "매달" | "매주" | "매일"
+  billingCycle: "매달" | "매주" | "매일" | "매년",
+  billingDay?: number | null
 ): string {
   if (!startDate) return "-";
   const today = new Date();
   const start = new Date(startDate);
   if (isNaN(start.getTime())) return "-";
-  let next = new Date(start);
   if (billingCycle === "매달") {
-    while (next <= today) {
-      next = new Date(next);
-      next.setMonth(next.getMonth() + 1);
+    const day = billingDay ?? start.getDate();
+    let next = new Date(today.getFullYear(), today.getMonth(), day);
+    if (next <= today) next = new Date(today.getFullYear(), today.getMonth() + 1, day);
+    return next.toISOString().slice(0, 10);
+  }
+  if (billingCycle === "매년") {
+    let bMonth: number, bDay: number;
+    if (billingDay && billingDay > 100) {
+      bMonth = Math.floor(billingDay / 100) - 1;
+      bDay = billingDay % 100;
+    } else {
+      bMonth = start.getMonth();
+      bDay = start.getDate();
     }
-  } else if (billingCycle === "매주") {
-    while (next <= today) {
-      next = new Date(next);
-      next.setDate(next.getDate() + 7);
-    }
+    let next = new Date(today.getFullYear(), bMonth, bDay);
+    if (next <= today) next = new Date(today.getFullYear() + 1, bMonth, bDay);
+    return next.toISOString().slice(0, 10);
+  }
+  let next = new Date(start);
+  if (billingCycle === "매주") {
+    while (next <= today) { next = new Date(next); next.setDate(next.getDate() + 7); }
   } else {
-    while (next <= today) {
-      next = new Date(next);
-      next.setDate(next.getDate() + 1);
-    }
+    while (next <= today) { next = new Date(next); next.setDate(next.getDate() + 1); }
   }
   return next.toISOString().slice(0, 10);
 }
 
 function calcMonthlyCost(
   price: number,
-  billingCycle: "매달" | "매주" | "매일",
+  billingCycle: "매달" | "매주" | "매일" | "매년",
   sharedCount: number = 1
 ): number {
   const base = billingCycle === "매달" ? price : billingCycle === "매주" ? Math.round((price * 52) / 12) : price * 30;
@@ -205,7 +214,7 @@ function calcMonthlyCost(
 
 function calcYearlyCost(
   price: number,
-  billingCycle: "매달" | "매주" | "매일",
+  billingCycle: "매달" | "매주" | "매일" | "매년",
   sharedCount: number = 1
 ): number {
   const base = billingCycle === "매달" ? price * 12 : billingCycle === "매주" ? price * 52 : price * 365;
@@ -217,9 +226,10 @@ type SubscriptionRow = {
   id: number;
   serviceName: string;
   category: "비즈니스" | "미디어" | "자기계발" | "기타";
-  billingCycle: "매달" | "매주" | "매일";
+  billingCycle: "매달" | "매주" | "매일" | "매년";
   price: number;
   sharedCount: number;
+  billingDay: number | null;
   startDate: string | null;
   paymentMethod: string | null;
   note: string | null;
@@ -235,9 +245,10 @@ type CardRow = {
 const emptySubscription = {
   serviceName: "",
   category: "기타" as "비즈니스" | "미디어" | "자기계발" | "기타",
-  billingCycle: "매달" as "매달" | "매주" | "매일",
+  billingCycle: "매달" as "매달" | "매주" | "매일" | "매년",
   price: 0,
   sharedCount: 1,
+  billingDay: null as number | null,
   startDate: "",
   paymentMethod: "",
   note: "",
@@ -342,7 +353,22 @@ function SubscriptionDialog({
               <Label>결제주기</Label>
               <Select
                 value={form.billingCycle}
-                onValueChange={(v) => set("billingCycle", v)}
+                onValueChange={(v) => {
+                set("billingCycle", v);
+                // 주기 변경 시 billingDay 재계산
+                if (form.startDate) {
+                  const d = new Date(form.startDate);
+                  if (!isNaN(d.getTime())) {
+                    if (v === "매년") {
+                      set("billingDay", (d.getMonth() + 1) * 100 + d.getDate());
+                    } else if (v === "매달") {
+                      set("billingDay", d.getDate());
+                    } else {
+                      set("billingDay", null);
+                    }
+                  }
+                }
+              }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -431,7 +457,20 @@ function SubscriptionDialog({
             <Input
               type="date"
               value={form.startDate}
-              onChange={(e) => set("startDate", e.target.value)}
+              onChange={(e) => {
+                set("startDate", e.target.value);
+                // 시작일 입력 시 결제일 자동 채우기 (아직 설정 안 된 경우)
+                if (e.target.value && !form.billingDay) {
+                  const d = new Date(e.target.value);
+                  if (!isNaN(d.getTime())) {
+                    if (form.billingCycle === "매년") {
+                      set("billingDay", (d.getMonth() + 1) * 100 + d.getDate());
+                    } else {
+                      set("billingDay", d.getDate());
+                    }
+                  }
+                }
+              }}
             />
           </div>
           <div className="space-y-1.5">
@@ -452,6 +491,61 @@ function SubscriptionDialog({
               </SelectContent>
             </Select>
           </div>
+          {(form.billingCycle === "매달" || form.billingCycle === "매년") && (
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                결제일
+                <span className="text-xs text-muted-foreground font-normal">
+                  {form.billingCycle === "매년" ? "(매년 MM/DD 형식)" : "(매월 N일)"}
+                </span>
+              </Label>
+              {form.billingCycle === "매달" ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={form.billingDay ?? ""}
+                    onChange={(e) => set("billingDay", e.target.value ? Number(e.target.value) : null)}
+                    placeholder="예: 15"
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">일</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={form.billingDay ? Math.floor(form.billingDay / 100) : ""}
+                    onChange={(e) => {
+                      const m = e.target.value ? Number(e.target.value) : 0;
+                      const d = form.billingDay ? form.billingDay % 100 : 1;
+                      set("billingDay", m * 100 + d);
+                    }}
+                    placeholder="월"
+                    className="w-16"
+                  />
+                  <span className="text-sm text-muted-foreground">월</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={form.billingDay ? form.billingDay % 100 : ""}
+                    onChange={(e) => {
+                      const d = e.target.value ? Number(e.target.value) : 0;
+                      const m = form.billingDay ? Math.floor(form.billingDay / 100) : 1;
+                      set("billingDay", m * 100 + d);
+                    }}
+                    placeholder="일"
+                    className="w-16"
+                  />
+                  <span className="text-sm text-muted-foreground">일</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>비고</Label>
             <Textarea
@@ -659,7 +753,8 @@ export default function Subscriptions() {
                     const yearly = calcYearlyCost(sub.price, sub.billingCycle, sub.sharedCount);
                     const nextDate = calcNextPaymentDate(
                       sub.startDate ?? "",
-                      sub.billingCycle
+                      sub.billingCycle,
+                      sub.billingDay
                     );
                     return (
                       <div
@@ -712,6 +807,7 @@ export default function Subscriptions() {
                                     billingCycle: sub.billingCycle,
                                     price: sub.price,
                                     sharedCount: sub.sharedCount ?? 1,
+                                    billingDay: sub.billingDay ?? null,
                                     startDate: sub.startDate ?? "",
                                     paymentMethod: sub.paymentMethod ?? "",
                                     note: sub.note ?? "",
@@ -742,11 +838,14 @@ export default function Subscriptions() {
                           style={{ borderColor: "var(--border)" }}
                         >
                           <div>
-                            <p className="text-muted-foreground">{sub.sharedCount > 1 ? "내 부담 (월)" : "월 비용"}</p>
+                            <p className="text-muted-foreground">{sub.billingCycle === "매년" ? "연 비용" : sub.sharedCount > 1 ? "내 부담 (월)" : "월 비용"}</p>
                             <p className="font-semibold">
-                              ₩{monthly.toLocaleString("ko-KR")}
+                              {sub.billingCycle === "매년"
+                                ? `₩${Math.round(sub.price / Math.max(1, sub.sharedCount)).toLocaleString("ko-KR")}`
+                                : `₩${monthly.toLocaleString("ko-KR")}`
+                              }
                             </p>
-                            {sub.sharedCount > 1 && (
+                            {sub.sharedCount > 1 && sub.billingCycle !== "매년" && (
                               <p className="text-muted-foreground" style={{fontSize: "10px"}}>총 ₩{calcMonthlyCost(sub.price, sub.billingCycle).toLocaleString("ko-KR")}</p>
                             )}
                           </div>

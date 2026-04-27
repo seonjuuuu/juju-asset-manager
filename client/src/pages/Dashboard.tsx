@@ -47,10 +47,34 @@ function StatCard({
   );
 }
 
-/** 결제주기별 월 비용 환산 (공유 인원 반영) */
-function calcMonthlyCost(price: number, billingCycle: string, sharedCount: number = 1): number {
-  const base = billingCycle === "매달" ? price : billingCycle === "매주" ? Math.round(price * 4.33) : billingCycle === "매일" ? price * 30 : price;
-  return Math.round(base / Math.max(1, sharedCount));
+/** 특정 월(month 1-12)에 해당 구독의 실제 결제 비용 반환 */
+function calcSubCostForMonth(
+  price: number,
+  billingCycle: string,
+  sharedCount: number = 1,
+  billingDay?: number | null,
+  startDate?: string | null,
+  month?: number
+): number {
+  const shared = Math.max(1, sharedCount);
+  if (billingCycle === "매달" || billingCycle === "매주" || billingCycle === "매일") {
+    // 매달/매주/매일은 모든 달에 발생 (월 환산)
+    const base = billingCycle === "매달" ? price : billingCycle === "매주" ? Math.round(price * 4.33) : price * 30;
+    return Math.round(base / shared);
+  }
+  if (billingCycle === "매년" && month !== undefined) {
+    // 매년: 결제 발생 월에만 금액 반영
+    let billingMonth: number;
+    if (billingDay && billingDay > 100) {
+      billingMonth = Math.floor(billingDay / 100);
+    } else if (startDate) {
+      billingMonth = new Date(startDate).getMonth() + 1;
+    } else {
+      billingMonth = 1;
+    }
+    return billingMonth === month ? Math.round(price / shared) : 0;
+  }
+  return 0;
 }
 
 export default function Dashboard() {
@@ -66,7 +90,11 @@ export default function Dashboard() {
   // 월별 구독결제 구독비 (모든 달에 동일하게 적용)
   const monthlySubCost = useMemo(() => {
     if (!subscriptions) return 0;
-    return subscriptions.reduce((sum, sub) => sum + calcMonthlyCost(sub.price, sub.billingCycle, (sub as { sharedCount?: number }).sharedCount ?? 1), 0);
+    const currentMonth = new Date().getMonth() + 1;
+    return subscriptions.reduce((sum, sub) => {
+      const s = sub as { price: number; billingCycle: string; sharedCount?: number; billingDay?: number | null; startDate?: string | null };
+      return sum + calcSubCostForMonth(s.price, s.billingCycle, s.sharedCount ?? 1, s.billingDay, s.startDate, currentMonth);
+    }, 0);
   }, [subscriptions]);
 
   // 부수입 월별 합계 맵 (month → total)
@@ -94,8 +122,12 @@ export default function Dashboard() {
       // 별도로 표시하기 위해 sideIncome 데이터를 추가로 합산)
       const sideIncome = sideIncomeByMonth[month] ?? 0;
 
-      // 구독결제 구독비를 지출에 합산
-      const totalExp = fixedExp + varExp + monthlySubCost;
+      // 구독결제: 해당 월에 실제 발생하는 구독비만 합산
+      const subCostThisMonth = (subscriptions ?? []).reduce((sum, sub) => {
+        const s = sub as { price: number; billingCycle: string; sharedCount?: number; billingDay?: number | null; startDate?: string | null };
+        return sum + calcSubCostForMonth(s.price, s.billingCycle, s.sharedCount ?? 1, s.billingDay, s.startDate, month);
+      }, 0);
+      const totalExp = fixedExp + varExp + subCostThisMonth;
 
       // 총 수입 = 가계부 수입 (부수입이 가계부에 자동 반영되므로 ledgerIncome 사용)
       // 단, 부수입이 가계부에 반영되지 않은 경우를 대비해 sideIncome도 함께 표시
@@ -105,7 +137,7 @@ export default function Dashboard() {
     });
   }, [yearly, monthlySubCost, sideIncomeByMonth]);
 
-  // 이번 달 구독결제 총 구독비
+  // 이번 달 구독결제 총 구독비 (monthlySubCost가 이미 현재 월 기준으로 계산됨)
   const currentMonthSubCost = monthlySubCost;
 
   // 이번 달 부수입 합계
@@ -225,7 +257,7 @@ export default function Dashboard() {
         <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-foreground mb-1">{currentYear}년 월별 수입 · 지출</h2>
           <p className="text-xs text-muted-foreground mb-4">
-            지출 = 가계부 지출 + 구독결제 부담액(₩{formatAmount(monthlySubCost)}/월)
+            지출 = 가계부 지출 + 구독결제 (매달/매주/매일: 월 환산, 매년: 결제 발생 월에만 반영)
           </p>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={monthlyData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>

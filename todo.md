@@ -122,3 +122,10 @@
 
 ## 버그 수정 (2026-04-27)
 - [x] 부수입 카테고리 추가 후 입력 필드 글자가 남아있는 버그 수정
+
+## 구독결제 결제일/매년 주기 개선 (2026-04-27)
+- [x] DB subscriptions 테이블에 billingDay 필드 추가 (매월 결제일, 1~31)
+- [x] billingCycle enum에 "매년" 추가
+- [x] Subscriptions.tsx 시작일 입력 시 결제일 자동 채움, 직접 수정 가능
+- [x] Subscriptions.tsx 매년 주기 추가 및 다음 결제일 계산 반영
+- [x] Dashboard.tsx 구독비를 실제 결제 발생 월에만 반영 (월 환산 제거)
