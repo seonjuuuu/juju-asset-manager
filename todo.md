@@ -37,3 +37,13 @@
 ## 테스트
 - [x] 백엔드 vitest 테스트 작성 (14 tests passed)
 - [x] 최종 UI 검증
+
+## 신규 기능 (2026-04-27)
+- [x] DB 스키마: cards 테이블 (대분류, 카드사, 혜택, 연회비, 실적, 용도, 카드한도, 유효기간, 결제일, 결제계좌, 비고)
+- [x] DB 스키마: card_points 테이블 (카드/포인트명, 혜택, 재액, 용도)
+- [x] 백엔드 API: cards CRUD (list, create, update, delete)
+- [x] 백엔드 API: cardPoints CRUD (list, create, update, delete)
+- [x] 보유카드 페이지 구현 (신용카드/체크카드 목록, 추가/수정/삭제 다이얼로그)
+- [x] 포인트/마일리지 섹션 (카드 페이지 내 탭으로 구성)
+- [x] 사이드바에 보유카드 메뉴 추가
+- [x] App.tsx 라우트 추가

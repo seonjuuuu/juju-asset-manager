@@ -6,6 +6,30 @@ import { z } from "zod";
 import * as db from "./db";
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
+const cardInput = z.object({
+  cardType: z.enum(["신용카드", "체크카드"]).default("신용카드"),
+  cardCompany: z.string(),
+  cardName: z.string().optional(),
+  benefits: z.string().optional(),
+  annualFee: z.number().optional(),
+  performance: z.string().optional(),
+  purpose: z.string().optional(),
+  creditLimit: z.number().optional(),
+  expiryDate: z.string().optional(),
+  paymentDate: z.string().optional(),
+  paymentAccount: z.string().optional(),
+  note: z.string().optional(),
+});
+
+const cardPointInput = z.object({
+  name: z.string(),
+  benefits: z.string().optional(),
+  balance: z.number().optional(),
+  purpose: z.string().optional(),
+  note: z.string().optional(),
+});
+
+
 const ledgerEntryInput = z.object({
   entryDate: z.string(),
   year: z.number(),
@@ -269,6 +293,34 @@ export const appRouter = router({
       .mutation(({ input }) => db.updateBlogCampaign(input.id, input.data as Parameters<typeof db.updateBlogCampaign>[1])),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       db.deleteBlogCampaign(input.id)
+    ),
+  }),
+
+  // ─── 보유카드 ──────────────────────────────────────────────────────────────
+  card: router({
+    list: protectedProcedure.query(() => db.getCards()),
+    create: protectedProcedure.input(cardInput).mutation(({ input }) =>
+      db.createCard(input as Parameters<typeof db.createCard>[0])
+    ),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: cardInput.partial() }))
+      .mutation(({ input }) => db.updateCard(input.id, input.data as Parameters<typeof db.updateCard>[1])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      db.deleteCard(input.id)
+    ),
+  }),
+
+  // ─── 포인트/마일리지 ─────────────────────────────────────────────────────────
+  cardPoint: router({
+    list: protectedProcedure.query(() => db.getCardPoints()),
+    create: protectedProcedure.input(cardPointInput).mutation(({ input }) =>
+      db.createCardPoint(input as Parameters<typeof db.createCardPoint>[0])
+    ),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: cardPointInput.partial() }))
+      .mutation(({ input }) => db.updateCardPoint(input.id, input.data as Parameters<typeof db.updateCardPoint>[1])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      db.deleteCardPoint(input.id)
     ),
   }),
 

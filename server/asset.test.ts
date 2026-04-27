@@ -151,3 +151,21 @@ describe("debt", () => {
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+describe("card", () => {
+  it("list returns array", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.card.list();
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+describe("cardPoint", () => {
+  it("list returns array", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.cardPoint.list();
+    expect(Array.isArray(result)).toBe(true);
+  });
+});

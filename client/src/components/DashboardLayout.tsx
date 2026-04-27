@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Coins,
   LogIn,
   LogOut,
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/other-assets", icon: Coins, label: "기타 자산" },
   { href: "/real-estate", icon: Building2, label: "부동산" },
   { href: "/blog-campaigns", icon: Star, label: "블로그 체험단" },
+  { href: "/cards", icon: CreditCard, label: "보유카드" },
 ];
 
 interface DashboardLayoutProps {

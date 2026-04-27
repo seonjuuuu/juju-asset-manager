@@ -14,6 +14,7 @@ import Pension from "./pages/Pension";
 import OtherAssets from "./pages/OtherAssets";
 import RealEstate from "./pages/RealEstate";
 import BlogCampaigns from "./pages/BlogCampaigns";
+import Cards from "./pages/Cards";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function Router() {
         <Route path="/other-assets" component={OtherAssets} />
         <Route path="/real-estate" component={RealEstate} />
         <Route path="/blog-campaigns" component={BlogCampaigns} />
+        <Route path="/cards" component={Cards} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

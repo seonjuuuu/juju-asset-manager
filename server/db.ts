@@ -3,9 +3,13 @@ import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
   blogCampaigns,
+  cards,
+  cardPoints,
   debts,
   fixedExpenses,
   InsertBlogCampaign,
+  InsertCard,
+  InsertCardPoint,
   InsertDebt,
   InsertFixedExpense,
   InsertLedgerEntry,
@@ -379,4 +383,54 @@ export async function getDashboardSummary() {
     debtTotal,
     netAsset: stockTotal + savingsTotal + pensionTotal + otherTotal - debtTotal,
   };
+}
+
+// ─── 보유카드 ─────────────────────────────────────────────────────────────────
+export async function getCards() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(cards).orderBy(desc(cards.createdAt));
+}
+
+export async function createCard(data: InsertCard) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(cards).values(data);
+}
+
+export async function updateCard(id: number, data: Partial<InsertCard>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(cards).set(data).where(eq(cards.id, id));
+}
+
+export async function deleteCard(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(cards).where(eq(cards.id, id));
+}
+
+// ─── 포인트/마일리지 ──────────────────────────────────────────────────────────
+export async function getCardPoints() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(cardPoints).orderBy(desc(cardPoints.createdAt));
+}
+
+export async function createCardPoint(data: InsertCardPoint) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(cardPoints).values(data);
+}
+
+export async function updateCardPoint(id: number, data: Partial<InsertCardPoint>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(cardPoints).set(data).where(eq(cardPoints.id, id));
+}
+
+export async function deleteCardPoint(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(cardPoints).where(eq(cardPoints.id, id));
 }

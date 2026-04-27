@@ -212,3 +212,40 @@ export const debts = mysqlTable("debts", {
 
 export type Debt = typeof debts.$inferSelect;
 export type InsertDebt = typeof debts.$inferInsert;
+
+// ─── 보유카드 ─────────────────────────────────────────────────────────────────
+export const cards = mysqlTable("cards", {
+  id: int("id").autoincrement().primaryKey(),
+  cardType: mysqlEnum("card_type", ["신용카드", "체크카드"]).notNull().default("신용카드"),
+  cardCompany: varchar("card_company", { length: 100 }).notNull(), // 카드사
+  cardName: varchar("card_name", { length: 200 }),                 // 카드명
+  benefits: text("benefits"),                                       // 혜택 (textarea)
+  annualFee: bigint("annual_fee", { mode: "number" }).default(0),  // 연회비
+  performance: varchar("performance", { length: 200 }),             // 실적
+  purpose: varchar("purpose", { length: 200 }),                    // 용도
+  creditLimit: bigint("credit_limit", { mode: "number" }).default(0), // 카드한도
+  expiryDate: varchar("expiry_date", { length: 10 }),               // 유효기간 DD/YY
+  paymentDate: varchar("payment_date", { length: 50 }),             // 결제일
+  paymentAccount: varchar("payment_account", { length: 200 }),      // 결제계좌
+  note: text("note"),                                               // 비고
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Card = typeof cards.$inferSelect;
+export type InsertCard = typeof cards.$inferInsert;
+
+// ─── 포인트/마일리지 ──────────────────────────────────────────────────────────
+export const cardPoints = mysqlTable("card_points", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),   // 카드/포인트명
+  benefits: text("benefits"),                          // 혜택
+  balance: bigint("balance", { mode: "number" }).default(0), // 잔액
+  purpose: varchar("purpose", { length: 200 }),        // 용도
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CardPoint = typeof cardPoints.$inferSelect;
+export type InsertCardPoint = typeof cardPoints.$inferInsert;
