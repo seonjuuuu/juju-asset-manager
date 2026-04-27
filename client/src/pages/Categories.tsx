@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Tag, Layers } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Tag, Layers, Lock } from "lucide-react";
+
+const PROTECTED_SUB_NAMES = ["구독서비스", "보험"];
 
 type CategoryType = "expense" | "income" | "both";
 
@@ -286,10 +288,16 @@ export default function Categories() {
                             className="ml-1 text-muted-foreground hover:text-foreground"
                             onClick={() => setSubDialog({ mode: "edit", id: sub.id, name: sub.name, parentName: cat.name })}
                           ><Pencil className="w-3 h-3" /></button>
-                          <button
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => setDeleteConfirm({ type: "sub", id: sub.id, name: sub.name })}
-                          ><Trash2 className="w-3 h-3" /></button>
+                          {PROTECTED_SUB_NAMES.includes(sub.name) ? (
+                            <span className="text-muted-foreground/40 cursor-not-allowed" title="삭제할 수 없는 중분류입니다">
+                              <Lock className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <button
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => setDeleteConfirm({ type: "sub", id: sub.id, name: sub.name })}
+                            ><Trash2 className="w-3 h-3" /></button>
+                          )}
                         </div>
                       ))}
                       <button
@@ -349,10 +357,16 @@ export default function Categories() {
                             className="ml-1 text-muted-foreground hover:text-foreground"
                             onClick={() => setSubDialog({ mode: "edit", id: sub.id, name: sub.name, parentName: cat.name })}
                           ><Pencil className="w-3 h-3" /></button>
-                          <button
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => setDeleteConfirm({ type: "sub", id: sub.id, name: sub.name })}
-                          ><Trash2 className="w-3 h-3" /></button>
+                          {PROTECTED_SUB_NAMES.includes(sub.name) ? (
+                            <span className="text-muted-foreground/40 cursor-not-allowed" title="삭제할 수 없는 중분류입니다">
+                              <Lock className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <button
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => setDeleteConfirm({ type: "sub", id: sub.id, name: sub.name })}
+                            ><Trash2 className="w-3 h-3" /></button>
+                          )}
                         </div>
                       ))}
                       <button
