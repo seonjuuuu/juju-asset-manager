@@ -33,12 +33,18 @@ const navItems = [
   { href: "/savings", icon: PiggyBank, label: "저축 및 현금성" },
   { href: "/pension", icon: Shield, label: "연금" },
   { href: "/other-assets", icon: Coins, label: "기타 자산" },
-  { href: "/real-estate", icon: Building2, label: "부동산" },
-  { href: "/blog-campaigns", icon: Star, label: "블로그 체험단" },
-  { href: "/cards", icon: CreditCard, label: "보유카드/계좌" },
   { href: "/subscriptions", icon: RefreshCw, label: "구독결제" },
   { href: "/side-income", icon: ArrowUpCircle, label: "부수입" },
   { href: "/installments", icon: Landmark, label: "대출/할부" },
+];
+
+const recordItems = [
+  { href: "/real-estate", icon: Building2, label: "부동산" },
+  { href: "/blog-campaigns", icon: Star, label: "블로그 체험단" },
+];
+
+const settingItems = [
+  { href: "/cards", icon: CreditCard, label: "보유카드/계좌" },
   { href: "/categories", icon: Tags, label: "카테고리 관리" },
 ];
 
@@ -50,6 +56,40 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [location] = useLocation();
   const { user, isAuthenticated, loading, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+
+  const renderSection = (label: string, items: typeof navItems) => (
+    <div className="pt-2">
+      <div className="px-2.5 pb-1" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+        {!collapsed && (
+          <p className="text-xs font-semibold pt-2 pb-0.5" style={{ opacity: 0.4, letterSpacing: "0.05em" }}>
+            {label}
+          </p>
+        )}
+      </div>
+      {items.map((item) => {
+        const isActive = location === item.href;
+        return (
+          <Link key={item.href} href={item.href}>
+            <div
+              className={cn(
+                "flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all duration-150 text-sm font-medium",
+                collapsed ? "justify-center" : ""
+              )}
+              style={{
+                backgroundColor: isActive ? "var(--sidebar-accent)" : "transparent",
+                color: isActive ? "var(--sidebar-primary)" : "var(--sidebar-foreground)",
+                opacity: isActive ? 1 : 0.72,
+              }}
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
 
   if (loading) {
     return (
@@ -159,9 +199,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   )}
                   style={{
                     backgroundColor: isActive ? "var(--sidebar-accent)" : "transparent",
-                    color: isActive
-                      ? "var(--sidebar-primary)"
-                      : "var(--sidebar-foreground)",
+                    color: isActive ? "var(--sidebar-primary)" : "var(--sidebar-foreground)",
                     opacity: isActive ? 1 : 0.72,
                   }}
                   title={collapsed ? item.label : undefined}
@@ -172,6 +210,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               </Link>
             );
           })}
+
+          {/* 기록 섹션 */}
+          {renderSection("기록", recordItems)}
+          {/* 설정 섹션 */}
+          {renderSection("설정", settingItems)}
         </nav>
 
         {/* Bottom */}

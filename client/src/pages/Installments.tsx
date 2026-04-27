@@ -9,19 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CreditCard, CheckCircle2, Clock, TrendingDown, Layers } from "lucide-react";
+import { Plus, Pencil, Trash2, CreditCard, CheckCircle2, Clock, TrendingDown, Layers, ChevronLeft, ChevronRight } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  Legend,
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 interface Installment {
@@ -68,6 +58,17 @@ function calcEndDate(purchaseDate: string, months: number, paymentDay?: number |
   const mm = String(endMonthNorm).padStart(2, "0");
   const dd = String(Math.min(endDay, 28)).padStart(2, "0"); // 월말 안전처리
   return `${endYear}-${mm}-${dd}`;
+}
+
+/** 주어진 연/월에 할부 청구가 발생하는지 확인 (첫 청구 = 구매월 +1) */
+function isActiveInMonth(inst: { startDate: string; months: number; endDate: string; paymentDay?: number | null }, y: number, m: number): boolean {
+  if (!inst.startDate || !inst.months) return false;
+  const [py, pm] = inst.startDate.split("-").map(Number);
+  // 첫 청구 월 = 구매월 + 1
+  const firstBillingAbsolute = py * 12 + pm + 1;
+  const lastBillingAbsolute = py * 12 + pm + inst.months;
+  const targetAbsolute = y * 12 + m;
+  return targetAbsolute >= firstBillingAbsolute && targetAbsolute <= lastBillingAbsolute;
 }
 
 /** 할부 완료 여부 */
@@ -377,10 +378,17 @@ export default function Installments() {
   const utils = trpc.useUtils();
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
+  const { data: categoryList = [] } = trpc.categories.list.useQuery();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Installment | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [monthOffset, setMonthOffset] = useState(0);
+
+  const now = new Date();
+  const selectedDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  const selectedYear = selectedDate.getFullYear();
+  const selectedMonth = selectedDate.getMonth() + 1;
 
   const createMutation = trpc.installment.create.useMutation({
     onSuccess: () => { utils.installment.list.invalidate(); toast.success("할부가 추가되었습니다"); setDialogOpen(false); },
@@ -427,54 +435,42 @@ export default function Installments() {
   const activeInstallments = installmentList.filter((i) => !isCompleted(i.endDate));
   const completedInstallments = installmentList.filter((i) => isCompleted(i.endDate));
 
-  // 이번달 총 할부금
-  const thisMonthTotal = useMemo(() => {
-    return activeInstallments.reduce((sum, i) => {
+  // 선택 월에 청구되는 할부 목록
+  const selectedMonthInstallments = useMemo(() => {
+    return installmentList.filter((i) => isActiveInMonth(i, selectedYear, selectedMonth));
+  }, [installmentList, selectedYear, selectedMonth]);
+
+  // 선택 월 총 할부금
+  const selectedMonthTotal = useMemo(() => {
+    return selectedMonthInstallments.reduce((sum, i) => {
       return sum + monthlyPayment(i.totalAmount, i.months, i.isInterestFree, i.interestRate);
     }, 0);
-  }, [activeInstallments]);
+  }, [selectedMonthInstallments]);
 
-  // 카드별 이번달 할부 합계
+  // 카드별 선택 월 할부 합계
   const cardSummary = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const i of activeInstallments) {
+    for (const i of selectedMonthInstallments) {
       const key = i.cardId ? getCardName(i.cardId) ?? "카드 미지정" : "카드 미지정";
       map[key] = (map[key] ?? 0) + monthlyPayment(i.totalAmount, i.months, i.isInterestFree, i.interestRate);
     }
     return Object.entries(map).map(([name, amount]) => ({ name, amount }));
-  }, [activeInstallments, cardList]);
+  }, [selectedMonthInstallments, cardList]);
 
-  // 월별 할부 현황 (향후 12개월)
-  const monthlyChart = useMemo(() => {
-    const now = new Date();
-    const result: { month: string; [key: string]: number | string }[] = [];
-    for (let i = 0; i < 12; i++) {
+  // 최근 1년 월별 총 할부금 차트
+  const pastYearChart = useMemo(() => {
+    const result: { month: string; total: number }[] = [];
+    for (let i = -11; i <= 0; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      const label = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const entry: { month: string; [key: string]: number | string } = { month: label };
-      for (const inst of installmentList) {
-        const start = new Date(inst.startDate);
-        const end = new Date(inst.endDate);
-        const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
-        const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-        if (start <= monthEnd && end >= monthStart) {
-          const cardName = inst.cardId ? getCardName(inst.cardId) ?? "미지정" : "미지정";
-          const key = `${inst.name}`;
-          entry[key] = (Number(entry[key]) || 0) + monthlyPayment(inst.totalAmount, inst.months, inst.isInterestFree, inst.interestRate);
-        }
-      }
-      result.push(entry);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const label = `${String(m).padStart(2, "0")}월`;
+      const total = installmentList
+        .filter((inst) => isActiveInMonth(inst, y, m))
+        .reduce((sum, inst) => sum + monthlyPayment(inst.totalAmount, inst.months, inst.isInterestFree, inst.interestRate), 0);
+      result.push({ month: label, total });
     }
     return result;
-  }, [installmentList, cardList]);
-
-  // 차트에 표시할 할부 키 목록
-  const chartKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const inst of installmentList) {
-      keys.add(inst.name);
-    }
-    return Array.from(keys);
   }, [installmentList]);
 
   return (
@@ -490,6 +486,52 @@ export default function Installments() {
         </Button>
       </div>
 
+      {/* 최근 1년 할부 현황 차트 */}
+      {installmentList.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">최근 1년 할부 총액</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={pastYearChart} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis
+                  tickFormatter={(v) => (v >= 10000 ? `${(v / 10000).toFixed(0)}만` : String(v))}
+                  tick={{ fontSize: 11 }}
+                  width={40}
+                />
+                <Tooltip
+                  formatter={(value: number) => [formatKRW(value), "총 할부금"]}
+                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
+                />
+                <Bar dataKey="total" fill="#5b7cfa" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 월 네비게이터 */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setMonthOffset((o) => o - 1)}
+          className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-base font-semibold w-28 text-center">
+          {selectedYear}년 {String(selectedMonth).padStart(2, "0")}월
+        </span>
+        <button
+          onClick={() => setMonthOffset((o) => o + 1)}
+          className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
       {/* 요약 카드 */}
       <div className="grid grid-cols-3 gap-4">
         <Card>
@@ -497,8 +539,8 @@ export default function Installments() {
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10"><TrendingDown className="w-5 h-5 text-primary" /></div>
               <div>
-                <p className="text-xs text-muted-foreground">이번달 총 할부금</p>
-                <p className="text-xl font-bold text-foreground">{formatKRW(thisMonthTotal)}</p>
+                <p className="text-xs text-muted-foreground">이달 총 할부금</p>
+                <p className="text-xl font-bold text-foreground">{formatKRW(selectedMonthTotal)}</p>
               </div>
             </div>
           </CardContent>
@@ -508,8 +550,8 @@ export default function Installments() {
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-blue-500/10"><Layers className="w-5 h-5 text-blue-500" /></div>
               <div>
-                <p className="text-xs text-muted-foreground">진행중 할부</p>
-                <p className="text-xl font-bold text-foreground">{activeInstallments.length}건</p>
+                <p className="text-xs text-muted-foreground">이달 청구 건수</p>
+                <p className="text-xl font-bold text-foreground">{selectedMonthInstallments.length}건</p>
               </div>
             </div>
           </CardContent>
@@ -527,11 +569,11 @@ export default function Installments() {
         </Card>
       </div>
 
-      {/* 카드별 이번달 할부 합계 */}
+      {/* 카드별 이달 할부 합계 */}
       {cardSummary.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">카드별 이번달 할부금</CardTitle>
+            <CardTitle className="text-base">카드별 이달 할부금</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
@@ -556,34 +598,46 @@ export default function Installments() {
         </Card>
       )}
 
-      {/* 월별 할부 현황 그래프 */}
-      {installmentList.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">향후 12개월 할부 현황</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={monthlyChart} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis
-                  tickFormatter={(v) => (v >= 10000 ? `${(v / 10000).toFixed(0)}만` : String(v))}
-                  tick={{ fontSize: 11 }}
-                />
-                <Tooltip
-                  formatter={(value: number, name: string) => [formatKRW(value), name]}
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
-                />
-                <Legend />
-                {chartKeys.map((key, idx) => (
-                  <Bar key={key} dataKey={key} stackId="a" fill={CARD_COLORS[idx % CARD_COLORS.length]} radius={idx === chartKeys.length - 1 ? [4, 4, 0, 0] : undefined} />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      )}
+      {/* 이달 청구 할부 목록 */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            {selectedYear}년 {String(selectedMonth).padStart(2, "0")}월 청구 목록
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {selectedMonthInstallments.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">이달 청구되는 할부가 없습니다.</p>
+          ) : (
+            <div className="space-y-2">
+              {selectedMonthInstallments.map((inst) => {
+                const monthly = monthlyPayment(inst.totalAmount, inst.months, inst.isInterestFree, inst.interestRate);
+                const cardName = getCardName(inst.cardId);
+                const [py, pm] = inst.startDate.split("-").map(Number);
+                const instNo = (selectedYear * 12 + selectedMonth) - (py * 12 + pm);
+                return (
+                  <div key={inst.id} className="flex items-center justify-between rounded-lg border px-4 py-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{inst.name}</p>
+                        {cardName && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <CreditCard className="w-3 h-3" /> {cardName}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 flex-shrink-0">
+                      <span className="text-xs text-muted-foreground">{instNo}/{inst.months}회차</span>
+                      <span className="font-bold text-primary text-sm">{formatKRW(monthly)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 진행중 할부 목록 */}
       <div>
