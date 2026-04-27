@@ -545,7 +545,7 @@ export default function SideIncome() {
         </Tabs>
       {/* 다이얼로그 */}
       <CategoryDialog
-        key={catDialog.item?.id ?? "new-cat"}
+        key={`${catDialog.item?.id ?? "new-cat"}-${catDialog.open}`}
         open={catDialog.open}
         onClose={() => setCatDialog({ open: false })}
         initial={catDialog.item}

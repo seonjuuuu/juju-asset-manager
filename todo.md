@@ -119,3 +119,6 @@
 - [x] DB subscriptions 테이블에 sharedCount 필드 추가 (기본값 1)
 - [x] Subscriptions.tsx 공유 인원 입력 UI 추가 및 실제 부담금 자동 계산 표시
 - [x] Dashboard.tsx 월 구독비를 실제 부담금 기준으로 계산
+
+## 버그 수정 (2026-04-27)
+- [x] 부수입 카테고리 추가 후 입력 필드 글자가 남아있는 버그 수정
