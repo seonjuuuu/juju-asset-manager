@@ -274,18 +274,28 @@ const CURRENCIES = [
   { code: "CNY", label: "¥ 위안" },
 ];
 
+type AccountRow = {
+  id: number;
+  bankName: string;
+  accountType: string;
+  accountNumber: string | null;
+  accountHolder: string | null;
+};
+
 function SubscriptionDialog({
   open,
   onClose,
   initial,
   onSave,
   cardList,
+  accountList,
 }: {
   open: boolean;
   onClose: () => void;
   initial: typeof emptySubscription;
   onSave: (data: typeof emptySubscription) => void;
   cardList: CardRow[];
+  accountList: AccountRow[];
 }) {
   const [form, setForm] = useState(initial);
   const set = (k: keyof typeof emptySubscription, v: unknown) =>
@@ -325,13 +335,15 @@ function SubscriptionDialog({
   const yearlyCost = calcYearlyCost(form.price, form.billingCycle, form.sharedCount);
   const nextPayment = calcNextPaymentDate(form.startDate, form.billingCycle);
 
-  // 결제방법 옵션: 보유카드 + 현금 + 계좌출금
+  // 결제방법 옵션: 보유카드 + 등록된 계좌 + 현금
   const paymentOptions = [
     ...cardList.map(
       (c) => `${c.cardCompany} ${c.cardName || c.cardType}`
     ),
+    ...accountList.map(
+      (a) => `${a.bankName} ${a.accountType}${a.accountNumber ? ` (${a.accountNumber.slice(-4)})` : ""}`
+    ),
     "현금",
-    "계좌출금",
   ];
 
   const faviconUrl = getServiceFaviconUrl(form.serviceName);
@@ -676,6 +688,8 @@ export default function Subscriptions() {
 
   // 보유카드 데이터 (결제방법 선택용)
   const { data: cardList = [] } = trpc.card.list.useQuery();
+  // 계좌 데이터 (결제방법 선택용)
+  const { data: accountList = [] } = trpc.account.list.useQuery();
 
   const createSub = trpc.subscription.create.useMutation({
     onSuccess: () => {
@@ -979,6 +993,7 @@ export default function Subscriptions() {
           onClose={() => setDialog(null)}
           initial={dialog.data}
           cardList={cardList as CardRow[]}
+          accountList={accountList as AccountRow[]}
           onSave={(data) => {
             if (dialog.mode === "create") {
               createSub.mutate(data);
