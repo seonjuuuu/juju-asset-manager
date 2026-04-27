@@ -27,6 +27,10 @@ const SERVICE_DOMAIN_MAP: Record<string, string> = {
   // 스트리밍/미디어
   "넷플릭스": "netflix.com",
   "netflix": "netflix.com",
+  "넷플연가": "netflix.com",
+  "넷플 연가": "netflix.com",
+  "트레바리": "trevari.co.kr",
+  "trevari": "trevari.co.kr",
   "웨이브": "wavve.com",
   "wavve": "wavve.com",
   "디즈니플러스": "disneyplus.com",
