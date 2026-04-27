@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react";
-import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -274,8 +273,7 @@ export default function SideIncome() {
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* 헤더 */}
         <div className="flex items-center justify-between">
           <div>
@@ -544,8 +542,6 @@ export default function SideIncome() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
-
       {/* 다이얼로그 */}
       <CategoryDialog
         key={catDialog.item?.id ?? "new-cat"}
@@ -562,6 +558,6 @@ export default function SideIncome() {
         month={month}
         categories={categories as { id: number; name: string; color: string }[]}
       />
-    </DashboardLayout>
+    </div>
   );
 }

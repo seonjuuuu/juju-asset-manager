@@ -83,15 +83,15 @@
 - [x] StockPortfolio.tsx: 마지막 업데이트 시각 표시
 
 ## 부수입 관리 (2026-04-27)
-- [ ] DB 스키마: side_income_categories 테이블 (id, name, color, userId, createdAt)
-- [ ] DB 스키마: side_incomes 테이블 (id, date, categoryId, amount, description, isRegular, note, createdAt)
-- [ ] 백엔드 API: sideIncomeCategory CRUD (list, create, update, delete)
-- [ ] 백엔드 API: sideIncome CRUD (list by month, create, update, delete)
-- [ ] 백엔드 API: 부수입 생성 시 가계부(ledger) 수입 항목 자동 추가
-- [ ] 부수입 페이지: 카테고리 관리 탭 (추가/수정/삭제)
-- [ ] 부수입 페이지: 월별 부수입 목록 (날짜, 카테고리, 금액, 정기/비정기, 내용)
-- [ ] 부수입 페이지: 월별 합계 및 카테고리별 바 차트
-- [ ] 부수입 페이지: 정기/비정기 비율 차트
-- [ ] 사이드바에 부수입 메뉴 추가
-- [ ] App.tsx 라우트 추가
-- [ ] 테스트 추가
+- [x] DB 스키마: side_income_categories 테이블 (id, name, color, userId, createdAt)
+- [x] DB 스키마: side_incomes 테이블 (id, date, categoryId, amount, description, isRegular, note, createdAt)
+- [x] 백엔드 API: sideIncomeCategory CRUD (list, create, update, delete)
+- [x] 백엔드 API: sideIncome CRUD (list by month, create, update, delete)
+- [x] 백엔드 API: 부수입 생성 시 가계부(ledger) 수입 항목 자동 추가
+- [x] 부수입 페이지: 카테고리 관리 탭 (추가/수정/삭제)
+- [x] 부수입 페이지: 월별 부수입 목록 (날짜, 카테고리, 금액, 정기/비정기, 내용)
+- [x] 부수입 페이지: 월별 합계 및 카테고리별 바 차트
+- [x] 부수입 페이지: 정기/비정기 비율 차트
+- [x] 사이드바에 부수입 메뉴 추가
+- [x] App.tsx 라우트 추가
+- [x] 테스트 추가
