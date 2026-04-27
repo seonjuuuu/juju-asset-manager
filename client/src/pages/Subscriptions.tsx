@@ -110,6 +110,9 @@ const SERVICE_DOMAIN_MAP: Record<string, string> = {
   "aws": "aws.amazon.com",
   "gcp": "cloud.google.com",
   "azure": "azure.microsoft.com",
+  // 교육
+  "프레플리": "preply.com",
+  "preply": "preply.com",
 };
 
 /** 서비스명으로 favicon URL 반환 */
