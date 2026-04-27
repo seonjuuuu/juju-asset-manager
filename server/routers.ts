@@ -393,6 +393,86 @@ export const appRouter = router({
       db.deleteDebt(input.id)
     ),
   }),
+
+  // ─── 부수입 카테고리 ───────────────────────────────────────────────────────────
+  sideIncomeCategory: router({
+    list: protectedProcedure.query(() => db.getSideIncomeCategories()),
+    create: protectedProcedure
+      .input(z.object({ name: z.string().min(1), color: z.string().optional() }))
+      .mutation(({ input }) => db.createSideIncomeCategory(input)),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: z.object({ name: z.string().optional(), color: z.string().optional() }) }))
+      .mutation(({ input }) => db.updateSideIncomeCategory(input.id, input.data)),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input }) => db.deleteSideIncomeCategory(input.id)),
+  }),
+
+  // ─── 부수입 내역 ───────────────────────────────────────────────────────────────
+  sideIncome: router({
+    list: protectedProcedure
+      .input(z.object({ year: z.number(), month: z.number() }))
+      .query(({ input }) => db.getSideIncomes(input.year, input.month)),
+    yearlySummary: protectedProcedure
+      .input(z.object({ year: z.number() }))
+      .query(({ input }) => db.getSideIncomeMonthlySummary(input.year)),
+    create: protectedProcedure
+      .input(z.object({
+        incomeDate: z.string(),
+        year: z.number(),
+        month: z.number(),
+        categoryId: z.number().optional(),
+        categoryName: z.string().optional(),
+        amount: z.number(),
+        description: z.string().optional(),
+        isRegular: z.boolean().default(false),
+        note: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // 가계부 수입 항목 자동 추가
+        const ledgerResult = await db.createLedgerEntry({
+          entryDate: input.incomeDate as unknown as Date,
+          year: input.year,
+          month: input.month,
+          mainCategory: "수입",
+          subCategory: input.categoryName ?? "부수입",
+          description: input.description ?? "",
+          amount: input.amount,
+          note: `[부수입 자동연동] ${input.note ?? ""}`.trim(),
+        }) as { insertId?: number } | undefined;
+        const ledgerEntryId = ledgerResult?.insertId;
+        return db.createSideIncome({
+          ...input,
+          incomeDate: input.incomeDate as unknown as Date,
+          ledgerEntryId,
+        });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          incomeDate: z.string().optional(),
+          year: z.number().optional(),
+          month: z.number().optional(),
+          categoryId: z.number().optional(),
+          categoryName: z.string().optional(),
+          amount: z.number().optional(),
+          description: z.string().optional(),
+          isRegular: z.boolean().optional(),
+          note: z.string().optional(),
+        }),
+      }))
+      .mutation(({ input }) => {
+        const { incomeDate, ...rest } = input.data;
+        return db.updateSideIncome(input.id, {
+          ...rest,
+          ...(incomeDate ? { incomeDate: incomeDate as unknown as Date } : {}),
+        });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input }) => db.deleteSideIncome(input.id)),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

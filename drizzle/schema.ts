@@ -266,3 +266,33 @@ export const subscriptions = mysqlTable("subscriptions", {
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
+
+// ─── 부수입 카테고리 ──────────────────────────────────────────────────────────
+export const sideIncomeCategories = mysqlTable("side_income_categories", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),          // 카테고리명 (예: 블로그, 유튜브)
+  color: varchar("color", { length: 20 }).default("#5b7cfa"), // 표시 색상
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SideIncomeCategory = typeof sideIncomeCategories.$inferSelect;
+export type InsertSideIncomeCategory = typeof sideIncomeCategories.$inferInsert;
+
+// ─── 부수입 내역 ──────────────────────────────────────────────────────────────
+export const sideIncomes = mysqlTable("side_incomes", {
+  id: int("id").autoincrement().primaryKey(),
+  incomeDate: date("income_date").notNull(),                  // 수입 날짜
+  year: int("year").notNull(),
+  month: int("month").notNull(),
+  categoryId: int("category_id"),                            // side_income_categories.id (nullable)
+  categoryName: varchar("category_name", { length: 100 }),   // 카테고리명 스냅샷
+  amount: bigint("amount", { mode: "number" }).notNull().default(0), // 금액
+  description: varchar("description", { length: 300 }),      // 내용
+  isRegular: boolean("is_regular").notNull().default(false),  // 정기 여부
+  note: text("note"),
+  ledgerEntryId: int("ledger_entry_id"),                     // 가계부 연동 ID
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SideIncome = typeof sideIncomes.$inferSelect;
+export type InsertSideIncome = typeof sideIncomes.$inferInsert;

@@ -18,6 +18,7 @@ import {
   Wallet,
   Home,
   RefreshCw,
+  ArrowUpCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -34,6 +35,7 @@ const navItems = [
   { href: "/blog-campaigns", icon: Star, label: "블로그 체험단" },
   { href: "/cards", icon: CreditCard, label: "보유카드" },
   { href: "/subscriptions", icon: RefreshCw, label: "정기결제" },
+  { href: "/side-income", icon: ArrowUpCircle, label: "부수입" },
 ];
 
 interface DashboardLayoutProps {

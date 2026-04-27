@@ -26,6 +26,10 @@ import {
   savingsAssets,
   stockPortfolio,
   subscriptions,
+  sideIncomeCategories,
+  sideIncomes,
+  InsertSideIncomeCategory,
+  InsertSideIncome,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -460,4 +464,63 @@ export async function deleteSubscription(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(subscriptions).where(eq(subscriptions.id, id));
+}
+
+// ─── 부수입 카테고리 ──────────────────────────────────────────────────────────
+export async function getSideIncomeCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sideIncomeCategories).orderBy(sideIncomeCategories.name);
+}
+export async function createSideIncomeCategory(data: InsertSideIncomeCategory) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(sideIncomeCategories).values(data);
+}
+export async function updateSideIncomeCategory(id: number, data: Partial<InsertSideIncomeCategory>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(sideIncomeCategories).set(data).where(eq(sideIncomeCategories.id, id));
+}
+export async function deleteSideIncomeCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(sideIncomeCategories).where(eq(sideIncomeCategories.id, id));
+}
+
+// ─── 부수입 내역 ──────────────────────────────────────────────────────────────
+export async function getSideIncomes(year: number, month: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sideIncomes)
+    .where(and(eq(sideIncomes.year, year), eq(sideIncomes.month, month)))
+    .orderBy(desc(sideIncomes.incomeDate));
+}
+export async function createSideIncome(data: InsertSideIncome) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(sideIncomes).values(data).$returningId();
+  return result;
+}
+export async function updateSideIncome(id: number, data: Partial<InsertSideIncome>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(sideIncomes).set(data).where(eq(sideIncomes.id, id));
+}
+export async function deleteSideIncome(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // 연결된 가계부 항목도 삭제
+  const [entry] = await db.select().from(sideIncomes).where(eq(sideIncomes.id, id)).limit(1);
+  if (entry?.ledgerEntryId) {
+    await db.delete(ledgerEntries).where(eq(ledgerEntries.id, entry.ledgerEntryId));
+  }
+  await db.delete(sideIncomes).where(eq(sideIncomes.id, id));
+}
+export async function getSideIncomeMonthlySummary(year: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sideIncomes)
+    .where(eq(sideIncomes.year, year))
+    .orderBy(sideIncomes.month, desc(sideIncomes.incomeDate));
 }
