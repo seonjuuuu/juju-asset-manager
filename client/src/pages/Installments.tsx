@@ -49,15 +49,19 @@ function formatKRW(amount: number) {
   return amount.toLocaleString("ko-KR") + "원";
 }
 
-/** 할부 종료일 계산: 시작일 + 개월수 - 1, 카드 결제일에 맞춤 */
-function calcEndDate(startDate: string, months: number, paymentDay?: number | null): string {
-  if (!startDate || !months) return "";
-  const [y, m, d] = startDate.split("-").map(Number);
-  // 종료 월 = 시작월 + months - 1
-  const endMonth = m + months - 1;
+/** 할부 종료일 계산:
+ * 구매일 기준으로 다음달 카드결제일부터 N회 청구됨.
+ * 예: 구매일 2/2, 카드결제일 14일, 3개월 → 3/14, 4/14, 5/14 → endDate = 5/14
+ * endDate = (구매월 + months)월의 카드결제일
+ */
+function calcEndDate(purchaseDate: string, months: number, paymentDay?: number | null): string {
+  if (!purchaseDate || !months) return "";
+  const [y, m, d] = purchaseDate.split("-").map(Number);
+  // 마지막 청구월 = 구매월 + months (다음달부터 시작하므로 +1, 마지막은 +months)
+  const endMonth = m + months;
   const endYear = y + Math.floor((endMonth - 1) / 12);
   const endMonthNorm = ((endMonth - 1) % 12) + 1;
-  // 결제일이 있으면 그 날짜로, 없으면 시작일의 일(day)로
+  // 카드 결제일이 있으면 그 날짜로, 없으면 구매일의 일(day)로
   const endDay = paymentDay ?? d;
   const mm = String(endMonthNorm).padStart(2, "0");
   const dd = String(Math.min(endDay, 28)).padStart(2, "0"); // 월말 안전처리
@@ -71,15 +75,34 @@ function isCompleted(endDate: string): boolean {
 }
 
 /** 현재 진행 회차 */
-function currentInstallmentNo(startDate: string, months: number): number {
-  if (!startDate) return 0;
-  const start = new Date(startDate);
+/** 현재 진행 회차: 구매월 다음달 카드결제일부터 1회차 시작 */
+function currentInstallmentNo(purchaseDate: string, months: number, paymentDay?: number | null): number {
+  if (!purchaseDate) return 0;
+  const [py, pm] = purchaseDate.split("-").map(Number);
   const now = new Date();
-  const diffMonths =
-    (now.getFullYear() - start.getFullYear()) * 12 +
-    (now.getMonth() - start.getMonth()) +
-    1;
-  return Math.max(1, Math.min(diffMonths, months));
+  const nowY = now.getFullYear();
+  const nowM = now.getMonth() + 1; // 1-based
+  const nowD = now.getDate();
+  // 1회차 결제일: 구매월+1의 카드결제일
+  const firstPayDay = paymentDay ?? 1;
+  // 현재까지 완료된 회차 수 계산
+  // k회차 결제일 = (구매월 + k)월의 firstPayDay
+  let completed = 0;
+  for (let k = 1; k <= months; k++) {
+    const payMonth = pm + k;
+    const payYear = py + Math.floor((payMonth - 1) / 12);
+    const payMonthNorm = ((payMonth - 1) % 12) + 1;
+    const payDay = Math.min(firstPayDay, 28);
+    // 이 결제일이 오늘 이전이면 완료
+    if (payYear < nowY || (payYear === nowY && payMonthNorm < nowM) ||
+        (payYear === nowY && payMonthNorm === nowM && payDay <= nowD)) {
+      completed = k;
+    } else {
+      break;
+    }
+  }
+  // 진행중이면 최소 1회차 표시 (아직 첫 결제 전이어도 1/N으로 표시)
+  return Math.max(1, Math.min(completed + (completed < months ? 1 : 0), months));
 }
 
 /** 월 할부금 계산 (무이자: totalAmount/months, 유이자: 원리금균등) */
@@ -214,7 +237,7 @@ function InstallmentDialog({
           </div>
           {/* 시작일 */}
           <div className="space-y-1">
-            <Label>할부 시작일 *</Label>
+            <Label>카드 결제일 (구매일) *</Label>
             <Input
               type="date"
               value={form.startDate}
@@ -279,7 +302,7 @@ function InstallmentDialog({
           <Button
             onClick={() => {
               if (!form.name.trim()) { toast.error("할부명을 입력하세요"); return; }
-              if (!form.startDate) { toast.error("시작일을 입력하세요"); return; }
+              if (!form.startDate) { toast.error("카드 결제일(구매일)을 입력하세요"); return; }
               if (!form.endDate) { toast.error("종료일을 입력하세요"); return; }
               onSave(form);
             }}
@@ -520,7 +543,9 @@ export default function Installments() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {activeInstallments.map((inst) => {
               const monthly = monthlyPayment(inst.totalAmount, inst.months, inst.isInterestFree, inst.interestRate);
-              const currentNo = currentInstallmentNo(inst.startDate, inst.months);
+              const instCard = cardList?.find((c: {id: number}) => c.id === inst.cardId) as {paymentDate?: string} | undefined;
+              const instPayDay = instCard?.paymentDate ? parseInt(instCard.paymentDate.replace(/[^0-9]/g, "")) : null;
+              const currentNo = currentInstallmentNo(inst.startDate, inst.months, instPayDay);
               const remaining = inst.months - currentNo;
               const cardName = getCardName(inst.cardId);
               const progress = Math.round((currentNo / inst.months) * 100);
@@ -564,7 +589,7 @@ export default function Installments() {
                     {/* 진행바 */}
                     <div className="mb-3">
                       <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                        <span>{inst.startDate}</span>
+                        <span>구매일: {inst.startDate}</span>
                         <span>{inst.endDate}</span>
                       </div>
                       <div className="h-2 rounded-full bg-muted overflow-hidden">
@@ -626,7 +651,7 @@ export default function Installments() {
                     </div>
                     <div className="flex gap-4 text-xs text-muted-foreground">
                       <span>{formatKRW(inst.totalAmount)} / {inst.months}개월</span>
-                      <span>{inst.startDate} ~ {inst.endDate}</span>
+                      <span>구매일 {inst.startDate} ~ {inst.endDate}</span>
                     </div>
                     <div className="flex gap-2 mt-3">
                       <Button
