@@ -348,7 +348,39 @@ export const appRouter = router({
     ),
   }),
 
-  // ─── 부채 ───────────────────────────────────────────────────────────────────
+  // ─── ETF 현재가 ───────────────────────────────────────────────────────────────────────────
+  etfPrice: router({
+    // 한국 ETF 종목코드 (예: 360750) 입력 시 Yahoo Finance에서 현재가 조회
+    // 한국: 종목코드.KS, 해외: 종목코드 그대로 (AAPL, QQQ 등)
+    getPrice: protectedProcedure
+      .input(z.object({ ticker: z.string(), market: z.enum(["KR", "US"]).default("KR") }))
+      .query(async ({ input }) => {
+        const { callDataApi } = await import("./_core/dataApi");
+        // 한국 시장은 .KS 접미사 추가, 해외는 그대로
+        const symbol = input.market === "KR"
+          ? (input.ticker.includes(".") ? input.ticker : `${input.ticker}.KS`)
+          : input.ticker;
+        try {
+          const resp = await callDataApi("YahooFinance/get_stock_chart", {
+            query: { symbol, region: input.market === "KR" ? "KR" : "US", interval: "1d", range: "1d" },
+          }) as { chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; longName?: string; currency?: string } }> } };
+          const meta = resp?.chart?.result?.[0]?.meta;
+          if (!meta?.regularMarketPrice) throw new Error("현재가 조회 실패");
+          return {
+            ticker: input.ticker,
+            symbol,
+            price: meta.regularMarketPrice,
+            name: meta.longName ?? "",
+            currency: meta.currency ?? (input.market === "KR" ? "KRW" : "USD"),
+            updatedAt: new Date().toISOString(),
+          };
+        } catch (e) {
+          throw new Error(`ETF 현재가 조회 실패: ${(e as Error).message}`);
+        }
+      }),
+  }),
+
+  // ─── 부체 ───────────────────────────────────────────────────────────────────────────
   debt: router({
     list: protectedProcedure.query(() => db.getDebts()),
     create: protectedProcedure.input(debtInput).mutation(({ input }) =>
