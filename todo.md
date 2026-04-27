@@ -72,3 +72,12 @@
 - [x] 연금 페이지: 수익률((평가금액 - 매수원금) / 매수원금 × 100) 자동 계산
 - [x] 연금 페이지: 업데이트일 표시
 - [x] 테스트 추가
+
+## 주식 포트폴리오 현재가 자동 조회 (2026-04-27)
+- [x] StockPortfolio.tsx: 종목코드 필드 추가 (이미 있으면 활용)
+- [x] StockPortfolio.tsx: 시장 구분 (한국/해외) 선택 추가
+- [x] StockPortfolio.tsx: 현재가 조회 버튼 (etfPrice.getPrice API 재활용)
+- [x] StockPortfolio.tsx: 현재가×수량 → 평가금액 자동 계산
+- [x] StockPortfolio.tsx: 수익률 자동 계산 ((평가금액-매수원금)/매수원금×100)
+- [x] StockPortfolio.tsx: 전체 일괄 업데이트 버튼
+- [x] StockPortfolio.tsx: 마지막 업데이트 시각 표시
