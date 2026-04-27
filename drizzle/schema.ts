@@ -330,3 +330,22 @@ export const accounts = mysqlTable("accounts", {
 });
 export type Account = typeof accounts.$inferSelect;
 export type InsertAccount = typeof accounts.$inferInsert;
+
+// ─── 할부 내역 ────────────────────────────────────────────────────────────────
+export const installments = mysqlTable("installments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
+  name: varchar("name", { length: 200 }).notNull(),
+  cardId: int("card_id"),
+  totalAmount: bigint("total_amount", { mode: "number" }).notNull().default(0),
+  months: int("months").notNull().default(1),
+  startDate: varchar("start_date", { length: 20 }).notNull(),
+  endDate: varchar("end_date", { length: 20 }).notNull(),
+  isInterestFree: boolean("is_interest_free").notNull().default(true),
+  interestRate: decimal("interest_rate", { precision: 10, scale: 4 }).default("0"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Installment = typeof installments.$inferSelect;
+export type InsertInstallment = typeof installments.$inferInsert;

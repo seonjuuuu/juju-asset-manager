@@ -150,3 +150,16 @@
 ## 구독결제 결제방법 계좌 연동 (2026-04-27)
 - [x] Subscriptions.tsx 결제방법 드롭다운에 등록된 계좌 목록 연동
 - [x] "계좌출금" 고정 항목 제거
+
+## 대출/할부 섹션 추가 (2026-04-27)
+- [x] DB: installments 테이블 추가 (id, userId, name, cardId, totalAmount, months, startDate, endDate, isInterestFree, interestRate, note, createdAt)
+- [x] DB: 마이그레이션 생성 및 적용
+- [x] server/db.ts: installment CRUD 헬퍼 추가
+- [x] server/routers.ts: installment tRPC 라우터 추가 (list, add, update, delete)
+- [x] Installments.tsx 페이지 생성: 할부 목록 카드 (진행중/완료 구분, 남은 회차 표시)
+- [x] 할부 추가/수정 다이얼로그: 카드 선택, 시작일(YYYY-MM-DD), 할부 개월수, 종료일 자동계산(수정가능), 무이자/유이자 토글, 유이자시 수수료 입력, 금액 입력
+- [x] 할부 완료 자동 처리: 종료일 경과 시 "완료" 상태 표시
+- [x] 월별 할부 현황 그래프: 이번달 진행중인 할부 전체 바 차트
+- [x] 이번달 총 할부금액 및 카드별 할부 합계 표시
+- [x] App.tsx: /installments 라우트 추가
+- [x] DashboardLayout 사이드바: "대출/할부" 메뉴 추가

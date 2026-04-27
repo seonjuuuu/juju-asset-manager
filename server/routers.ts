@@ -17,6 +17,17 @@ const accountInput = z.object({
   linkedCard: z.string().optional(),
   note: z.string().optional(),
 });
+const installmentInput = z.object({
+  name: z.string(),
+  cardId: z.number().int().nullable().optional(),
+  totalAmount: z.number().default(0),
+  months: z.number().int().min(1).default(1),
+  startDate: z.string(),
+  endDate: z.string(),
+  isInterestFree: z.boolean().default(true),
+  interestRate: z.string().optional(),
+  note: z.string().optional(),
+});
 const subscriptionInput = z.object({
   serviceName: z.string(),
   category: z.enum(["비즈니스", "미디어", "자기계발", "기타"]).default("기타"),
@@ -495,6 +506,25 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteAccount(ctx.user.id, input.id)),
+  }),
+  installment: router({
+    list: protectedProcedure.query(({ ctx }) => db.listInstallments(ctx.user.id)),
+    create: protectedProcedure
+      .input(installmentInput)
+      .mutation(({ input, ctx }) => db.createInstallment(ctx.user.id, {
+        ...input,
+        interestRate: input.interestRate ?? "0",
+        cardId: input.cardId ?? null,
+      })),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: installmentInput.partial() }))
+      .mutation(({ input, ctx }) => db.updateInstallment(ctx.user.id, input.id, {
+        ...input.data,
+        cardId: input.data.cardId ?? null,
+      })),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input, ctx }) => db.deleteInstallment(ctx.user.id, input.id)),
   }),
   exchangeRate: router({
     get: protectedProcedure

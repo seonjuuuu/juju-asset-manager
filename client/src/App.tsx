@@ -17,6 +17,7 @@ import BlogCampaigns from "./pages/BlogCampaigns";
 import Cards from "./pages/Cards";
 import Subscriptions from "./pages/Subscriptions";
 import SideIncome from "./pages/SideIncome";
+import Installments from "./pages/Installments";
 
 function Router() {
   return (
@@ -34,6 +35,7 @@ function Router() {
         <Route path="/cards" component={Cards} />
         <Route path="/subscriptions" component={Subscriptions} />
         <Route path="/side-income" component={SideIncome} />
+        <Route path="/installments" component={Installments} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

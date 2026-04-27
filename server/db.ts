@@ -32,6 +32,8 @@ import {
   InsertSideIncome,
   accounts,
   InsertAccount,
+  installments,
+  InsertInstallment,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -568,4 +570,28 @@ export async function deleteAccount(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   return db.delete(accounts).where(and(eq(accounts.id, id), eq(accounts.userId, userId)));
+}
+// ─── 할부 내역 ────────────────────────────────────────────────────────────────
+export async function listInstallments(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(installments)
+    .where(eq(installments.userId, userId))
+    .orderBy(desc(installments.createdAt));
+}
+export async function createInstallment(userId: number, data: InsertInstallment) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(installments).values({ ...data, userId }).$returningId();
+  return result;
+}
+export async function updateInstallment(userId: number, id: number, data: Partial<InsertInstallment>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.update(installments).set(data).where(and(eq(installments.id, id), eq(installments.userId, userId)));
+}
+export async function deleteInstallment(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.delete(installments).where(and(eq(installments.id, id), eq(installments.userId, userId)));
 }

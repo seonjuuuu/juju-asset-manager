@@ -19,6 +19,7 @@ import {
   Home,
   RefreshCw,
   ArrowUpCircle,
+  Landmark,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/cards", icon: CreditCard, label: "보유카드/계좌" },
   { href: "/subscriptions", icon: RefreshCw, label: "구독결제" },
   { href: "/side-income", icon: ArrowUpCircle, label: "부수입" },
+  { href: "/installments", icon: Landmark, label: "대출/할부" },
 ];
 
 interface DashboardLayoutProps {
