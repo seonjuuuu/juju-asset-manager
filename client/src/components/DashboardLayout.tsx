@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Wallet,
   Home,
+  RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/real-estate", icon: Building2, label: "부동산" },
   { href: "/blog-campaigns", icon: Star, label: "블로그 체험단" },
   { href: "/cards", icon: CreditCard, label: "보유카드" },
+  { href: "/subscriptions", icon: RefreshCw, label: "정기결제" },
 ];
 
 interface DashboardLayoutProps {

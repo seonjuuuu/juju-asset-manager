@@ -28,50 +28,9 @@ import {
   Coins,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
-  Calendar,
 } from "lucide-react";
 
-
-// ─── 타입// ─── 유틸리티 ──────────────────────────────────────────────────────────────
-function calcNextPaymentDate(startDate: string, billingCycle: "매달" | "매주" | "매일"): string {
-  if (!startDate) return "-";
-  const today = new Date();
-  const start = new Date(startDate);
-  if (isNaN(start.getTime())) return "-";
-  let next = new Date(start);
-  if (billingCycle === "매달") {
-    while (next <= today) {
-      next = new Date(next);
-      next.setMonth(next.getMonth() + 1);
-    }
-  } else if (billingCycle === "매주") {
-    while (next <= today) {
-      next = new Date(next);
-      next.setDate(next.getDate() + 7);
-    }
-  } else {
-    while (next <= today) {
-      next = new Date(next);
-      next.setDate(next.getDate() + 1);
-    }
-  }
-  return next.toISOString().slice(0, 10);
-}
-
-function calcMonthlyCost(price: number, billingCycle: "매달" | "매주" | "매일"): number {
-  if (billingCycle === "매달") return price;
-  if (billingCycle === "매주") return Math.round(price * 52 / 12);
-  return price * 30;
-}
-
-function calcYearlyCost(price: number, billingCycle: "매달" | "매주" | "매일"): number {
-  if (billingCycle === "매달") return price * 12;
-  if (billingCycle === "매주") return price * 52;
-  return price * 365;
-}
-
-// ─── 타입 ──────────────────────────────────────────────────────────────
+// ─── 타입 ──────────────────────────────────────────────────────────────────
 type CardRow = {
   id: number;
   cardType: "신용카드" | "체크카드";
@@ -120,26 +79,6 @@ const emptyPoint = {
   note: "",
 };
 
-type SubscriptionRow = {
-  id: number;
-  serviceName: string;
-  category: "비즈니스" | "미디어" | "자기계발" | "기타";
-  billingCycle: "매달" | "매주" | "매일";
-  price: number;
-  startDate: string | null;
-  paymentMethod: string | null;
-  note: string | null;
-};
-
-const emptySubscription = {
-  serviceName: "",
-  category: "기타" as "비즈니스" | "미디어" | "자기계발" | "기타",
-  billingCycle: "매달" as "매달" | "매주" | "매일",
-  price: 0,
-  startDate: "",
-  paymentMethod: "",
-  note: "",
-};
 
 function formatAmount(v: number | null | undefined) {
   if (!v) return "-";
@@ -420,149 +359,6 @@ function PointDialog({
   );
 }
 
-// ─// ─── 정기결제 다이얼로그 ───────────────────────────────────────────────
-function SubscriptionDialog({
-  open,
-  onClose,
-  initial,
-  onSave,
-  cardList,
-}: {
-  open: boolean;
-  onClose: () => void;
-  initial: typeof emptySubscription;
-  onSave: (data: typeof emptySubscription) => void;
-  cardList: CardRow[];
-}) {
-  const [form, setForm] = useState(initial);
-  const set = (k: keyof typeof emptySubscription, v: unknown) =>
-    setForm((f) => ({ ...f, [k]: v }));
-
-  const monthlyCost = calcMonthlyCost(form.price, form.billingCycle);
-  const yearlyCost = calcYearlyCost(form.price, form.billingCycle);
-  const nextPayment = calcNextPaymentDate(form.startDate, form.billingCycle);
-
-  // 결제방법 옵션: 보유카드 + 현금 + 계좌출금
-  const paymentOptions = [
-    ...cardList.map((c) => `${c.cardCompany} ${c.cardName || c.cardType}`),
-    "현금",
-    "계좌출금",
-  ];
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>정기결제 서비스</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>서비스명 *</Label>
-            <Input
-              value={form.serviceName}
-              onChange={(e) => set("serviceName", e.target.value)}
-              placeholder="예: Netflix, ChatGPT Plus"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>카테고리</Label>
-              <Select value={form.category} onValueChange={(v) => set("category", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["비즈니스", "미디어", "자기계발", "기타"].map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>결제주기</Label>
-              <Select value={form.billingCycle} onValueChange={(v) => set("billingCycle", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["매달", "매주", "매일"].map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>구독료 (원)</Label>
-            <Input
-              type="number"
-              value={form.price}
-              onChange={(e) => set("price", Number(e.target.value))}
-              placeholder="0"
-            />
-          </div>
-          {/* 자동 계산 표시 */}
-          {form.price > 0 && (
-            <div className="rounded-lg p-3 text-sm space-y-1" style={{ backgroundColor: "var(--muted)" }}>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">월 비용</span>
-                <span className="font-semibold">₩{monthlyCost.toLocaleString("ko-KR")}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">연 비용</span>
-                <span className="font-semibold">₩{yearlyCost.toLocaleString("ko-KR")}</span>
-              </div>
-              {form.startDate && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">다음 결제일</span>
-                  <span className="font-semibold">{nextPayment}</span>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="space-y-1.5">
-            <Label>구독시작일</Label>
-            <Input
-              type="date"
-              value={form.startDate}
-              onChange={(e) => set("startDate", e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>결제방법</Label>
-            <Select value={form.paymentMethod} onValueChange={(v) => set("paymentMethod", v)}>
-              <SelectTrigger><SelectValue placeholder="결제방법 선택" /></SelectTrigger>
-              <SelectContent>
-                {paymentOptions.map((opt) => (
-                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>비고</Label>
-            <Textarea
-              value={form.note}
-              onChange={(e) => set("note", e.target.value)}
-              placeholder="기타 메모"
-              rows={2}
-              className="resize-none"
-            />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={onClose}>장욤</Button>
-          <Button
-            onClick={() => {
-              if (!form.serviceName.trim()) {
-                toast.error("서비스명을 입력해주세요");
-                return;
-              }
-              onSave(form);
-            }}
-          >저장</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── 카드 카드 컴포넌트 ───────────────────────────────────────────────
 function CardItem({
   card,
@@ -765,20 +561,6 @@ export default function Cards() {
     onError: () => toast.error("삭제에 실패했습니다"),
   });
 
-  // 정기결제
-  const { data: subList = [], isLoading: subsLoading } = trpc.subscription.list.useQuery();
-  const createSub = trpc.subscription.create.useMutation({
-    onSuccess: () => { utils.subscription.list.invalidate(); toast.success("구독이 추가되었습니다"); setSubDialog(null); },
-    onError: () => toast.error("저장에 실패했습니다"),
-  });
-  const updateSub = trpc.subscription.update.useMutation({
-    onSuccess: () => { utils.subscription.list.invalidate(); toast.success("수정되었습니다"); setSubDialog(null); },
-    onError: () => toast.error("수정에 실패했습니다"),
-  });
-  const deleteSub = trpc.subscription.delete.useMutation({
-    onSuccess: () => { utils.subscription.list.invalidate(); toast.success("삭제되었습니다"); },
-    onError: () => toast.error("삭제에 실패했습니다"),
-  });
 
   // 다이얼로그 상태
   const [cardDialog, setCardDialog] = useState<{
@@ -791,11 +573,6 @@ export default function Cards() {
     data: typeof emptyPoint;
     id?: number;
   } | null>(null);
-  const [subDialog, setSubDialog] = useState<{
-    mode: "create" | "edit";
-    data: typeof emptySubscription;
-    id?: number;
-  } | null>(null);
 
   // 집계
   const creditCards = (cardList as CardRow[]).filter((c) => c.cardType === "신용카드");
@@ -806,10 +583,6 @@ export default function Cards() {
   );
   const totalPoints = (pointList as PointRow[]).reduce(
     (s, p) => s + (p.balance ?? 0),
-    0
-  );
-  const totalMonthlySubscription = (subList as SubscriptionRow[]).reduce(
-    (s, sub) => s + calcMonthlyCost(sub.price, sub.billingCycle),
     0
   );
 
@@ -865,10 +638,6 @@ export default function Cards() {
           <TabsTrigger value="points">
             <Coins className="w-4 h-4 mr-1.5" />
             포인트/마일리지 ({(pointList as PointRow[]).length})
-          </TabsTrigger>
-          <TabsTrigger value="subscriptions">
-            <RefreshCw className="w-4 h-4 mr-1.5" />
-            정기결제 ({(subList as SubscriptionRow[]).length})
           </TabsTrigger>
         </TabsList>
 
@@ -1092,120 +861,6 @@ export default function Cards() {
           )}
         </TabsContent>
 
-        {/* ── 정기결제 탭 ── */}
-        <TabsContent value="subscriptions" className="space-y-4">
-          {/* 요약 바 */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {[
-              { label: "총 월 구독비", value: `₩${totalMonthlySubscription.toLocaleString("ko-KR")}`, color: "var(--primary)" },
-              { label: "총 연 구독비", value: `₩${(totalMonthlySubscription * 12).toLocaleString("ko-KR")}`, color: "oklch(0.58 0.16 30)" },
-              { label: "구독 서비스", value: `${(subList as SubscriptionRow[]).length}개`, color: "oklch(0.50 0.14 150)" },
-            ].map((item) => (
-              <div key={item.label} className="rounded-xl border bg-card p-3 flex items-center gap-3" style={{ borderColor: "var(--border)" }}>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: item.color + "22" }}>
-                  <RefreshCw className="w-4 h-4" style={{ color: item.color }} />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{item.label}</p>
-                  <p className="font-bold text-sm">{item.value}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex justify-end">
-            <Button onClick={() => setSubDialog({ mode: "create", data: { ...emptySubscription } })}>
-              <Plus className="w-4 h-4 mr-1.5" />
-              구독 추가
-            </Button>
-          </div>
-
-          {subsLoading ? (
-            <div className="text-center py-16 text-muted-foreground">
-              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-sm">불러오는 중...</p>
-            </div>
-          ) : (subList as SubscriptionRow[]).length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground">
-              <RefreshCw className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">등록된 정기결제 서비스가 없습니다</p>
-              <p className="text-xs mt-1">구독 추가 버튼을 눌러 시작하세요</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* 카테고리별 그룹 */}
-              {["비즈니스", "미디어", "자기계발", "기타"].map((cat) => {
-                const items = (subList as SubscriptionRow[]).filter((s) => s.category === cat);
-                if (items.length === 0) return null;
-                return (
-                  <div key={cat} className="space-y-2">
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
-                      {cat} ({items.length})
-                    </h3>
-                    {items.map((sub) => {
-                      const monthly = calcMonthlyCost(sub.price, sub.billingCycle);
-                      const yearly = calcYearlyCost(sub.price, sub.billingCycle);
-                      const nextDate = calcNextPaymentDate(sub.startDate ?? "", sub.billingCycle);
-                      return (
-                        <div key={sub.id} className="rounded-xl border bg-card p-4" style={{ borderColor: "var(--border)" }}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "var(--primary)22" }}>
-                                <RefreshCw className="w-4 h-4" style={{ color: "var(--primary)" }} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-semibold text-sm truncate">{sub.serviceName}</p>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <Badge variant="secondary" className="text-xs px-1.5 py-0">{sub.billingCycle}</Badge>
-                                  <span className="text-xs text-muted-foreground">₩{sub.price.toLocaleString("ko-KR")}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex gap-1 flex-shrink-0">
-                              <Button variant="ghost" size="icon" className="h-8 w-8"
-                                onClick={() => setSubDialog({ mode: "edit", id: sub.id, data: {
-                                  serviceName: sub.serviceName,
-                                  category: sub.category,
-                                  billingCycle: sub.billingCycle,
-                                  price: sub.price,
-                                  startDate: sub.startDate ?? "",
-                                  paymentMethod: sub.paymentMethod ?? "",
-                                  note: sub.note ?? "",
-                                }})}
-                              ><Pencil className="w-4 h-4" /></Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
-                                onClick={() => { if (confirm("이 구독을 삭제하시겠습니까?")) deleteSub.mutate({ id: sub.id }); }}
-                              ><Trash2 className="w-4 h-4" /></Button>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t text-xs" style={{ borderColor: "var(--border)" }}>
-                            <div>
-                              <p className="text-muted-foreground">월 비용</p>
-                              <p className="font-semibold">₩{monthly.toLocaleString("ko-KR")}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">연 비용</p>
-                              <p className="font-semibold">₩{yearly.toLocaleString("ko-KR")}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">다음 결제일</p>
-                              <p className="font-semibold flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />{nextDate}
-                              </p>
-                            </div>
-                          </div>
-                          {sub.paymentMethod && (
-                            <p className="text-xs text-muted-foreground mt-2">결제: {sub.paymentMethod}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
       </Tabs>
 
       {/* 카드 다이얼로그 */}
@@ -1240,23 +895,6 @@ export default function Cards() {
         />
       )}
 
-      {/* 정기결제 다이얼로그 */}
-      {subDialog && (
-        <SubscriptionDialog
-          key={subDialog.mode + (subDialog.id ?? "new")}
-          open={true}
-          onClose={() => setSubDialog(null)}
-          initial={subDialog.data}
-          cardList={cardList as CardRow[]}
-          onSave={(data) => {
-            if (subDialog.mode === "create") {
-              createSub.mutate(data);
-            } else if (subDialog.id) {
-              updateSub.mutate({ id: subDialog.id, data });
-            }
-          }}
-        />
-      )}
     </div>
   );
 }
