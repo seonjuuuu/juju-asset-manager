@@ -1,3 +1,4 @@
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount, currentYear, currentMonth, MONTH_NAMES, MAIN_CATEGORIES, VARIABLE_SUB_CATEGORIES, INCOME_SUB_CATEGORIES, FIXED_SUB_CATEGORIES, SAVINGS_SUB_CATEGORIES } from "@/lib/utils";
@@ -28,7 +29,7 @@ const EMPTY_FORM = {
   mainCategory: "수입",
   subCategory: "",
   description: "",
-  amount: "",
+  amount: 0,
   note: "",
 };
 
@@ -93,7 +94,7 @@ export default function Ledger() {
       mainCategory: entry.mainCategory,
       subCategory: entry.subCategory ?? "",
       description: entry.description ?? "",
-      amount: String(entry.amount),
+      amount: entry.amount ?? 0,
       note: entry.note ?? "",
     });
     setDialogOpen(true);
@@ -107,7 +108,7 @@ export default function Ledger() {
       mainCategory: form.mainCategory,
       subCategory: form.subCategory || undefined,
       description: form.description || undefined,
-      amount: Number(form.amount),
+      amount: form.amount,
       note: form.note || undefined,
     };
     if (editing) {
@@ -269,7 +270,7 @@ export default function Ledger() {
             </div>
             <div>
               <Label className="text-xs">금액 (원)</Label>
-              <Input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" className="mt-1" />
+              <CurrencyInput value={form.amount} onChange={(v) => setForm(f => ({ ...f, amount: v }))} placeholder="0" suffix="원" className="mt-1" />
             </div>
             <div>
               <Label className="text-xs">비고</Label>

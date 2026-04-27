@@ -1,3 +1,4 @@
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount, formatReturnRate, returnRateColor } from "@/lib/utils";
@@ -16,8 +17,8 @@ const ASSET_TYPES = ["ETF", "펀드", "예금", "채권", "기타"];
 const EMPTY_FORM = {
   pensionType: "개인연금(연금저축펀드)", company: "", assetType: "ETF",
   stockName: "", ticker: "", market: "KR" as "KR" | "US",
-  avgBuyPrice: "", quantity: "",
-  buyAmount: "", currentPrice: "", currentAmount: "", returnRate: "", note: "",
+  avgBuyPrice: 0, quantity: "",
+  buyAmount: 0, currentPrice: 0, currentAmount: 0, returnRate: "", note: "",
 };
 
 type PensionAsset = {
@@ -109,11 +110,11 @@ export default function Pension() {
       stockName: a.stockName ?? "",
       ticker: a.ticker ?? "",
       market: "KR",
-      avgBuyPrice: String(a.avgBuyPrice ?? ""),
+      avgBuyPrice: a.avgBuyPrice ?? 0,
       quantity: a.quantity ?? "",
-      buyAmount: String(a.buyAmount ?? ""),
-      currentPrice: String(a.currentPrice ?? ""),
-      currentAmount: String(a.currentAmount ?? ""),
+      buyAmount: a.buyAmount ?? 0,
+      currentPrice: a.currentPrice ?? 0,
+      currentAmount: a.currentAmount ?? 0,
       returnRate: a.returnRate ?? "",
       note: a.note ?? "",
     });
@@ -124,16 +125,16 @@ export default function Pension() {
   useEffect(() => {
     if (form.assetType !== "ETF") return;
     const qty = parseFloat(form.quantity);
-    const currentPrice = parseFloat(form.currentPrice);
-    const avgBuy = parseFloat(form.avgBuyPrice);
+    const currentPrice = typeof form.currentPrice === 'number' ? form.currentPrice : parseFloat(String(form.currentPrice));
+    const avgBuy = typeof form.avgBuyPrice === 'number' ? form.avgBuyPrice : parseFloat(String(form.avgBuyPrice));
     if (!isNaN(qty) && !isNaN(currentPrice) && qty > 0 && currentPrice > 0) {
       const currentAmount = Math.round(currentPrice * qty);
-      const buyAmount = !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : parseFloat(form.buyAmount) || 0;
+      const buyAmount = !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : (typeof form.buyAmount === 'number' ? form.buyAmount : parseFloat(String(form.buyAmount))) || 0;
       const returnRate = buyAmount > 0 ? (((currentAmount - buyAmount) / buyAmount) * 100).toFixed(2) : "";
       setForm(f => ({
         ...f,
-        currentAmount: String(currentAmount),
-        buyAmount: !isNaN(avgBuy) && avgBuy > 0 ? String(Math.round(avgBuy * qty)) : f.buyAmount,
+        currentAmount: currentAmount,
+        buyAmount: !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : f.buyAmount,
         returnRate,
       }));
     }
@@ -150,7 +151,7 @@ export default function Pension() {
     const result = await fetchPrice(form.ticker.trim(), form.market);
     setEtfFetching(false);
     if (result) {
-      setForm(f => ({ ...f, currentPrice: String(result.price), stockName: f.stockName || result.name }));
+      setForm(f => ({ ...f, currentPrice: result.price, stockName: f.stockName || result.name }));
       toast.success(`현재가 조회 완료: ₩${result.price.toLocaleString("ko-KR")}`);
     } else {
       toast.error("현재가 조회 실패. 종목코드를 확인해주세요.");
@@ -411,10 +412,9 @@ export default function Pension() {
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
                     <Label className="text-xs">현재가 (자동 조회)</Label>
-                    <Input
-                      type="number"
+                    <CurrencyInput
                       value={form.currentPrice}
-                      onChange={e => setForm(f => ({ ...f, currentPrice: e.target.value }))}
+                      onChange={(v) => setForm(f => ({ ...f, currentPrice: v }))}
                       placeholder="조회 버튼 클릭 또는 직접 입력"
                       className="mt-1"
                     />
@@ -450,7 +450,7 @@ export default function Pension() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">평균 매수가</Label>
-                <Input type="number" value={form.avgBuyPrice} onChange={e => setForm(f => ({ ...f, avgBuyPrice: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.avgBuyPrice} onChange={(v) => setForm(f => ({ ...f, avgBuyPrice: v }))} placeholder="0" className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">수량</Label>
@@ -460,24 +460,22 @@ export default function Pension() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">매수원금 (원)</Label>
-                <Input
-                  type="number"
+                <CurrencyInput
                   value={form.buyAmount}
-                  onChange={e => setForm(f => ({ ...f, buyAmount: e.target.value }))}
+                  onChange={(v) => setForm(f => ({ ...f, buyAmount: v }))}
                   placeholder={isETF ? "매수가×수량 자동 계산" : "0"}
                   className="mt-1"
-                  readOnly={isETF && !!form.avgBuyPrice && !!form.quantity}
+                  disabled={isETF && !!form.avgBuyPrice && !!form.quantity}
                 />
               </div>
               <div>
                 <Label className="text-xs">평가금액 (원)</Label>
-                <Input
-                  type="number"
+                <CurrencyInput
                   value={form.currentAmount}
-                  onChange={e => setForm(f => ({ ...f, currentAmount: e.target.value }))}
+                  onChange={(v) => setForm(f => ({ ...f, currentAmount: v }))}
                   placeholder={isETF ? "현재가×수량 자동 계산" : "0"}
                   className="mt-1"
-                  readOnly={isETF && !!form.currentPrice && !!form.quantity}
+                  disabled={isETF && !!form.currentPrice && !!form.quantity}
                 />
               </div>
             </div>

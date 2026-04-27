@@ -1,3 +1,4 @@
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount } from "@/lib/utils";
@@ -10,7 +11,7 @@ import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
 
 const EMPTY_FORM = {
   district: "", dong: "", aptName: "", builtYear: "", households: "", areaSize: "", floor: "", direction: "",
-  salePrice: "", leasePrice: "", currentPrice: "", price201912: "", price202112: "",
+  salePrice: 0, leasePrice: 0, currentPrice: 0, price201912: 0, price202112: 0,
   monthlyMaintenance: "", note: "",
 };
 
@@ -75,11 +76,11 @@ export default function RealEstate() {
       areaSize: p.areaSize ?? "",
       floor: p.floor ?? "",
       direction: p.direction ?? "",
-      salePrice: String(p.salePrice ?? ""),
-      leasePrice: String(p.leasePrice ?? ""),
-      currentPrice: String(p.currentPrice ?? ""),
-      price201912: String(p.price201912 ?? ""),
-      price202112: String(p.price202112 ?? ""),
+      salePrice: p.salePrice ?? 0,
+      leasePrice: p.leasePrice ?? 0,
+      currentPrice: p.currentPrice ?? 0,
+      price201912: p.price201912 ?? 0,
+      price202112: p.price202112 ?? 0,
       monthlyMaintenance: "",
       note: p.note ?? "",
     });
@@ -96,11 +97,11 @@ export default function RealEstate() {
       areaSize: form.areaSize || undefined,
       floor: form.floor || undefined,
       direction: form.direction || undefined,
-      salePrice: form.salePrice ? Number(form.salePrice) : undefined,
-      leasePrice: form.leasePrice ? Number(form.leasePrice) : undefined,
-      currentPrice: form.currentPrice ? Number(form.currentPrice) : undefined,
-      price201912: form.price201912 ? Number(form.price201912) : undefined,
-      price202112: form.price202112 ? Number(form.price202112) : undefined,
+      salePrice: form.salePrice || undefined,
+      leasePrice: form.leasePrice || undefined,
+      currentPrice: form.currentPrice || undefined,
+      price201912: form.price201912 || undefined,
+      price202112: form.price202112 || undefined,
       note: form.note || undefined,
     };
     if (editing) {
@@ -238,25 +239,25 @@ export default function RealEstate() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">매매가 취득가 (만원)</Label>
-                <Input type="number" value={form.salePrice} onChange={e => setForm(f => ({ ...f, salePrice: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.salePrice} onChange={(v) => setForm(f => ({ ...f, salePrice: v }))} placeholder="0" suffix="만원" className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">전세가 (만원)</Label>
-                <Input type="number" value={form.leasePrice} onChange={e => setForm(f => ({ ...f, leasePrice: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.leasePrice} onChange={(v) => setForm(f => ({ ...f, leasePrice: v }))} placeholder="0" suffix="만원" className="mt-1" />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs">현재 시세 (만원)</Label>
-                <Input type="number" value={form.currentPrice} onChange={e => setForm(f => ({ ...f, currentPrice: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.currentPrice} onChange={(v) => setForm(f => ({ ...f, currentPrice: v }))} placeholder="0" suffix="만원" className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">19.12 실거래가</Label>
-                <Input type="number" value={form.price201912} onChange={e => setForm(f => ({ ...f, price201912: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.price201912} onChange={(v) => setForm(f => ({ ...f, price201912: v }))} placeholder="0" suffix="만원" className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">21.12 실거래가</Label>
-                <Input type="number" value={form.price202112} onChange={e => setForm(f => ({ ...f, price202112: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.price202112} onChange={(v) => setForm(f => ({ ...f, price202112: v }))} placeholder="0" suffix="만원" className="mt-1" />
               </div>
             </div>
             <div>

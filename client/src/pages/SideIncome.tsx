@@ -1,3 +1,4 @@
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -87,7 +88,7 @@ function CategoryDialog({
 type SideIncomeForm = {
   incomeDate: string;
   categoryId: string;
-  amount: string;
+  amount: number;
   description: string;
   isRegular: boolean;
   note: string;
@@ -96,7 +97,7 @@ type SideIncomeForm = {
 const emptyForm = (): SideIncomeForm => ({
   incomeDate: new Date().toISOString().slice(0, 10),
   categoryId: "",
-  amount: "",
+  amount: 0,
   description: "",
   isRegular: false,
   note: "",
@@ -129,11 +130,11 @@ function SideIncomeDialog({
     onError: (e) => toast.error(e.message),
   });
 
-  const set = (k: keyof SideIncomeForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: keyof SideIncomeForm, v: string | boolean | number) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = () => {
     if (!form.incomeDate) { toast.error("날짜를 입력해주세요"); return; }
-    if (!form.amount || isNaN(Number(form.amount))) { toast.error("금액을 입력해주세요"); return; }
+    if (!form.amount || form.amount <= 0) { toast.error("금액을 입력해주세요"); return; }
     const cat = categories.find(c => c.id === Number(form.categoryId));
     const d = new Date(form.incomeDate);
     const payload = {
@@ -142,7 +143,7 @@ function SideIncomeDialog({
       month: d.getMonth() + 1,
       categoryId: cat?.id,
       categoryName: cat?.name,
-      amount: Number(form.amount),
+      amount: form.amount,
       description: form.description || undefined,
       isRegular: form.isRegular,
       note: form.note || undefined,
@@ -163,7 +164,7 @@ function SideIncomeDialog({
             </div>
             <div className="space-y-1.5">
               <Label>금액 (원)</Label>
-              <Input type="number" value={form.amount} onChange={e => set("amount", e.target.value)} placeholder="0" />
+              <CurrencyInput value={form.amount} onChange={(v) => set("amount", v)} placeholder="0" suffix="원" />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -399,7 +400,7 @@ export default function SideIncome() {
                                       id: inc.id,
                                       incomeDate: String(inc.incomeDate),
                                       categoryId: inc.categoryId ? String(inc.categoryId) : "",
-                                      amount: String(inc.amount),
+                                      amount: inc.amount ?? 0,
                                       description: inc.description ?? "",
                                       isRegular: inc.isRegular ?? false,
                                       note: inc.note ?? "",

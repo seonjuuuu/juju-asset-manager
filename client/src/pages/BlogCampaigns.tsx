@@ -1,3 +1,4 @@
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount } from "@/lib/utils";
@@ -14,7 +15,7 @@ const CATEGORIES = ["카페", "맛집", "숙소", "뷰티", "생활용품", "식
 
 const EMPTY_FORM = {
   platform: "", campaignType: "방문형", category: "카페", businessName: "",
-  amount: "", startDate: "", endDate: "", visitDate: "", reviewDone: false, completed: false, note: "",
+  amount: 0, startDate: "", endDate: "", visitDate: "", reviewDone: false, completed: false, note: "",
 };
 
 type Campaign = {
@@ -80,7 +81,7 @@ export default function BlogCampaigns() {
       campaignType: c.campaignType ?? "방문형",
       category: c.category ?? "카페",
       businessName: c.businessName ?? "",
-      amount: String(c.amount ?? ""),
+      amount: c.amount ?? 0,
       startDate: c.startDate ?? "",
       endDate: c.endDate ?? "",
       visitDate: c.visitDate ?? "",
@@ -97,7 +98,7 @@ export default function BlogCampaigns() {
       campaignType: form.campaignType || undefined,
       category: form.category || undefined,
       businessName: form.businessName || undefined,
-      amount: form.amount ? Number(form.amount) : undefined,
+      amount: form.amount || undefined,
       startDate: form.startDate || undefined,
       endDate: form.endDate || undefined,
       visitDate: form.visitDate || undefined,
@@ -266,7 +267,7 @@ export default function BlogCampaigns() {
             </div>
             <div>
               <Label className="text-xs">금액 (원)</Label>
-              <Input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" className="mt-1" />
+              <CurrencyInput value={form.amount} onChange={(v) => setForm(f => ({ ...f, amount: v }))} placeholder="0" suffix="원" className="mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

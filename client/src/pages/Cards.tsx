@@ -2,6 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -177,11 +178,11 @@ function CardDialog({
           {/* 연회비 */}
           <div className="space-y-1.5">
             <Label>연회비 (원)</Label>
-            <Input
-              type="number"
+            <CurrencyInput
               value={form.annualFee}
-              onChange={(e) => set("annualFee", Number(e.target.value))}
+              onChange={(v) => set("annualFee", v)}
               placeholder="0"
+              suffix="원"
             />
           </div>
 
@@ -208,11 +209,11 @@ function CardDialog({
           {/* 카드한도 */}
           <div className="space-y-1.5">
             <Label>카드한도 (원)</Label>
-            <Input
-              type="number"
+            <CurrencyInput
               value={form.creditLimit}
-              onChange={(e) => set("creditLimit", Number(e.target.value))}
+              onChange={(v) => set("creditLimit", v)}
               placeholder="0"
+              suffix="원"
             />
           </div>
 
@@ -337,10 +338,9 @@ function PointDialog({
           </div>
           <div className="space-y-1.5">
             <Label>잔액 (포인트/마일)</Label>
-            <Input
-              type="number"
+            <CurrencyInput
               value={form.balance}
-              onChange={(e) => set("balance", Number(e.target.value))}
+              onChange={(v) => set("balance", v)}
               placeholder="0"
             />
           </div>

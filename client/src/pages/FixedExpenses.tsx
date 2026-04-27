@@ -1,3 +1,4 @@
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount } from "@/lib/utils";
@@ -15,8 +16,8 @@ const EMPTY_FORM = {
   mainCategory: "",
   subCategory: "",
   paymentAccount: "",
-  monthlyAmount: "",
-  totalAmount: "",
+  monthlyAmount: 0,
+  totalAmount: 0,
   interestRate: "",
   expiryDate: "",
   paymentDay: "",
@@ -76,8 +77,8 @@ export default function FixedExpenses() {
       mainCategory: e.mainCategory,
       subCategory: e.subCategory ?? "",
       paymentAccount: e.paymentAccount ?? "",
-      monthlyAmount: String(e.monthlyAmount ?? ""),
-      totalAmount: String(e.totalAmount ?? ""),
+      monthlyAmount: e.monthlyAmount ?? 0,
+      totalAmount: e.totalAmount ?? 0,
       interestRate: e.interestRate ?? "",
       expiryDate: e.expiryDate ?? "",
       paymentDay: String(e.paymentDay ?? ""),
@@ -91,8 +92,8 @@ export default function FixedExpenses() {
       mainCategory: form.mainCategory,
       subCategory: form.subCategory || undefined,
       paymentAccount: form.paymentAccount || undefined,
-      monthlyAmount: Number(form.monthlyAmount) || 0,
-      totalAmount: form.totalAmount ? Number(form.totalAmount) : undefined,
+      monthlyAmount: form.monthlyAmount || 0,
+      totalAmount: form.totalAmount || undefined,
       interestRate: form.interestRate || undefined,
       expiryDate: form.expiryDate || undefined,
       paymentDay: form.paymentDay ? Number(form.paymentDay) : undefined,
@@ -211,7 +212,7 @@ export default function FixedExpenses() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">월 금액 (원)</Label>
-                <Input type="number" value={form.monthlyAmount} onChange={e => setForm(f => ({ ...f, monthlyAmount: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.monthlyAmount} onChange={(v) => setForm(f => ({ ...f, monthlyAmount: v }))} placeholder="0" suffix="원" className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">납입일</Label>

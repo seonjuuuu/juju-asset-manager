@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, RefreshCw, Loader2, TrendingUp } from "lucide-react";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#5b7cfa", "#4ecdc4", "#45b7d1", "#f9ca24", "#f0932b", "#6c5ce7", "#fd79a8", "#00b894"];
@@ -17,8 +18,8 @@ const SECTORS = ["IT", "금융", "헬스케어", "소비재", "에너지", "산�
 const EMPTY_FORM = {
   market: "국내" as "국내" | "해외",
   broker: "", sector: "", stockName: "", ticker: "",
-  avgBuyPrice: "", quantity: "", buyAmount: "",
-  currentPrice: "", currentAmount: "", returnRate: "",
+  avgBuyPrice: 0, quantity: "", buyAmount: 0,
+  currentPrice: 0, currentAmount: 0, returnRate: "",
   snapshotMonth: new Date().toISOString().slice(0, 7), note: "",
 };
 
@@ -80,16 +81,16 @@ export default function StockPortfolio() {
   // 현재가 변경 시 평가금액·수익률 자동 계산
   useEffect(() => {
     const qty = parseFloat(form.quantity);
-    const currentPrice = parseFloat(form.currentPrice);
-    const avgBuy = parseFloat(form.avgBuyPrice);
+    const currentPrice = typeof form.currentPrice === "number" ? form.currentPrice : parseFloat(String(form.currentPrice));
+    const avgBuy = typeof form.avgBuyPrice === "number" ? form.avgBuyPrice : parseFloat(String(form.avgBuyPrice));
     if (!isNaN(qty) && !isNaN(currentPrice) && qty > 0 && currentPrice > 0) {
       const currentAmount = Math.round(currentPrice * qty);
-      const buyAmount = !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : parseFloat(form.buyAmount) || 0;
+      const buyAmount = !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : (typeof form.buyAmount === "number" ? form.buyAmount : parseFloat(String(form.buyAmount))) || 0;
       const returnRate = buyAmount > 0 ? (((currentAmount - buyAmount) / buyAmount) * 100).toFixed(2) : "";
       setForm(f => ({
         ...f,
-        currentAmount: String(currentAmount),
-        buyAmount: !isNaN(avgBuy) && avgBuy > 0 ? String(Math.round(avgBuy * qty)) : f.buyAmount,
+        currentAmount: currentAmount,
+        buyAmount: !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : f.buyAmount,
         returnRate,
       }));
     }
@@ -119,7 +120,7 @@ export default function StockPortfolio() {
     if (result) {
       setForm(f => ({
         ...f,
-        currentPrice: String(result.price),
+        currentPrice: result.price,
         stockName: f.stockName || result.name,
       }));
       setLastUpdated(new Date().toLocaleString("ko-KR"));
@@ -182,11 +183,11 @@ export default function StockPortfolio() {
       sector: s.sector ?? "",
       stockName: s.stockName,
       ticker: s.ticker ?? "",
-      avgBuyPrice: String(s.avgBuyPrice ?? ""),
+      avgBuyPrice: s.avgBuyPrice ?? 0,
       quantity: s.quantity ?? "",
-      buyAmount: String(s.buyAmount ?? ""),
-      currentPrice: String(s.currentPrice ?? ""),
-      currentAmount: String(s.currentAmount ?? ""),
+      buyAmount: s.buyAmount ?? 0,
+      currentPrice: s.currentPrice ?? 0,
+      currentAmount: s.currentAmount ?? 0,
       returnRate: s.returnRate ?? "",
       snapshotMonth: s.snapshotMonth ?? new Date().toISOString().slice(0, 7),
       note: s.note ?? "",
@@ -202,11 +203,11 @@ export default function StockPortfolio() {
       sector: form.sector || undefined,
       stockName: form.stockName,
       ticker: form.ticker || undefined,
-      avgBuyPrice: form.avgBuyPrice ? Number(form.avgBuyPrice) : undefined,
+      avgBuyPrice: form.avgBuyPrice || undefined,
       quantity: form.quantity || undefined,
-      buyAmount: form.buyAmount ? Number(form.buyAmount) : undefined,
-      currentPrice: form.currentPrice ? Number(form.currentPrice) : undefined,
-      currentAmount: form.currentAmount ? Number(form.currentAmount) : undefined,
+      buyAmount: form.buyAmount || undefined,
+      currentPrice: form.currentPrice || undefined,
+      currentAmount: form.currentAmount || undefined,
       returnRate: form.returnRate || undefined,
       snapshotMonth: form.snapshotMonth || undefined,
       note: form.note || undefined,
@@ -419,10 +420,9 @@ export default function StockPortfolio() {
               <div className="flex items-center gap-2">
                 <div className="flex-1">
                   <Label className="text-xs">현재가</Label>
-                  <Input
-                    type="number"
+                  <CurrencyInput
                     value={form.currentPrice}
-                    onChange={e => setForm(f => ({ ...f, currentPrice: e.target.value }))}
+                    onChange={(v) => setForm(f => ({ ...f, currentPrice: v }))}
                     placeholder="조회 버튼 클릭 또는 직접 입력"
                     className="mt-1"
                   />
@@ -449,7 +449,7 @@ export default function StockPortfolio() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">평균 매수가 (원)</Label>
-                <Input type="number" value={form.avgBuyPrice} onChange={e => setForm(f => ({ ...f, avgBuyPrice: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.avgBuyPrice} onChange={(v) => setForm(f => ({ ...f, avgBuyPrice: v }))} placeholder="0" className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">수량</Label>
@@ -459,24 +459,22 @@ export default function StockPortfolio() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">매수원금 (원)</Label>
-                <Input
-                  type="number"
+                <CurrencyInput
                   value={form.buyAmount}
-                  onChange={e => setForm(f => ({ ...f, buyAmount: e.target.value }))}
+                  onChange={(v) => setForm(f => ({ ...f, buyAmount: v }))}
                   placeholder="매수가×수량 자동 계산"
                   className="mt-1"
-                  readOnly={!!form.avgBuyPrice && !!form.quantity}
+                  disabled={!!form.avgBuyPrice && !!form.quantity}
                 />
               </div>
               <div>
                 <Label className="text-xs">평가금액 (원)</Label>
-                <Input
-                  type="number"
+                <CurrencyInput
                   value={form.currentAmount}
-                  onChange={e => setForm(f => ({ ...f, currentAmount: e.target.value }))}
+                  onChange={(v) => setForm(f => ({ ...f, currentAmount: v }))}
                   placeholder="현재가×수량 자동 계산"
                   className="mt-1"
-                  readOnly={!!form.currentPrice && !!form.quantity}
+                  disabled={!!form.currentPrice && !!form.quantity}
                 />
               </div>
             </div>

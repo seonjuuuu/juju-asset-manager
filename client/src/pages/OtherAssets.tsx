@@ -1,3 +1,4 @@
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount } from "@/lib/utils";
@@ -9,7 +10,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
 const EMPTY_FORM = {
-  category: "", monthlyDeposit: "", paidAmount: "", totalAmount: "", note: "",
+  category: "", monthlyDeposit: 0, paidAmount: 0, totalAmount: 0, note: "",
 };
 
 type OtherAsset = {
@@ -54,9 +55,9 @@ export default function OtherAssets() {
     setEditing(a);
     setForm({
       category: a.category,
-      monthlyDeposit: String(a.monthlyDeposit ?? ""),
-      paidAmount: String(a.paidAmount ?? ""),
-      totalAmount: String(a.totalAmount ?? ""),
+      monthlyDeposit: a.monthlyDeposit ?? 0,
+      paidAmount: a.paidAmount ?? 0,
+      totalAmount: a.totalAmount ?? 0,
       note: a.note ?? "",
     });
     setDialogOpen(true);
@@ -65,9 +66,9 @@ export default function OtherAssets() {
   const handleSubmit = () => {
     const data = {
       category: form.category,
-      monthlyDeposit: form.monthlyDeposit ? Number(form.monthlyDeposit) : undefined,
-      paidAmount: form.paidAmount ? Number(form.paidAmount) : undefined,
-      totalAmount: form.totalAmount ? Number(form.totalAmount) : undefined,
+      monthlyDeposit: form.monthlyDeposit || undefined,
+      paidAmount: form.paidAmount || undefined,
+      totalAmount: form.totalAmount || undefined,
       note: form.note || undefined,
     };
     if (editing) {
@@ -155,16 +156,16 @@ export default function OtherAssets() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">월 납입액 (원)</Label>
-                <Input type="number" value={form.monthlyDeposit} onChange={e => setForm(f => ({ ...f, monthlyDeposit: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.monthlyDeposit} onChange={(v) => setForm(f => ({ ...f, monthlyDeposit: v }))} placeholder="0" suffix="원" className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">납입 원금 (원)</Label>
-                <Input type="number" value={form.paidAmount} onChange={e => setForm(f => ({ ...f, paidAmount: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={form.paidAmount} onChange={(v) => setForm(f => ({ ...f, paidAmount: v }))} placeholder="0" suffix="원" className="mt-1" />
               </div>
             </div>
             <div>
               <Label className="text-xs">평가/예상액 (원)</Label>
-              <Input type="number" value={form.totalAmount} onChange={e => setForm(f => ({ ...f, totalAmount: e.target.value }))} placeholder="0" className="mt-1" />
+              <CurrencyInput value={form.totalAmount} onChange={(v) => setForm(f => ({ ...f, totalAmount: v }))} placeholder="0" suffix="원" className="mt-1" />
             </div>
             <div>
               <Label className="text-xs">비고</Label>

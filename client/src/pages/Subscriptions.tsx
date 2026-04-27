@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, RefreshCw, Calendar } from "lucide-react";
+import { CurrencyInput } from "@/components/ui/currency-input";
 
 // ─── 서비스명 → favicon 도메인 매핑 ─────────────────────────────────────────
 const SERVICE_DOMAIN_MAP: Record<string, string> = {
@@ -356,11 +357,11 @@ function SubscriptionDialog({
           </div>
           <div className="space-y-1.5">
             <Label>구독료 (원)</Label>
-            <Input
-              type="number"
+            <CurrencyInput
               value={form.price}
-              onChange={(e) => set("price", Number(e.target.value))}
+              onChange={(v) => set("price", v)}
               placeholder="0"
+              suffix="원"
             />
           </div>
 
