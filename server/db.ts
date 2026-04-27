@@ -649,3 +649,36 @@ export async function deleteSubCategory(userId: number, id: number) {
   if (!db) throw new Error("DB not available");
   return db.delete(subCategories).where(and(eq(subCategories.id, id), eq(subCategories.userId, userId)));
 }
+
+// 기본 카테고리 시드 데이터
+const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; subs: string[] }[] = [
+  { name: "식비", type: "expense", subs: ["식료품", "외식", "카페/음료", "배달음식"] },
+  { name: "교통/차량", type: "expense", subs: ["대중교통", "택시", "주유", "주차", "차량유지"] },
+  { name: "주거/통신", type: "expense", subs: ["월세/관리비", "전기/가스/수도", "인터넷/통신", "보험"] },
+  { name: "의료/건강", type: "expense", subs: ["병원", "약국", "헬스/운동", "건강식품"] },
+  { name: "쇼핑/의류", type: "expense", subs: ["의류/잡화", "전자제품", "생활용품", "온라인쇼핑"] },
+  { name: "문화/여가", type: "expense", subs: ["영화/공연", "여행", "취미", "구독서비스"] },
+  { name: "교육", type: "expense", subs: ["학원/강의", "도서", "온라인강의"] },
+  { name: "금융", type: "expense", subs: ["이체/송금", "수수료", "세금"] },
+  { name: "기타지출", type: "expense", subs: ["경조사", "기부", "기타"] },
+  { name: "급여", type: "income", subs: ["본봉", "상여/성과급"] },
+  { name: "사업소득", type: "income", subs: ["프리랜서", "부업"] },
+  { name: "투자수익", type: "income", subs: ["주식배당", "이자수익", "임대수익"] },
+  { name: "기타수입", type: "income", subs: ["용돈", "환급", "기타"] },
+];
+
+export async function seedDefaultCategories(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // 이미 카테고리가 있으면 스킵
+  const existing = await db.select().from(categories).where(eq(categories.userId, userId)).limit(1);
+  if (existing.length > 0) return;
+  // 기본 카테고리 삽입
+  for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
+    const cat = DEFAULT_CATEGORIES[i];
+    const [result] = await db.insert(categories).values({ name: cat.name, type: cat.type, sortOrder: i, userId }).$returningId();
+    for (let j = 0; j < cat.subs.length; j++) {
+      await db.insert(subCategories).values({ categoryId: result.id, name: cat.subs[j], sortOrder: j, userId });
+    }
+  }
+}

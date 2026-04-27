@@ -528,7 +528,10 @@ export const appRouter = router({
   }),
   categories: router({
     list: protectedProcedure
-      .query(({ ctx }) => db.listCategories(ctx.user.id)),
+      .query(async ({ ctx }) => {
+        await db.seedDefaultCategories(ctx.user.id);
+        return db.listCategories(ctx.user.id);
+      }),
     addMain: protectedProcedure
       .input(z.object({ name: z.string().min(1), type: z.enum(["expense", "income", "both"]), sortOrder: z.number().default(0) }))
       .mutation(({ input, ctx }) => db.createCategory(ctx.user.id, input)),
