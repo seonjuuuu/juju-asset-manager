@@ -21,6 +21,149 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, RefreshCw, Calendar } from "lucide-react";
 
+// ─── 서비스명 → favicon 도메인 매핑 ─────────────────────────────────────────
+const SERVICE_DOMAIN_MAP: Record<string, string> = {
+  // 스트리밍/미디어
+  "넷플릭스": "netflix.com",
+  "netflix": "netflix.com",
+  "웨이브": "wavve.com",
+  "wavve": "wavve.com",
+  "디즈니플러스": "disneyplus.com",
+  "디즈니+": "disneyplus.com",
+  "disney+": "disneyplus.com",
+  "disney plus": "disneyplus.com",
+  "티빙": "tving.com",
+  "tving": "tving.com",
+  "왓챠": "watcha.com",
+  "watcha": "watcha.com",
+  "시즌": "seezn.com",
+  "seezn": "seezn.com",
+  "쿠팡플레이": "coupangplay.com",
+  "coupang play": "coupangplay.com",
+  "유튜브": "youtube.com",
+  "youtube": "youtube.com",
+  "유튜브프리미엄": "youtube.com",
+  "youtube premium": "youtube.com",
+  "스포티파이": "spotify.com",
+  "spotify": "spotify.com",
+  "애플뮤직": "music.apple.com",
+  "apple music": "music.apple.com",
+  "멜론": "melon.com",
+  "melon": "melon.com",
+  "지니뮤직": "genie.co.kr",
+  "genie": "genie.co.kr",
+  "벅스": "bugs.co.kr",
+  "bugs": "bugs.co.kr",
+  // AI/생산성
+  "챗지피티": "openai.com",
+  "쳇지피티": "openai.com",
+  "chatgpt": "openai.com",
+  "chatgpt plus": "openai.com",
+  "openai": "openai.com",
+  "클로드": "claude.ai",
+  "claude": "claude.ai",
+  "anthropic": "anthropic.com",
+  "마무스": "manus.im",
+  "manus": "manus.im",
+  "퍼플렉시티": "perplexity.ai",
+  "perplexity": "perplexity.ai",
+  "미드저니": "midjourney.com",
+  "midjourney": "midjourney.com",
+  "노션": "notion.so",
+  "notion": "notion.so",
+  "슬랙": "slack.com",
+  "slack": "slack.com",
+  "줌": "zoom.us",
+  "zoom": "zoom.us",
+  "피그마": "figma.com",
+  "figma": "figma.com",
+  "어도비": "adobe.com",
+  "adobe": "adobe.com",
+  "마이크로소프트": "microsoft.com",
+  "microsoft": "microsoft.com",
+  "microsoft 365": "microsoft.com",
+  "office 365": "microsoft.com",
+  "구글": "google.com",
+  "google": "google.com",
+  "google one": "one.google.com",
+  "구글원": "one.google.com",
+  "드롭박스": "dropbox.com",
+  "dropbox": "dropbox.com",
+  "에버노트": "evernote.com",
+  "evernote": "evernote.com",
+  // 쇼핑/기타
+  "쿠팡": "coupang.com",
+  "coupang": "coupang.com",
+  "네이버": "naver.com",
+  "naver": "naver.com",
+  "카카오": "kakao.com",
+  "kakao": "kakao.com",
+  "애플": "apple.com",
+  "apple": "apple.com",
+  "아마존": "amazon.com",
+  "amazon": "amazon.com",
+  "github": "github.com",
+  "깃허브": "github.com",
+  "버셀": "vercel.com",
+  "vercel": "vercel.com",
+  "aws": "aws.amazon.com",
+  "gcp": "cloud.google.com",
+  "azure": "azure.microsoft.com",
+};
+
+/** 서비스명으로 favicon URL 반환 */
+function getServiceFaviconUrl(serviceName: string): string | null {
+  const key = serviceName.trim().toLowerCase();
+  // 정확히 일치하는 키 먼저 찾기
+  const domain = SERVICE_DOMAIN_MAP[key]
+    ?? Object.entries(SERVICE_DOMAIN_MAP).find(([k]) => key.includes(k) || k.includes(key))?.[1];
+  if (!domain) return null;
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+}
+
+// ─── 서비스 로고 컴포넌트 ─────────────────────────────────────────────────────
+function ServiceLogo({
+  serviceName,
+  color,
+  size = "md",
+}: {
+  serviceName: string;
+  color: string;
+  size?: "sm" | "md";
+}) {
+  const [imgError, setImgError] = useState(false);
+  const faviconUrl = getServiceFaviconUrl(serviceName);
+  const sizeClass = size === "sm" ? "w-7 h-7" : "w-9 h-9";
+  const imgSize = size === "sm" ? "w-4 h-4" : "w-5 h-5";
+
+  if (faviconUrl && !imgError) {
+    return (
+      <div
+        className={`${sizeClass} rounded-lg flex items-center justify-center flex-shrink-0 bg-white shadow-sm border`}
+        style={{ borderColor: "var(--border)" }}
+      >
+        <img
+          src={faviconUrl}
+          alt={serviceName}
+          className={`${imgSize} object-contain rounded`}
+          onError={() => setImgError(true)}
+        />
+      </div>
+    );
+  }
+
+  // fallback: 서비스명 첫 글자
+  const initial = serviceName.trim().charAt(0).toUpperCase();
+  return (
+    <div
+      className={`${sizeClass} rounded-lg flex items-center justify-center flex-shrink-0 text-white font-bold text-sm`}
+      style={{ backgroundColor: color }}
+    >
+      {initial}
+    </div>
+  );
+}
+
 // ─── 유틸리티 ────────────────────────────────────────────────────────────────
 function calcNextPaymentDate(
   startDate: string,
@@ -135,11 +278,23 @@ function SubscriptionDialog({
     "계좌출금",
   ];
 
+  const faviconUrl = getServiceFaviconUrl(form.serviceName);
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>정기결제 서비스</DialogTitle>
+          <DialogTitle className="flex items-center gap-2.5">
+            {form.serviceName && faviconUrl ? (
+              <img
+                src={faviconUrl}
+                alt=""
+                className="w-5 h-5 object-contain rounded"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : null}
+            정기결제 서비스
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -147,8 +302,19 @@ function SubscriptionDialog({
             <Input
               value={form.serviceName}
               onChange={(e) => set("serviceName", e.target.value)}
-              placeholder="예: Netflix, ChatGPT Plus"
+              placeholder="예: 넷플릭스, ChatGPT Plus, 클로드"
             />
+            {form.serviceName && faviconUrl && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <img
+                  src={faviconUrl}
+                  alt=""
+                  className="w-4 h-4 object-contain rounded"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+                <span>로고가 자동으로 표시됩니다</span>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -468,15 +634,11 @@ export default function Subscriptions() {
                         {/* 상단: 이름 + 버튼 */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div
-                              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                              style={{ backgroundColor: catColor + "22" }}
-                            >
-                              <RefreshCw
-                                className="w-4 h-4"
-                                style={{ color: catColor }}
-                              />
-                            </div>
+                            {/* 서비스 로고 */}
+                            <ServiceLogo
+                              serviceName={sub.serviceName}
+                              color={catColor}
+                            />
                             <div className="min-w-0">
                               <p className="font-semibold text-sm truncate">
                                 {sub.serviceName}
