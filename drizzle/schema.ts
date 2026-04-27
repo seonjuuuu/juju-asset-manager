@@ -343,6 +343,8 @@ export const installments = mysqlTable("installments", {
   endDate: varchar("end_date", { length: 20 }).notNull(),
   isInterestFree: boolean("is_interest_free").notNull().default(true),
   interestRate: decimal("interest_rate", { precision: 10, scale: 4 }).default("0"),
+  categoryId: int("category_id"),
+  subCategoryId: int("sub_category_id"),
   note: text("note"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

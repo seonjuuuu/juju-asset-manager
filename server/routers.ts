@@ -26,6 +26,8 @@ const installmentInput = z.object({
   endDate: z.string(),
   isInterestFree: z.boolean().default(true),
   interestRate: z.string().optional(),
+  categoryId: z.number().int().nullable().optional(),
+  subCategoryId: z.number().int().nullable().optional(),
   note: z.string().optional(),
 });
 const subscriptionInput = z.object({

@@ -34,6 +34,8 @@ interface Installment {
   endDate: string;
   isInterestFree: boolean;
   interestRate: string | null;
+  categoryId: number | null;
+  subCategoryId: number | null;
   note: string | null;
 }
 
@@ -128,6 +130,8 @@ const defaultForm = {
   endDate: "",
   isInterestFree: true,
   interestRate: "",
+  categoryId: "" as string,
+  subCategoryId: "" as string,
   note: "",
 };
 
@@ -144,6 +148,8 @@ function InstallmentDialog({
   cards: Card[];
   onSave: (data: typeof defaultForm) => void;
 }) {
+  const { data: categoryList = [] } = trpc.categories.list.useQuery();
+
   const [form, setForm] = useState(() =>
     editing
       ? {
@@ -155,18 +161,23 @@ function InstallmentDialog({
           endDate: editing.endDate,
           isInterestFree: editing.isInterestFree,
           interestRate: editing.interestRate ?? "",
+          categoryId: editing.categoryId ? String(editing.categoryId) : "",
+          subCategoryId: editing.subCategoryId ? String(editing.subCategoryId) : "",
           note: editing.note ?? "",
         }
       : { ...defaultForm }
   );
 
-  // 카드 결제일 조회
   const selectedCard = cards.find((c) => String(c.id) === form.cardId);
   const paymentDay = selectedCard?.paymentDate
     ? parseInt(selectedCard.paymentDate.replace(/[^0-9]/g, ""))
     : null;
 
-  // 시작일 또는 개월수 변경 시 종료일 자동 계산
+  // 선택된 대분류의 중분류 목록
+  const subCategories = form.categoryId
+    ? (categoryList.find((c) => String(c.id) === form.categoryId)?.subCategories ?? [])
+    : [];
+
   function handleStartOrMonthsChange(newStart: string, newMonths: number) {
     const end = calcEndDate(newStart, newMonths, paymentDay);
     setForm((f) => ({ ...f, startDate: newStart, months: newMonths, endDate: end }));
@@ -179,11 +190,15 @@ function InstallmentDialog({
     setForm((f) => ({ ...f, cardId, endDate: end }));
   }
 
+  function handleCategoryChange(categoryId: string) {
+    setForm((f) => ({ ...f, categoryId, subCategoryId: "" }));
+  }
+
   const monthly = monthlyPayment(form.totalAmount, form.months, form.isInterestFree, form.interestRate);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? "할부 수정" : "할부 추가"}</DialogTitle>
         </DialogHeader>
@@ -196,6 +211,45 @@ function InstallmentDialog({
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
+          </div>
+          {/* 대분류 / 중분류 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>대분류</Label>
+              <Select value={form.categoryId} onValueChange={handleCategoryChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="대분류 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">없음</SelectItem>
+                  {categoryList.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>중분류</Label>
+              <Select
+                value={form.subCategoryId}
+                onValueChange={(v) => setForm((f) => ({ ...f, subCategoryId: v }))}
+                disabled={!form.categoryId || form.categoryId === "none"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="중분류 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">없음</SelectItem>
+                  {subCategories.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           {/* 결제 카드 */}
           <div className="space-y-1">
@@ -245,7 +299,7 @@ function InstallmentDialog({
               onChange={(e) => handleStartOrMonthsChange(e.target.value, form.months)}
             />
           </div>
-          {/* 종료일 (자동 계산, 수정 가능) */}
+          {/* 종료일 */}
           <div className="space-y-1">
             <Label>
               할부 종료일{" "}
@@ -351,6 +405,8 @@ export default function Installments() {
       endDate: form.endDate,
       isInterestFree: form.isInterestFree,
       interestRate: form.interestRate || "0",
+      categoryId: form.categoryId && form.categoryId !== "none" ? parseInt(form.categoryId) : null,
+      subCategoryId: form.subCategoryId && form.subCategoryId !== "none" ? parseInt(form.subCategoryId) : null,
       note: form.note || undefined,
     };
     if (editing) {
