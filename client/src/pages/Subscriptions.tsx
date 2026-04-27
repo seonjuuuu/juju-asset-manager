@@ -22,6 +22,14 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2, RefreshCw, Calendar } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 
+// ─── 서비스명 → 커스텀 로고 URL 매핑 (favicon 대신 직접 이미지 사용) ─────────
+const CUSTOM_LOGO_MAP: Record<string, string> = {
+  "넷플연가": "/manus-storage/netflyeonga-logo_676f13be.png",
+  "넷플 연가": "/manus-storage/netflyeonga-logo_676f13be.png",
+  "트레바리": "/manus-storage/trevari-logo_7c292a97.png",
+  "trevari": "/manus-storage/trevari-logo_7c292a97.png",
+};
+
 // ─── 서비스명 → favicon 도메인 매핑 ─────────────────────────────────────────
 const SERVICE_DOMAIN_MAP: Record<string, string> = {
   // 스트리밍/미디어
@@ -119,10 +127,14 @@ const SERVICE_DOMAIN_MAP: Record<string, string> = {
   "preply": "preply.com",
 };
 
-/** 서비스명으로 favicon URL 반환 */
+/** 서비스명으로 로고 URL 반환 (커스텀 로고 우선, 없으면 favicon) */
 function getServiceFaviconUrl(serviceName: string): string | null {
   const key = serviceName.trim().toLowerCase();
-  // 정확히 일치하는 키 먼저 찾기
+  // 1. 커스텀 로고 우선 확인
+  const customUrl = CUSTOM_LOGO_MAP[key]
+    ?? Object.entries(CUSTOM_LOGO_MAP).find(([k]) => key.includes(k) || k.includes(key))?.[1];
+  if (customUrl) return customUrl;
+  // 2. favicon 도메인 매핑
   const domain = SERVICE_DOMAIN_MAP[key]
     ?? Object.entries(SERVICE_DOMAIN_MAP).find(([k]) => key.includes(k) || k.includes(key))?.[1];
   if (!domain) return null;
