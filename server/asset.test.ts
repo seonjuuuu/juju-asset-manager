@@ -169,3 +169,12 @@ describe("cardPoint", () => {
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+describe("subscription", () => {
+  it("list returns array", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.subscription.list();
+    expect(Array.isArray(result)).toBe(true);
+  });
+});

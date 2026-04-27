@@ -18,12 +18,14 @@ import {
   InsertRealEstate,
   InsertSavingsAsset,
   InsertStockPortfolio,
+  InsertSubscription,
   ledgerEntries,
   otherAssets,
   pensionAssets,
   realEstates,
   savingsAssets,
   stockPortfolio,
+  subscriptions,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -433,4 +435,29 @@ export async function deleteCardPoint(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(cardPoints).where(eq(cardPoints.id, id));
+}
+
+// ─── 정기결제 서비스 ──────────────────────────────────────────────────────────
+export async function getSubscriptions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(subscriptions).orderBy(desc(subscriptions.createdAt));
+}
+
+export async function createSubscription(data: InsertSubscription) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(subscriptions).values(data);
+}
+
+export async function updateSubscription(id: number, data: Partial<InsertSubscription>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(subscriptions).set(data).where(eq(subscriptions.id, id));
+}
+
+export async function deleteSubscription(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(subscriptions).where(eq(subscriptions.id, id));
 }

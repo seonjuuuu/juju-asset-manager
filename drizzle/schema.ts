@@ -249,3 +249,20 @@ export const cardPoints = mysqlTable("card_points", {
 
 export type CardPoint = typeof cardPoints.$inferSelect;
 export type InsertCardPoint = typeof cardPoints.$inferInsert;
+
+// ─── 정기결제 서비스 ──────────────────────────────────────────────────────────
+export const subscriptions = mysqlTable("subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  serviceName: varchar("service_name", { length: 200 }).notNull(),           // 구독 서비스명
+  category: mysqlEnum("category", ["비즈니스", "미디어", "자기계발", "기타"]).notNull().default("기타"),
+  billingCycle: mysqlEnum("billing_cycle", ["매달", "매주", "매일"]).notNull().default("매달"),
+  price: bigint("price", { mode: "number" }).notNull().default(0),           // 구독료
+  startDate: varchar("start_date", { length: 20 }),                          // 구독시작일 YYYY-MM-DD
+  paymentMethod: varchar("payment_method", { length: 200 }),                 // 결제방법 (카드명/현금/계좌출금)
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscription = typeof subscriptions.$inferInsert;

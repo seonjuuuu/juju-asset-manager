@@ -6,6 +6,16 @@ import { z } from "zod";
 import * as db from "./db";
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
+const subscriptionInput = z.object({
+  serviceName: z.string(),
+  category: z.enum(["비즈니스", "미디어", "자기계발", "기타"]).default("기타"),
+  billingCycle: z.enum(["매달", "매주", "매일"]).default("매달"),
+  price: z.number().default(0),
+  startDate: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  note: z.string().optional(),
+});
+
 const cardInput = z.object({
   cardType: z.enum(["신용카드", "체크카드"]).default("신용카드"),
   cardCompany: z.string(),
@@ -293,6 +303,20 @@ export const appRouter = router({
       .mutation(({ input }) => db.updateBlogCampaign(input.id, input.data as Parameters<typeof db.updateBlogCampaign>[1])),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       db.deleteBlogCampaign(input.id)
+    ),
+  }),
+
+  // ─── 정기결제 서비스 ─────────────────────────────────────────────────────────
+  subscription: router({
+    list: protectedProcedure.query(() => db.getSubscriptions()),
+    create: protectedProcedure.input(subscriptionInput).mutation(({ input }) =>
+      db.createSubscription(input as Parameters<typeof db.createSubscription>[0])
+    ),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: subscriptionInput.partial() }))
+      .mutation(({ input }) => db.updateSubscription(input.id, input.data as Parameters<typeof db.updateSubscription>[1])),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      db.deleteSubscription(input.id)
     ),
   }),
 
