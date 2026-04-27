@@ -75,25 +75,21 @@ function isCompleted(endDate: string): boolean {
 }
 
 /** 현재 진행 회차 */
-/** 현재 진행 회차: 구매월 다음달 카드결제일부터 1회차 시작 */
-function currentInstallmentNo(purchaseDate: string, months: number, paymentDay?: number | null): number {
+/** 실제 납부 완료된 회차 수 (진행바 전용) */
+function completedPaymentCount(purchaseDate: string, months: number, paymentDay?: number | null): number {
   if (!purchaseDate) return 0;
   const [py, pm] = purchaseDate.split("-").map(Number);
   const now = new Date();
   const nowY = now.getFullYear();
-  const nowM = now.getMonth() + 1; // 1-based
+  const nowM = now.getMonth() + 1;
   const nowD = now.getDate();
-  // 1회차 결제일: 구매월+1의 카드결제일
   const firstPayDay = paymentDay ?? 1;
-  // 현재까지 완료된 회차 수 계산
-  // k회차 결제일 = (구매월 + k)월의 firstPayDay
   let completed = 0;
   for (let k = 1; k <= months; k++) {
     const payMonth = pm + k;
     const payYear = py + Math.floor((payMonth - 1) / 12);
     const payMonthNorm = ((payMonth - 1) % 12) + 1;
     const payDay = Math.min(firstPayDay, 28);
-    // 이 결제일이 오늘 이전이면 완료
     if (payYear < nowY || (payYear === nowY && payMonthNorm < nowM) ||
         (payYear === nowY && payMonthNorm === nowM && payDay <= nowD)) {
       completed = k;
@@ -101,7 +97,12 @@ function currentInstallmentNo(purchaseDate: string, months: number, paymentDay?:
       break;
     }
   }
-  // 진행중이면 최소 1회차 표시 (아직 첫 결제 전이어도 1/N으로 표시)
+  return completed;
+}
+
+/** 현재 진행 회차: 납부완료 + 1 (이번달 청구 포함, 최소 1회차 표시) */
+function currentInstallmentNo(purchaseDate: string, months: number, paymentDay?: number | null): number {
+  const completed = completedPaymentCount(purchaseDate, months, paymentDay);
   return Math.max(1, Math.min(completed + (completed < months ? 1 : 0), months));
 }
 
@@ -546,9 +547,10 @@ export default function Installments() {
               const instCard = cardList?.find((c: {id: number}) => c.id === inst.cardId) as {paymentDate?: string} | undefined;
               const instPayDay = instCard?.paymentDate ? parseInt(instCard.paymentDate.replace(/[^0-9]/g, "")) : null;
               const currentNo = currentInstallmentNo(inst.startDate, inst.months, instPayDay);
+              const completedNo = completedPaymentCount(inst.startDate, inst.months, instPayDay);
               const remaining = inst.months - currentNo;
               const cardName = getCardName(inst.cardId);
-              const progress = Math.round((currentNo / inst.months) * 100);
+              const progress = Math.round((completedNo / inst.months) * 100);
               return (
                 <Card key={inst.id} className="relative overflow-hidden">
                   <CardContent className="pt-5 pb-4">
