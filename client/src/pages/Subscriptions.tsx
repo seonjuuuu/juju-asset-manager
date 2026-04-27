@@ -335,7 +335,7 @@ export default function Subscriptions() {
   );
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="p-6 space-y-6 max-w-5xl mx-auto">
       {/* 헤더 */}
       <div>
         <h1
