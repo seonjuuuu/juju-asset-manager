@@ -496,6 +496,27 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteAccount(ctx.user.id, input.id)),
   }),
+  exchangeRate: router({
+    get: protectedProcedure
+      .input(z.object({ currency: z.string() }))
+      .query(async ({ input }) => {
+        const { currency } = input;
+        if (currency === 'KRW') return { rate: 1, currency: 'KRW', base: 'KRW' };
+        try {
+          const res = await fetch(`https://open.er-api.com/v6/latest/${currency}`);
+          if (!res.ok) throw new Error('fetch failed');
+          const data = await res.json() as { rates: Record<string, number>; result: string };
+          if (data.result !== 'success') throw new Error('API error');
+          const krwRate = data.rates['KRW'];
+          if (!krwRate) throw new Error('KRW rate not found');
+          return { rate: krwRate, currency, base: currency };
+        } catch {
+          // 폴백: 고정 환율
+          const fallback: Record<string, number> = { USD: 1380, EUR: 1500, JPY: 9.2, GBP: 1750, CNY: 190 };
+          return { rate: fallback[currency] ?? 1, currency, base: currency, fallback: true };
+        }
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

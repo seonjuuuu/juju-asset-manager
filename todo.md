@@ -140,3 +140,9 @@
 - [x] 모든 테이블에 userId 컬럼 추가 및 마이그레이션 적용
 - [x] server/db.ts 모든 CRUD 함수에 userId 파라미터 추가 및 WHERE 필터 적용
 - [x] server/routers.ts 모든 프로시저에서 ctx.user.id 전달
+
+## 구독료 외화 환율 환산 (2026-04-27)
+- [x] 서버에 환율 조회 tRPC 프로시저 추가 (exchangeRate.get)
+- [x] Subscriptions.tsx 통화 선택 UI 추가 (KRW/USD/EUR/JPY/GBP)
+- [x] 외화 입력 시 실시간 환율 조회 후 원화 환산 금액 미리보기 표시
+- [x] 저장 시 원화 환산 금액으로 저장

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -265,6 +265,15 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 // ─── 다이얼로그 ───────────────────────────────────────────────────────────────
+const CURRENCIES = [
+  { code: "KRW", label: "₩ 원" },
+  { code: "USD", label: "$ 달러" },
+  { code: "EUR", label: "€ 유로" },
+  { code: "JPY", label: "¥ 엔" },
+  { code: "GBP", label: "£ 파운드" },
+  { code: "CNY", label: "¥ 위안" },
+];
+
 function SubscriptionDialog({
   open,
   onClose,
@@ -281,6 +290,36 @@ function SubscriptionDialog({
   const [form, setForm] = useState(initial);
   const set = (k: keyof typeof emptySubscription, v: unknown) =>
     setForm((f) => ({ ...f, [k]: v }));
+  const [selectedCurrency, setSelectedCurrency] = useState("KRW");
+  const [foreignPrice, setForeignPrice] = useState<number>(0);
+  const [exchangeRate, setExchangeRate] = useState<number>(1);
+  const [rateLoading, setRateLoading] = useState(false);
+  const [rateFallback, setRateFallback] = useState(false);
+  const trpcUtils = trpc.useUtils();
+
+  // 통화 변경 시 환율 조회
+  useEffect(() => {
+    if (selectedCurrency === "KRW") {
+      setExchangeRate(1);
+      setRateFallback(false);
+      return;
+    }
+    setRateLoading(true);
+    trpcUtils.exchangeRate.get.fetch({ currency: selectedCurrency })
+      .then((res) => {
+        setExchangeRate(res.rate);
+        setRateFallback(!!(res as { fallback?: boolean }).fallback);
+      })
+      .catch(() => setRateFallback(true))
+      .finally(() => setRateLoading(false));
+  }, [selectedCurrency]);
+
+  // 외화 금액 변경 시 원화 자동 환산
+  useEffect(() => {
+    if (selectedCurrency !== "KRW" && foreignPrice > 0 && exchangeRate > 0) {
+      set("price", Math.round(foreignPrice * exchangeRate));
+    }
+  }, [foreignPrice, exchangeRate, selectedCurrency]);
 
   const monthlyCost = calcMonthlyCost(form.price, form.billingCycle, form.sharedCount);
   const yearlyCost = calcYearlyCost(form.price, form.billingCycle, form.sharedCount);
@@ -387,13 +426,59 @@ function SubscriptionDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>구독료 (원)</Label>
-            <CurrencyInput
-              value={form.price}
-              onChange={(v) => set("price", v)}
-              placeholder="0"
-              suffix="원"
-            />
+            <Label>구독료</Label>
+            <div className="flex gap-2">
+              <Select value={selectedCurrency} onValueChange={(v) => {
+                setSelectedCurrency(v);
+                setForeignPrice(0);
+                if (v === "KRW") set("price", 0);
+              }}>
+                <SelectTrigger className="w-28 flex-shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedCurrency === "KRW" ? (
+                <CurrencyInput
+                  value={form.price}
+                  onChange={(v) => set("price", v)}
+                  placeholder="0"
+                  suffix="원"
+                  className="flex-1"
+                />
+              ) : (
+                <CurrencyInput
+                  value={foreignPrice}
+                  onChange={(v) => setForeignPrice(v)}
+                  placeholder="0"
+                  suffix={selectedCurrency}
+                  className="flex-1"
+                />
+              )}
+            </div>
+            {selectedCurrency !== "KRW" && (
+              <div className="text-xs space-y-0.5">
+                {rateLoading ? (
+                  <span className="text-muted-foreground">환율 조회 중...</span>
+                ) : (
+                  <>
+                    <span className="text-muted-foreground">
+                      1 {selectedCurrency} = ₩{exchangeRate.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}
+                      {rateFallback && " (관리 환율 적용)"}
+                    </span>
+                    {foreignPrice > 0 && (
+                      <div className="font-semibold text-primary">
+                        → ₩{form.price.toLocaleString("ko-KR")} 원화 환산
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
