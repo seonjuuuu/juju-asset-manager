@@ -21,6 +21,9 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, RefreshCw, Calendar } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { Switch } from "@/components/ui/switch";
+import { subscriptionActiveForSummaryToday } from "@/lib/subscriptionLedger";
+import { formatLocalDateYMD } from "@/lib/utils";
 
 // ─── 서비스명 → 커스텀 로고 URL 매핑 (favicon 대신 직접 이미지 사용) ─────────
 const CUSTOM_LOGO_MAP: Record<string, string> = {
@@ -252,6 +255,8 @@ type SubscriptionRow = {
   startDate: string | null;
   paymentMethod: string | null;
   note: string | null;
+  isPaused?: boolean | null;
+  pausedFrom?: string | null;
 };
 
 type CardRow = {
@@ -271,6 +276,8 @@ const emptySubscription = {
   startDate: "",
   paymentMethod: "",
   note: "",
+  isPaused: false,
+  pausedFrom: "",
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -279,6 +286,22 @@ const CATEGORY_COLORS: Record<string, string> = {
   자기계발: "oklch(0.50 0.14 150)",
   기타: "oklch(0.55 0.10 260)",
 };
+
+function normalizeSubscriptionPayload(data: typeof emptySubscription) {
+  return {
+    serviceName: data.serviceName.trim(),
+    category: data.category,
+    billingCycle: data.billingCycle,
+    price: data.price,
+    sharedCount: data.sharedCount,
+    billingDay: data.billingDay,
+    startDate: data.startDate.trim() || undefined,
+    paymentMethod: data.paymentMethod.trim() || undefined,
+    note: data.note.trim() || undefined,
+    isPaused: !!data.isPaused,
+    pausedFrom: data.isPaused ? (data.pausedFrom?.trim() || undefined) : null,
+  };
+}
 
 // ─── 다이얼로그 ───────────────────────────────────────────────────────────────
 const CURRENCIES = [
@@ -349,7 +372,7 @@ function SubscriptionDialog({
 
   const monthlyCost = calcMonthlyCost(form.price, form.billingCycle, form.sharedCount);
   const yearlyCost = calcYearlyCost(form.price, form.billingCycle, form.sharedCount);
-  const nextPayment = calcNextPaymentDate(form.startDate, form.billingCycle);
+  const nextPayment = calcNextPaymentDate(form.startDate, form.billingCycle, form.billingDay);
 
   // 결제방법 옵션: 보유카드 + 등록된 계좌 + 현금
   const paymentOptions = [
@@ -672,6 +695,34 @@ function SubscriptionDialog({
               className="resize-none"
             />
           </div>
+          <div className="rounded-lg border border-border p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <Label className="text-sm">일시정지</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  시작일 이후 · 같은 달 결제일 기준으로 가계부에서 빠집니다
+                </p>
+              </div>
+              <Switch
+                checked={form.isPaused}
+                onCheckedChange={(v) => {
+                  set("isPaused", v);
+                  if (!v) set("pausedFrom", "");
+                  else if (!form.pausedFrom?.trim()) set("pausedFrom", formatLocalDateYMD());
+                }}
+              />
+            </div>
+            {form.isPaused ? (
+              <div className="space-y-1.5">
+                <Label>일시정지 시작일</Label>
+                <Input
+                  type="date"
+                  value={form.pausedFrom}
+                  onChange={(e) => set("pausedFrom", e.target.value)}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>
@@ -681,6 +732,10 @@ function SubscriptionDialog({
             onClick={() => {
               if (!form.serviceName.trim()) {
                 toast.error("서비스명을 입력해주세요");
+                return;
+              }
+              if (form.isPaused && !form.pausedFrom?.trim()) {
+                toast.error("일시정지 시작일을 선택해주세요");
                 return;
               }
               onSave(form);
@@ -736,10 +791,15 @@ export default function Subscriptions() {
     data: typeof emptySubscription;
     id?: number;
   } | null>(null);
+  const [pauseDialog, setPauseDialog] = useState<{ id: number; serviceName: string; date: string } | null>(null);
 
   // 집계
   const totalMonthly = (subList as SubscriptionRow[]).reduce(
-    (s, sub) => s + calcMonthlyCost(sub.price, sub.billingCycle, sub.sharedCount),
+    (s, sub) =>
+      s +
+      (subscriptionActiveForSummaryToday(sub)
+        ? calcMonthlyCost(sub.price, sub.billingCycle, sub.sharedCount)
+        : 0),
     0
   );
   const totalYearly = (subList as SubscriptionRow[]).reduce(
@@ -830,7 +890,11 @@ export default function Subscriptions() {
             if (items.length === 0) return null;
             const catColor = CATEGORY_COLORS[cat];
             const catMonthly = items.reduce(
-              (s, sub) => s + calcMonthlyCost(sub.price, sub.billingCycle, sub.sharedCount),
+              (s, sub) =>
+                s +
+                (subscriptionActiveForSummaryToday(sub)
+                  ? calcMonthlyCost(sub.price, sub.billingCycle, sub.sharedCount)
+                  : 0),
               0
             );
             return (
@@ -889,7 +953,12 @@ export default function Subscriptions() {
                               <p className="font-semibold text-sm truncate">
                                 {sub.serviceName}
                               </p>
-                              <div className="flex items-center gap-1.5 mt-0.5">
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                {sub.isPaused ? (
+                                  <Badge variant="outline" className="text-xs px-1.5 py-0 text-amber-700 border-amber-300">
+                                    일시정지
+                                  </Badge>
+                                ) : null}
                                 <Badge
                                   variant="secondary"
                                   className="text-xs px-1.5 py-0"
@@ -907,7 +976,27 @@ export default function Subscriptions() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex gap-1 flex-shrink-0">
+                          <div className="flex gap-1 flex-shrink-0 items-center">
+                            <div className="flex flex-col items-end gap-0.5 mr-1">
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">일시정지</span>
+                              <Switch
+                                checked={!!sub.isPaused}
+                                onCheckedChange={(on) => {
+                                  if (on) {
+                                    setPauseDialog({
+                                      id: sub.id,
+                                      serviceName: sub.serviceName,
+                                      date: formatLocalDateYMD(),
+                                    });
+                                  } else {
+                                    updateSub.mutate({
+                                      id: sub.id,
+                                      data: { isPaused: false, pausedFrom: null },
+                                    });
+                                  }
+                                }}
+                              />
+                            </div>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -926,6 +1015,8 @@ export default function Subscriptions() {
                                     startDate: sub.startDate ?? "",
                                     paymentMethod: sub.paymentMethod ?? "",
                                     note: sub.note ?? "",
+                                    isPaused: sub.isPaused ?? false,
+                                    pausedFrom: sub.pausedFrom ?? "",
                                   },
                                 })
                               }
@@ -980,8 +1071,11 @@ export default function Subscriptions() {
                         </div>
 
                         {/* 결제방법 / 비고 */}
-                        {(sub.paymentMethod || sub.note) && (
+                        {(sub.paymentMethod || sub.note || (sub.isPaused && sub.pausedFrom)) && (
                           <div className="text-xs text-muted-foreground space-y-0.5">
+                            {sub.isPaused && sub.pausedFrom ? (
+                              <p className="text-amber-700 dark:text-amber-500">일시정지 시작: {sub.pausedFrom}</p>
+                            ) : null}
                             {sub.paymentMethod && (
                               <p>결제: {sub.paymentMethod}</p>
                             )}
@@ -1008,14 +1102,56 @@ export default function Subscriptions() {
           cardList={cardList as CardRow[]}
           accountList={accountList as AccountRow[]}
           onSave={(data) => {
+            const payload = normalizeSubscriptionPayload(data);
             if (dialog.mode === "create") {
-              createSub.mutate(data);
+              createSub.mutate(payload);
             } else if (dialog.id) {
-              updateSub.mutate({ id: dialog.id, data });
+              updateSub.mutate({ id: dialog.id, data: payload });
             }
           }}
         />
       )}
+
+      <Dialog open={!!pauseDialog} onOpenChange={(o) => !o && setPauseDialog(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>일시정지 — {pauseDialog?.serviceName}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            선택한 날짜 이후에 도래하는 결제일(같은 달 기준)부터 월별 가계부·대시보드 합계에서 제외됩니다.
+          </p>
+          <div className="space-y-1.5">
+            <Label>일시정지 시작일</Label>
+            <Input
+              type="date"
+              value={pauseDialog?.date ?? ""}
+              onChange={(e) =>
+                pauseDialog && setPauseDialog({ ...pauseDialog, date: e.target.value })
+              }
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setPauseDialog(null)}>
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                if (!pauseDialog?.date?.trim()) {
+                  toast.error("시작일을 선택해주세요");
+                  return;
+                }
+                updateSub.mutate({
+                  id: pauseDialog.id,
+                  data: { isPaused: true, pausedFrom: pauseDialog.date.trim() },
+                });
+                setPauseDialog(null);
+              }}
+            >
+              적용
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
