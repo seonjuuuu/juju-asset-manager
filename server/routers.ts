@@ -9,15 +9,38 @@ import * as db from "./db";
 
 const insuranceInput = z.object({
   name: z.string(),
+  insuranceType: z.enum(["보장형", "저축형"]).nullable().optional(),
   paymentMethod: z.string().nullable().optional(),
   startDate: z.string(),
   endDate: z.string().nullable().optional(),
+  renewalType: z.enum(["비갱신형", "갱신형"]).optional(),
+  renewalCycleYears: z.number().int().min(1).nullable().optional(),
   paymentType: z.enum(["monthly", "annual"]).default("monthly"),
   paymentDay: z.number().int().min(1).max(31).nullable().optional(),
   paymentAmount: z.number().default(0),
   durationYears: z.number().int().min(1).nullable().optional(),
   note: z.string().nullable().optional(),
 });
+
+const businessExpenseInput = z.object({
+  expenseDate: z.string(),
+  year: z.number().int(),
+  month: z.number().int().min(1).max(12),
+  category: z.enum(["광고", "대납", "세금", "수수료", "소모품", "기타"]).default("기타"),
+  vendor: z.string().nullable().optional(),
+  description: z.string().min(1),
+  amount: z.number().default(0),
+  paymentMethod: z.string().nullable().optional(),
+  isTaxDeductible: z.boolean().default(true),
+  note: z.string().nullable().optional(),
+});
+
+function getInsertId(result: unknown): number | null {
+  const direct = (result as { insertId?: number })?.insertId;
+  if (typeof direct === "number" && direct > 0) return direct;
+  const first = Array.isArray(result) ? (result[0] as { insertId?: number } | undefined)?.insertId : undefined;
+  return typeof first === "number" && first > 0 ? first : null;
+}
 
 const accountInput = z.object({
   bankName: z.string(),
@@ -48,10 +71,27 @@ const subscriptionInput = z.object({
   billingCycle: z.enum(["매달", "매주", "매일", "매년"]).default("매달"),
   price: z.number().default(0),
   sharedCount: z.number().int().min(1).default(1),
+  /** 1–31: 매달 등 결제일, 101–1231: 매년(M×100+D, 예 428=4/28) */
   billingDay: z.number().int().min(1).max(1231).nullable().optional(),
   startDate: z.string().optional(),
   paymentMethod: z.string().optional(),
   note: z.string().optional(),
+  isPaused: z.boolean().optional(),
+  pausedFrom: z.string().nullable().optional(),
+});
+const subscriptionUpdateInput = z.object({
+  serviceName: z.string().optional(),
+  category: z.enum(["비즈니스", "미디어", "자기계발", "기타"]).optional(),
+  billingCycle: z.enum(["매달", "매주", "매일", "매년"]).optional(),
+  price: z.number().optional(),
+  sharedCount: z.number().int().min(1).optional(),
+  /** 1–31: 매달 등 결제일, 101–1231: 매년(M×100+D, 예 428=4/28) */
+  billingDay: z.number().int().min(1).max(1231).nullable().optional(),
+  startDate: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  note: z.string().optional(),
+  isPaused: z.boolean().optional(),
+  pausedFrom: z.string().nullable().optional(),
 });
 
 const cardInput = z.object({
@@ -92,10 +132,12 @@ const ledgerEntryInput = z.object({
 const fixedExpenseInput = z.object({
   mainCategory: z.string(),
   subCategory: z.string().optional(),
+  description: z.string().optional(),
   paymentAccount: z.string().optional(),
   monthlyAmount: z.number(),
   totalAmount: z.number().optional(),
   interestRate: z.string().optional(),
+  startDate: z.string().optional(),
   expiryDate: z.string().optional(),
   paymentDay: z.number().optional(),
   note: z.string().optional(),
@@ -357,7 +399,7 @@ export const appRouter = router({
       db.createSubscription(ctx.user.id, input as Parameters<typeof db.createSubscription>[1])
     ),
     update: protectedProcedure
-      .input(z.object({ id: z.number(), data: subscriptionInput.partial() }))
+      .input(z.object({ id: z.number(), data: subscriptionUpdateInput }))
       .mutation(({ input, ctx }) => db.updateSubscription(ctx.user.id, input.id, input.data as Parameters<typeof db.updateSubscription>[2])),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
       db.deleteSubscription(ctx.user.id, input.id)
@@ -478,7 +520,7 @@ export const appRouter = router({
           entryDate: input.incomeDate as unknown as Date,
           year: input.year,
           month: input.month,
-          mainCategory: "수입",
+          mainCategory: "소득",
           subCategory: input.categoryName ?? "부수입",
           description: input.description ?? "",
           amount: input.amount,
@@ -588,6 +630,228 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteInsurance(ctx.user.id, input.id)),
+  }),
+  businessIncome: router({
+    list: protectedProcedure.query(({ ctx }) => db.listBusinessIncomes(ctx.user.id)),
+    create: protectedProcedure
+      .input(z.object({
+        clientName: z.string(),
+        clientType: z.enum(["회사", "개인"]).nullable().optional(),
+        depositorName: z.string().nullable().optional(),
+        phoneNumber: z.string().nullable().optional(),
+        workAmount: z.number().default(0),
+        depositPercent: z.number().int().min(1).max(100).default(50),
+        workStartDate: z.string().nullable().optional(),
+        isCompleted: z.boolean().default(false),
+        settlementDate: z.string().nullable().optional(),
+        cashReceiptDone: z.boolean().default(false),
+        note: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const today = new Date().toISOString().slice(0, 10);
+        const deposit = Math.round(input.workAmount * (input.depositPercent ?? 50) / 100);
+        const balance = input.workAmount - deposit;
+        let depositLedgerEntryId: number | null = null;
+        let balanceLedgerEntryId: number | null = null;
+
+        if (input.workStartDate && input.workStartDate <= today && deposit > 0) {
+          const [y, m] = input.workStartDate.split("-").map(Number);
+          const r = await db.createLedgerEntry(ctx.user.id, {
+            entryDate: input.workStartDate as unknown as Date,
+            year: y, month: m,
+            mainCategory: "소득", subCategory: "사업소득",
+            description: `${input.clientName} 계약금`,
+            amount: deposit,
+            note: "[사업소득 자동연동]",
+          }) as unknown as { insertId?: number };
+          depositLedgerEntryId = r?.insertId ?? null;
+        }
+        if (input.isCompleted && input.settlementDate && balance > 0) {
+          const [y, m] = input.settlementDate.split("-").map(Number);
+          const r = await db.createLedgerEntry(ctx.user.id, {
+            entryDate: input.settlementDate as unknown as Date,
+            year: y, month: m,
+            mainCategory: "소득", subCategory: "사업소득",
+            description: `${input.clientName} 잔금`,
+            amount: balance,
+            note: "[사업소득 자동연동]",
+          }) as unknown as { insertId?: number };
+          balanceLedgerEntryId = r?.insertId ?? null;
+        }
+        return db.createBusinessIncome(ctx.user.id, { ...input, depositLedgerEntryId, balanceLedgerEntryId });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        data: z.object({
+          clientName: z.string().optional(),
+          clientType: z.enum(["회사", "개인"]).nullable().optional(),
+          depositorName: z.string().nullable().optional(),
+          phoneNumber: z.string().nullable().optional(),
+          workAmount: z.number().optional(),
+          depositPercent: z.number().int().min(1).max(100).optional(),
+          workStartDate: z.string().nullable().optional(),
+          isCompleted: z.boolean().optional(),
+          settlementDate: z.string().nullable().optional(),
+          cashReceiptDone: z.boolean().optional(),
+          note: z.string().nullable().optional(),
+        }),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const current = await db.getBusinessIncome(ctx.user.id, input.id);
+        if (!current) throw new Error("Not found");
+
+        const today = new Date().toISOString().slice(0, 10);
+        const merged = { ...current, ...input.data };
+        const deposit = Math.round(merged.workAmount * merged.depositPercent / 100);
+        const balance = merged.workAmount - deposit;
+
+        let depositLedgerEntryId = current.depositLedgerEntryId ?? null;
+        let balanceLedgerEntryId = current.balanceLedgerEntryId ?? null;
+
+        // ─ 계약금 ledger
+        const needDeposit = !!(merged.workStartDate && merged.workStartDate <= today && deposit > 0);
+        if (needDeposit) {
+          const [y, m] = merged.workStartDate!.split("-").map(Number);
+          if (depositLedgerEntryId) {
+            await db.updateLedgerEntry(ctx.user.id, depositLedgerEntryId, {
+              entryDate: merged.workStartDate as unknown as Date,
+              year: y, month: m,
+              mainCategory: "소득",
+              subCategory: "사업소득",
+              description: `${merged.clientName} 계약금`,
+              amount: deposit,
+            });
+          } else {
+            const r = await db.createLedgerEntry(ctx.user.id, {
+              entryDate: merged.workStartDate as unknown as Date,
+              year: y, month: m,
+              mainCategory: "소득", subCategory: "사업소득",
+              description: `${merged.clientName} 계약금`,
+              amount: deposit,
+              note: "[사업소득 자동연동]",
+            }) as unknown as { insertId?: number };
+            depositLedgerEntryId = r?.insertId ?? null;
+          }
+        } else if (!needDeposit && depositLedgerEntryId) {
+          await db.deleteLedgerEntry(ctx.user.id, depositLedgerEntryId);
+          depositLedgerEntryId = null;
+        }
+
+        // ─ 잔금 ledger
+        const needBalance = !!(merged.isCompleted && merged.settlementDate && balance > 0);
+        if (needBalance) {
+          const [y, m] = merged.settlementDate!.split("-").map(Number);
+          if (balanceLedgerEntryId) {
+            await db.updateLedgerEntry(ctx.user.id, balanceLedgerEntryId, {
+              entryDate: merged.settlementDate as unknown as Date,
+              year: y, month: m,
+              mainCategory: "소득",
+              subCategory: "사업소득",
+              description: `${merged.clientName} 잔금`,
+              amount: balance,
+            });
+          } else {
+            const r = await db.createLedgerEntry(ctx.user.id, {
+              entryDate: merged.settlementDate as unknown as Date,
+              year: y, month: m,
+              mainCategory: "소득", subCategory: "사업소득",
+              description: `${merged.clientName} 잔금`,
+              amount: balance,
+              note: "[사업소득 자동연동]",
+            }) as unknown as { insertId?: number };
+            balanceLedgerEntryId = r?.insertId ?? null;
+          }
+        } else if (!needBalance && balanceLedgerEntryId) {
+          await db.deleteLedgerEntry(ctx.user.id, balanceLedgerEntryId);
+          balanceLedgerEntryId = null;
+        }
+
+        return db.updateBusinessIncome(ctx.user.id, input.id, {
+          ...input.data, depositLedgerEntryId, balanceLedgerEntryId,
+        });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const current = await db.getBusinessIncome(ctx.user.id, input.id);
+        if (current?.depositLedgerEntryId) await db.deleteLedgerEntry(ctx.user.id, current.depositLedgerEntryId);
+        if (current?.balanceLedgerEntryId) await db.deleteLedgerEntry(ctx.user.id, current.balanceLedgerEntryId);
+        return db.deleteBusinessIncome(ctx.user.id, input.id);
+      }),
+  }),
+  businessExpense: router({
+    list: protectedProcedure.query(({ ctx }) => db.listBusinessExpenses(ctx.user.id)),
+    create: protectedProcedure
+      .input(businessExpenseInput)
+      .mutation(async ({ input, ctx }) => {
+        let ledgerEntryId: number | null = null;
+        if (input.category === "광고" && input.amount > 0) {
+          const r = await db.createLedgerEntry(ctx.user.id, {
+            entryDate: input.expenseDate as unknown as Date,
+            year: input.year,
+            month: input.month,
+            mainCategory: "사업지출",
+            subCategory: "광고",
+            description: input.description,
+            amount: -Math.abs(input.amount),
+            note: `[사업비용 자동연동]${input.vendor ? ` ${input.vendor}` : ""}${input.note ? ` · ${input.note}` : ""}`,
+          }) as unknown as { insertId?: number };
+          ledgerEntryId = getInsertId(r);
+        }
+        return db.createBusinessExpense(ctx.user.id, {
+          ...input,
+          expenseDate: input.expenseDate as unknown as Date,
+          ledgerEntryId,
+        });
+      }),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: businessExpenseInput.partial() }))
+      .mutation(async ({ input, ctx }) => {
+        const current = await db.getBusinessExpense(ctx.user.id, input.id);
+        if (!current) throw new Error("Not found");
+        const { expenseDate, ...rest } = input.data;
+        const merged = {
+          ...current,
+          ...input.data,
+          expenseDate: expenseDate ?? (current.expenseDate instanceof Date ? current.expenseDate.toISOString().slice(0, 10) : String(current.expenseDate).split("T")[0]),
+        };
+        let ledgerEntryId = current.ledgerEntryId ?? null;
+        const needsLedger = merged.category === "광고" && merged.amount > 0;
+        if (needsLedger) {
+          const ledgerData = {
+            entryDate: merged.expenseDate as unknown as Date,
+            year: merged.year,
+            month: merged.month,
+            mainCategory: "사업지출",
+            subCategory: "광고",
+            description: merged.description,
+            amount: -Math.abs(merged.amount),
+            note: `[사업비용 자동연동]${merged.vendor ? ` ${merged.vendor}` : ""}${merged.note ? ` · ${merged.note}` : ""}`,
+          };
+          if (ledgerEntryId) {
+            await db.updateLedgerEntry(ctx.user.id, ledgerEntryId, ledgerData);
+          } else {
+            const r = await db.createLedgerEntry(ctx.user.id, ledgerData);
+            ledgerEntryId = getInsertId(r);
+          }
+        } else if (ledgerEntryId) {
+          await db.deleteLedgerEntry(ctx.user.id, ledgerEntryId);
+          ledgerEntryId = null;
+        }
+        return db.updateBusinessExpense(ctx.user.id, input.id, {
+          ...rest,
+          ...(expenseDate ? { expenseDate: expenseDate as unknown as Date } : {}),
+          ledgerEntryId,
+        });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const current = await db.getBusinessExpense(ctx.user.id, input.id);
+        if (current?.ledgerEntryId) await db.deleteLedgerEntry(ctx.user.id, current.ledgerEntryId);
+        return db.deleteBusinessExpense(ctx.user.id, input.id);
+      }),
   }),
   exchangeRate: router({
     get: protectedProcedure

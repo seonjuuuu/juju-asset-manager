@@ -52,10 +52,12 @@ export const fixedExpenses = mysqlTable("fixed_expenses", {
   userId: int("user_id").notNull().default(0),
   mainCategory: varchar("main_category", { length: 100 }).notNull(),
   subCategory: varchar("sub_category", { length: 100 }),
+  description: varchar("description", { length: 300 }),
   paymentAccount: varchar("payment_account", { length: 100 }),
   monthlyAmount: bigint("monthly_amount", { mode: "number" }).notNull().default(0),
   totalAmount: bigint("total_amount", { mode: "number" }).default(0),
   interestRate: decimal("interest_rate", { precision: 10, scale: 4 }),
+  startDate: varchar("start_date", { length: 50 }),
   expiryDate: varchar("expiry_date", { length: 50 }),
   paymentDay: int("payment_day"),
   note: text("note"),
@@ -275,6 +277,9 @@ export const subscriptions = mysqlTable("subscriptions", {
   startDate: varchar("start_date", { length: 20 }),
   paymentMethod: varchar("payment_method", { length: 200 }),
   note: text("note"),
+  isPaused: boolean("is_paused").notNull().default(false),
+  /** 일시정지 적용 시작일 (YYYY-MM-DD). 이 날짜 이후의 해당월 결제분은 가계부에서 제외 */
+  pausedFrom: varchar("paused_from", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -313,6 +318,50 @@ export const sideIncomes = mysqlTable("side_incomes", {
 });
 export type SideIncome = typeof sideIncomes.$inferSelect;
 export type InsertSideIncome = typeof sideIncomes.$inferInsert;
+
+// ─── 사업소득 ─────────────────────────────────────────────────────────────────
+export const businessIncomes = mysqlTable("business_incomes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
+  clientName: varchar("client_name", { length: 200 }).notNull(),
+  clientType: mysqlEnum("client_type", ["회사", "개인"]),
+  depositorName: varchar("depositor_name", { length: 100 }),
+  phoneNumber: varchar("phone_number", { length: 30 }),
+  workAmount: bigint("work_amount", { mode: "number" }).notNull().default(0),
+  depositPercent: int("deposit_percent").notNull().default(50),
+  workStartDate: varchar("work_start_date", { length: 20 }),
+  isCompleted: boolean("is_completed").notNull().default(false),
+  settlementDate: varchar("settlement_date", { length: 20 }),
+  cashReceiptDone: boolean("cash_receipt_done").notNull().default(false),
+  depositLedgerEntryId: int("deposit_ledger_entry_id"),
+  balanceLedgerEntryId: int("balance_ledger_entry_id"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type BusinessIncome = typeof businessIncomes.$inferSelect;
+export type InsertBusinessIncome = typeof businessIncomes.$inferInsert;
+
+// ─── 사업비용 ─────────────────────────────────────────────────────────────────
+export const businessExpenses = mysqlTable("business_expenses", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull().default(0),
+  expenseDate: date("expense_date").notNull(),
+  year: int("year").notNull(),
+  month: int("month").notNull(),
+  category: mysqlEnum("category", ["광고", "대납", "세금", "수수료", "소모품", "기타"]).notNull().default("기타"),
+  vendor: varchar("vendor", { length: 200 }),
+  description: varchar("description", { length: 300 }).notNull(),
+  amount: bigint("amount", { mode: "number" }).notNull().default(0),
+  paymentMethod: varchar("payment_method", { length: 200 }),
+  isTaxDeductible: boolean("is_tax_deductible").notNull().default(true),
+  ledgerEntryId: int("ledger_entry_id"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type BusinessExpense = typeof businessExpenses.$inferSelect;
+export type InsertBusinessExpense = typeof businessExpenses.$inferInsert;
 
 // ─── 보유 계좌 ────────────────────────────────────────────────────────────────
 export const accounts = mysqlTable("accounts", {
@@ -361,6 +410,9 @@ export const insurance = mysqlTable("insurance", {
   paymentMethod: varchar("payment_method", { length: 200 }),
   startDate: varchar("start_date", { length: 20 }).notNull(),
   endDate: varchar("end_date", { length: 20 }),
+  insuranceType: mysqlEnum("insurance_type", ["보장형", "저축형"]),
+  renewalType: mysqlEnum("renewal_type", ["비갱신형", "갱신형"]).notNull().default("비갱신형"),
+  renewalCycleYears: int("renewal_cycle_years"),
   paymentType: mysqlEnum("payment_type", ["monthly", "annual"]).notNull().default("monthly"),
   paymentDay: int("payment_day"),
   paymentAmount: bigint("payment_amount", { mode: "number" }).notNull().default(0),

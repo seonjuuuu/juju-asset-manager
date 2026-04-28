@@ -36,6 +36,10 @@ import {
   InsertInstallment,
   insurance,
   InsertInsurance,
+  businessIncomes,
+  InsertBusinessIncome,
+  businessExpenses,
+  InsertBusinessExpense,
   categories,
   subCategories,
   InsertCategory,
@@ -170,7 +174,7 @@ export async function getYearlySubCatExpenseSummary(userId: number, year: number
       and(
         eq(ledgerEntries.userId, userId),
         eq(ledgerEntries.year, year),
-        sql`${ledgerEntries.mainCategory} IN ('고정지출', '변동지출')`
+        sql`${ledgerEntries.mainCategory} IN ('고정지출', '변동지출', '사업지출')`
       )
     )
     .groupBy(ledgerEntries.month, ledgerEntries.subCategory)
@@ -180,7 +184,8 @@ export async function getYearlySubCatExpenseSummary(userId: number, year: number
 export async function createLedgerEntry(userId: number, data: InsertLedgerEntry) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(ledgerEntries).values({ ...data, userId });
+  const result = await db.insert(ledgerEntries).values({ ...data, userId });
+  return result;
 }
 
 export async function updateLedgerEntry(userId: number, id: number, data: Partial<InsertLedgerEntry>) {
@@ -545,7 +550,22 @@ export async function createSideIncomeCategory(userId: number, data: InsertSideI
 export async function updateSideIncomeCategory(userId: number, id: number, data: Partial<InsertSideIncomeCategory>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const [current] = await db.select().from(sideIncomeCategories)
+    .where(and(eq(sideIncomeCategories.id, id), eq(sideIncomeCategories.userId, userId)))
+    .limit(1);
   await db.update(sideIncomeCategories).set(data).where(and(eq(sideIncomeCategories.id, id), eq(sideIncomeCategories.userId, userId)));
+  if (current && data.name && data.name !== current.name) {
+    await db.update(sideIncomes)
+      .set({ categoryName: data.name })
+      .where(and(eq(sideIncomes.userId, userId), eq(sideIncomes.categoryId, id)));
+    await db.update(ledgerEntries)
+      .set({ subCategory: data.name })
+      .where(and(
+        eq(ledgerEntries.userId, userId),
+        eq(ledgerEntries.subCategory, current.name),
+        sql`${ledgerEntries.note} LIKE '[부수입 자동연동]%'`
+      ));
+  }
 }
 export async function deleteSideIncomeCategory(userId: number, id: number) {
   const db = await getDb();
@@ -662,7 +682,21 @@ export async function createCategory(userId: number, data: Pick<InsertCategory, 
 export async function updateCategory(userId: number, id: number, data: Partial<Pick<InsertCategory, "name" | "type" | "sortOrder">>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.update(categories).set(data).where(and(eq(categories.id, id), eq(categories.userId, userId)));
+  const [current] = await db.select().from(categories)
+    .where(and(eq(categories.id, id), eq(categories.userId, userId)))
+    .limit(1);
+  if (!current) return;
+
+  await db.update(categories).set(data).where(and(eq(categories.id, id), eq(categories.userId, userId)));
+
+  if (data.name && data.name !== current.name) {
+    await db.update(ledgerEntries)
+      .set({ mainCategory: data.name })
+      .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.mainCategory, current.name)));
+    await db.update(fixedExpenses)
+      .set({ mainCategory: data.name })
+      .where(and(eq(fixedExpenses.userId, userId), eq(fixedExpenses.mainCategory, current.name)));
+  }
 }
 export async function deleteCategory(userId: number, id: number) {
   const db = await getDb();
@@ -680,7 +714,27 @@ export async function createSubCategory(userId: number, data: Pick<InsertSubCate
 export async function updateSubCategory(userId: number, id: number, data: Partial<Pick<InsertSubCategory, "name" | "sortOrder">>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.update(subCategories).set(data).where(and(eq(subCategories.id, id), eq(subCategories.userId, userId)));
+  const [current] = await db.select().from(subCategories)
+    .where(and(eq(subCategories.id, id), eq(subCategories.userId, userId)))
+    .limit(1);
+  if (!current) return;
+  const [parent] = await db.select().from(categories)
+    .where(and(eq(categories.id, current.categoryId), eq(categories.userId, userId)))
+    .limit(1);
+
+  await db.update(subCategories).set(data).where(and(eq(subCategories.id, id), eq(subCategories.userId, userId)));
+
+  if (data.name && data.name !== current.name) {
+    const ledgerWhere = parent
+      ? and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.mainCategory, parent.name), eq(ledgerEntries.subCategory, current.name))
+      : and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.subCategory, current.name));
+    const fixedWhere = parent
+      ? and(eq(fixedExpenses.userId, userId), eq(fixedExpenses.mainCategory, parent.name), eq(fixedExpenses.subCategory, current.name))
+      : and(eq(fixedExpenses.userId, userId), eq(fixedExpenses.subCategory, current.name));
+
+    await db.update(ledgerEntries).set({ subCategory: data.name }).where(ledgerWhere);
+    await db.update(fixedExpenses).set({ subCategory: data.name }).where(fixedWhere);
+  }
 }
 export async function deleteSubCategory(userId: number, id: number) {
   const db = await getDb();
@@ -690,33 +744,184 @@ export async function deleteSubCategory(userId: number, id: number) {
 
 // 기본 카테고리 시드 데이터
 const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; subs: string[] }[] = [
+  { name: "고정지출", type: "expense", subs: ["구독서비스", "보험"] },
+  { name: "사업지출", type: "expense", subs: ["광고"] },
   { name: "식비", type: "expense", subs: ["식료품", "외식", "카페/음료", "배달음식"] },
   { name: "교통/차량", type: "expense", subs: ["대중교통", "택시", "주유", "주차", "차량유지"] },
-  { name: "주거/통신", type: "expense", subs: ["월세/관리비", "전기/가스/수도", "인터넷/통신", "보험"] },
+  { name: "주거/통신", type: "expense", subs: ["월세/관리비", "전기/가스/수도", "인터넷/통신"] },
   { name: "의료/건강", type: "expense", subs: ["병원", "약국", "헬스/운동", "건강식품"] },
   { name: "쇼핑/의류", type: "expense", subs: ["의류/잡화", "전자제품", "생활용품", "온라인쇼핑"] },
-  { name: "문화/여가", type: "expense", subs: ["영화/공연", "여행", "취미", "구독서비스"] },
+  { name: "문화/여가", type: "expense", subs: ["영화/공연", "여행", "취미"] },
   { name: "교육", type: "expense", subs: ["학원/강의", "도서", "온라인강의"] },
   { name: "금융", type: "expense", subs: ["이체/송금", "수수료", "세금"] },
   { name: "기타지출", type: "expense", subs: ["경조사", "기부", "기타"] },
-  { name: "급여", type: "income", subs: ["본봉", "상여/성과급"] },
-  { name: "사업소득", type: "income", subs: ["프리랜서", "부업"] },
-  { name: "투자수익", type: "income", subs: ["주식배당", "이자수익", "임대수익"] },
-  { name: "기타수입", type: "income", subs: ["용돈", "환급", "기타"] },
+  { name: "소득", type: "income", subs: ["급여", "사업소득", "부수입", "투자수익", "기타수입"] },
 ];
+
+const CANONICAL_SUB_NAMES = new Set(["구독서비스", "보험", "광고", "급여", "사업소득", "부수입", "투자수익", "기타수입"]);
 
 export async function seedDefaultCategories(userId: number) {
   const db = await getDb();
   if (!db) return;
-  // 이미 카테고리가 있으면 스킵
-  const existing = await db.select().from(categories).where(eq(categories.userId, userId)).limit(1);
-  if (existing.length > 0) return;
-  // 기본 카테고리 삽입
+
+  await ensureDefaultCategorySet(userId);
+}
+
+export async function ensureDefaultCategorySet(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  const [legacyIncome] = await db.select().from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.name, "수입")))
+    .limit(1);
+  const [incomeCategory] = await db.select().from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.name, "소득")))
+    .limit(1);
+
+  if (legacyIncome && !incomeCategory) {
+    await db.update(categories)
+      .set({ name: "소득", type: "income" })
+      .where(and(eq(categories.id, legacyIncome.id), eq(categories.userId, userId)));
+  } else if (legacyIncome && incomeCategory) {
+    await db.update(subCategories)
+      .set({ categoryId: incomeCategory.id })
+      .where(and(eq(subCategories.categoryId, legacyIncome.id), eq(subCategories.userId, userId)));
+    await db.delete(categories)
+      .where(and(eq(categories.id, legacyIncome.id), eq(categories.userId, userId)));
+  }
+
   for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
     const cat = DEFAULT_CATEGORIES[i];
-    const [result] = await db.insert(categories).values({ name: cat.name, type: cat.type, sortOrder: i, userId }).$returningId();
+    const [existingCategory] = await db.select().from(categories)
+      .where(and(eq(categories.userId, userId), eq(categories.name, cat.name)))
+      .limit(1);
+
+    let categoryId = existingCategory?.id;
+    if (categoryId) {
+      await db.update(categories)
+        .set({ type: cat.type, sortOrder: i })
+        .where(and(eq(categories.id, categoryId), eq(categories.userId, userId)));
+    } else {
+      const [result] = await db.insert(categories).values({ name: cat.name, type: cat.type, sortOrder: i, userId }).$returningId();
+      categoryId = result.id;
+    }
+
     for (let j = 0; j < cat.subs.length; j++) {
-      await db.insert(subCategories).values({ categoryId: result.id, name: cat.subs[j], sortOrder: j, userId });
+      const subName = cat.subs[j];
+      const existingUnderCategory = await db.select().from(subCategories)
+        .where(and(eq(subCategories.userId, userId), eq(subCategories.categoryId, categoryId), eq(subCategories.name, subName)))
+        .limit(1);
+
+      if (existingUnderCategory.length > 0) {
+        await db.update(subCategories)
+          .set({ sortOrder: j })
+          .where(and(eq(subCategories.userId, userId), eq(subCategories.categoryId, categoryId), eq(subCategories.name, subName)));
+        continue;
+      }
+
+      if (CANONICAL_SUB_NAMES.has(subName)) {
+        const existingByName = await db.select().from(subCategories)
+          .where(and(eq(subCategories.userId, userId), eq(subCategories.name, subName)))
+          .limit(1);
+
+        if (existingByName.length > 0) {
+          await db.update(subCategories)
+            .set({ categoryId, sortOrder: j })
+            .where(and(eq(subCategories.userId, userId), eq(subCategories.name, subName)));
+          continue;
+        }
+      }
+
+      await db.insert(subCategories).values({ categoryId, name: subName, sortOrder: j, userId });
+    }
+  }
+}
+
+export async function ensureFixedExpenseCategory(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  const [fixed] = await db.select().from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.name, "고정지출")))
+    .limit(1);
+
+  let fixedId = fixed?.id;
+  if (!fixedId) {
+    const [result] = await db.insert(categories).values({ name: "고정지출", type: "expense", sortOrder: 0, userId }).$returningId();
+    fixedId = result.id;
+  }
+
+  const fixedSubNames = ["구독서비스", "보험"];
+  for (let sortOrder = 0; sortOrder < fixedSubNames.length; sortOrder++) {
+    const name = fixedSubNames[sortOrder];
+    const existing = await db.select().from(subCategories)
+      .where(and(eq(subCategories.userId, userId), eq(subCategories.name, name)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db.update(subCategories)
+        .set({ categoryId: fixedId, sortOrder })
+        .where(and(eq(subCategories.userId, userId), eq(subCategories.name, name)));
+    } else {
+      await db.insert(subCategories).values({ categoryId: fixedId, name, sortOrder, userId });
+    }
+  }
+}
+
+export async function ensureBusinessExpenseCategory(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  const [business] = await db.select().from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.name, "사업지출")))
+    .limit(1);
+
+  let businessId = business?.id;
+  if (!businessId) {
+    const [result] = await db.insert(categories).values({ name: "사업지출", type: "expense", sortOrder: 1, userId }).$returningId();
+    businessId = result.id;
+  }
+
+  const existing = await db.select().from(subCategories)
+    .where(and(eq(subCategories.userId, userId), eq(subCategories.name, "광고")))
+    .limit(1);
+
+  if (existing.length > 0) {
+    await db.update(subCategories)
+      .set({ categoryId: businessId, sortOrder: 0 })
+      .where(and(eq(subCategories.userId, userId), eq(subCategories.name, "광고")));
+  } else {
+    await db.insert(subCategories).values({ categoryId: businessId, name: "광고", sortOrder: 0, userId });
+  }
+}
+
+export async function ensureIncomeCategory(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  const [income] = await db.select().from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.name, "소득")))
+    .limit(1);
+
+  let incomeId = income?.id;
+  if (!incomeId) {
+    const [result] = await db.insert(categories).values({ name: "소득", type: "income", sortOrder: 0, userId }).$returningId();
+    incomeId = result.id;
+  }
+
+  const incomeSubNames = ["급여", "사업소득", "부수입", "투자수익", "기타수입"];
+  for (let sortOrder = 0; sortOrder < incomeSubNames.length; sortOrder++) {
+    const name = incomeSubNames[sortOrder];
+    const existing = await db.select().from(subCategories)
+      .where(and(eq(subCategories.userId, userId), eq(subCategories.name, name)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db.update(subCategories)
+        .set({ categoryId: incomeId, sortOrder })
+        .where(and(eq(subCategories.userId, userId), eq(subCategories.name, name)));
+    } else {
+      await db.insert(subCategories).values({ categoryId: incomeId, name, sortOrder, userId });
     }
   }
 }
@@ -748,5 +953,87 @@ export async function deleteInsurance(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(insurance).where(and(eq(insurance.id, id), eq(insurance.userId, userId)));
+  return { id };
+}
+
+// ─── 사업소득 ─────────────────────────────────────────────────────────────────
+export async function listBusinessIncomes(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(businessIncomes).where(eq(businessIncomes.userId, userId)).orderBy(desc(businessIncomes.createdAt));
+}
+
+export async function getBusinessIncome(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(businessIncomes)
+    .where(and(eq(businessIncomes.id, id), eq(businessIncomes.userId, userId))).limit(1);
+  return result[0] ?? null;
+}
+
+export async function createBusinessIncome(userId: number, data: Omit<InsertBusinessIncome, "userId" | "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(businessIncomes).values({ ...data, userId });
+  const result = await db.select().from(businessIncomes).where(eq(businessIncomes.userId, userId)).orderBy(desc(businessIncomes.createdAt)).limit(1);
+  return result[0];
+}
+
+export async function updateBusinessIncome(userId: number, id: number, data: Partial<Omit<InsertBusinessIncome, "userId" | "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(businessIncomes).set(data).where(and(eq(businessIncomes.id, id), eq(businessIncomes.userId, userId)));
+  const result = await db.select().from(businessIncomes).where(eq(businessIncomes.id, id)).limit(1);
+  return result[0];
+}
+
+export async function deleteBusinessIncome(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(businessIncomes).where(and(eq(businessIncomes.id, id), eq(businessIncomes.userId, userId)));
+  return { id };
+}
+
+// ─── 사업비용 ─────────────────────────────────────────────────────────────────
+export async function listBusinessExpenses(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(businessExpenses)
+    .where(eq(businessExpenses.userId, userId))
+    .orderBy(desc(businessExpenses.expenseDate), desc(businessExpenses.createdAt));
+}
+
+export async function getBusinessExpense(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(businessExpenses)
+    .where(and(eq(businessExpenses.id, id), eq(businessExpenses.userId, userId)))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+export async function createBusinessExpense(userId: number, data: Omit<InsertBusinessExpense, "userId" | "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(businessExpenses).values({ ...data, userId });
+  const result = await db.select().from(businessExpenses)
+    .where(eq(businessExpenses.userId, userId))
+    .orderBy(desc(businessExpenses.createdAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function updateBusinessExpense(userId: number, id: number, data: Partial<Omit<InsertBusinessExpense, "userId" | "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(businessExpenses).set(data).where(and(eq(businessExpenses.id, id), eq(businessExpenses.userId, userId)));
+  const result = await db.select().from(businessExpenses).where(and(eq(businessExpenses.id, id), eq(businessExpenses.userId, userId))).limit(1);
+  return result[0];
+}
+
+export async function deleteBusinessExpense(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(businessExpenses).where(and(eq(businessExpenses.id, id), eq(businessExpenses.userId, userId)));
   return { id };
 }

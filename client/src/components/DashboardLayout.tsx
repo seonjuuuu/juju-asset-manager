@@ -23,6 +23,7 @@ import {
   Tags,
   ShieldCheck,
   UserCircle,
+  BriefcaseBusiness,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -44,6 +45,7 @@ const navItems = [
 const recordItems = [
   { href: "/real-estate", icon: Building2, label: "부동산" },
   { href: "/blog-campaigns", icon: Star, label: "블로그 체험단" },
+  { href: "/business-income", icon: BriefcaseBusiness, label: "사업소득" },
 ];
 
 const settingItems = [

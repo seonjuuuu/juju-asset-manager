@@ -19,6 +19,7 @@ import Subscriptions from "./pages/Subscriptions";
 import SideIncome from "./pages/SideIncome";
 import Installments from "./pages/Installments";
 import Insurance from "./pages/Insurance";
+import BusinessIncome from "./pages/BusinessIncome";
 import Categories from "./pages/Categories";
 import Profile from "./pages/Profile";
 
@@ -40,6 +41,7 @@ function Router() {
         <Route path="/side-income" component={SideIncome} />
         <Route path="/installments" component={Installments} />
         <Route path="/insurance" component={Insurance} />
+        <Route path="/business-income" component={BusinessIncome} />
         <Route path="/categories" component={Categories} />
         <Route path="/profile" component={Profile} />
         <Route path="/404" component={NotFound} />
