@@ -5,21 +5,42 @@ import { formatAmount } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, CheckCircle2, Circle, CalendarIcon, BarChart2, ChevronLeft, ChevronRight, BellRing, X } from "lucide-react";
+import {
+  Plus, Pencil, Trash2, CheckCircle2, CalendarIcon,
+  ChevronLeft, ChevronRight, BellRing, X, TrendingUp, ListChecks, Star,
+} from "lucide-react";
 import { format } from "date-fns";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer, Legend, PieChart, Pie, Cell,
 } from "recharts";
 
+// ─── 상수 ─────────────────────────────────────────────────────────────────────
 const CAMPAIGN_TYPES = ["방문형", "배송형", "원고형", "기타"];
 const CATEGORIES = ["카페", "맛집", "숙소", "뷰티", "생활용품", "식품", "기타"];
+
+const TYPE_COLORS: Record<string, string> = {
+  "방문형": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  "배송형": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  "원고형": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  "기타": "bg-muted text-muted-foreground",
+};
+
+const TYPE_CHART_COLORS: Record<string, string> = {
+  "방문형": "#5b7cfa",
+  "배송형": "#a855f7",
+  "원고형": "#f59e0b",
+  "기타": "#94a3b8",
+};
 
 const EMPTY_FORM = {
   platform: "", campaignType: "방문형", category: "카페", businessName: "",
@@ -40,6 +61,8 @@ type Campaign = {
   completed: boolean | null;
   note: string | null;
 };
+
+const fmt = (n: number) => `₩${formatAmount(n)}`;
 
 // ─── D-day 계산 ───────────────────────────────────────────────────────────────
 function isValidDate(value: string): boolean {
@@ -62,19 +85,12 @@ function getDday(endDate: string | null): { label: string; className: string; is
 }
 
 // ─── 날짜 선택기 ──────────────────────────────────────────────────────────────
-function DatePickerField({
-  value,
-  onChange,
-  placeholder = "YYYY-MM-DD",
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
+function DatePickerField({ value, onChange, placeholder = "YYYY-MM-DD" }: {
+  value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const invalid = value.length > 0 && !isValidDate(value);
   const selected = !invalid && value ? new Date(value) : undefined;
-
   return (
     <div className="space-y-1">
       <div className="flex gap-1">
@@ -94,31 +110,30 @@ function DatePickerField({
             <Calendar
               mode="single"
               selected={selected}
-              onSelect={(d) => {
-                if (d) {
-                  onChange(format(d, "yyyy-MM-dd"));
-                  setOpen(false);
-                }
-              }}
+              onSelect={(d) => { if (d) { onChange(format(d, "yyyy-MM-dd")); setOpen(false); } }}
               initialFocus
             />
           </PopoverContent>
         </Popover>
       </div>
-      {invalid && (
-        <p className="text-xs text-red-500">날짜를 올바르게 입력해주세요 (예: 2026-05-20)</p>
-      )}
+      {invalid && <p className="text-xs text-red-500">날짜를 올바르게 입력해주세요 (예: 2026-05-20)</p>}
     </div>
   );
 }
 
+// ─── 메인 페이지 ──────────────────────────────────────────────────────────────
 export default function BlogCampaigns() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(now.getFullYear());
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
-  const [filterCompleted, setFilterCompleted] = useState<"전체" | "완료">("전체");
-  const [page, setPage] = useState(1);
-  const PAGE_SIZE = 20;
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
 
   const utils = trpc.useUtils();
   const { data: campaigns = [], isLoading } = trpc.blogCampaign.list.useQuery();
@@ -132,18 +147,14 @@ export default function BlogCampaigns() {
     onError: () => toast.error("수정 실패"),
   });
   const deleteMutation = trpc.blogCampaign.delete.useMutation({
-    onSuccess: () => { utils.blogCampaign.list.invalidate(); toast.success("삭제되었습니다"); },
+    onSuccess: () => { utils.blogCampaign.list.invalidate(); toast.success("삭제되었습니다"); setDeleteId(null); },
     onError: () => toast.error("삭제 실패"),
   });
-  const toggleMutation = trpc.blogCampaign.update.useMutation({
-    onSuccess: () => utils.blogCampaign.list.invalidate(),
-  });
 
-  const [showStats, setShowStats] = useState(false);
-  const [monthOffset, setMonthOffset] = useState(0);
-  const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
+  const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12); } else setMonth(m => m - 1); };
+  const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1); } else setMonth(m => m + 1); };
 
-  // 마감 임박 체험단 (미완료, 마감일 기준 7일 이내)
+  // ─── 마감 임박 알림 ───────────────────────────────────────────────────────
   const urgentCampaigns = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -160,106 +171,189 @@ export default function BlogCampaigns() {
       .sort((a, b) => (a.endDate ?? "").localeCompare(b.endDate ?? ""));
   }, [campaigns, dismissedAlerts]);
 
-  const filtered = campaigns.filter(c => {
-    if (filterCompleted === "완료") return c.completed;
-    return true;
-  });
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // ─── 월별 필터 (visitDate 기준) ───────────────────────────────────────────
+  const monthlyRecords = useMemo(() =>
+    campaigns.filter(c => {
+      if (!c.visitDate) return false;
+      const [y, m] = c.visitDate.split("-").map(Number);
+      return y === year && m === month;
+    }),
+    [campaigns, year, month]
+  );
 
-  const totalAmount = campaigns.reduce((s, c) => s + (c.amount ?? 0), 0);
-  const completedCount = campaigns.filter(c => c.completed).length;
-  const reviewDoneCount = campaigns.filter(c => c.reviewDone).length;
+  // ─── 요약 ─────────────────────────────────────────────────────────────────
+  const monthAmount = useMemo(() => monthlyRecords.reduce((s, c) => s + (c.amount ?? 0), 0), [monthlyRecords]);
+  const monthCompleted = useMemo(() => monthlyRecords.filter(c => c.completed).length, [monthlyRecords]);
+  const monthReviewDone = useMemo(() => monthlyRecords.filter(c => c.reviewDone).length, [monthlyRecords]);
 
-  // 월별 리스트 (방문/수령일 기준)
-  const selectedMonthData = useMemo(() => {
-    const now = new Date();
-    const d = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
-    const items = campaigns.filter(c => c.visitDate?.startsWith(key));
-    return { label, key, items };
-  }, [monthOffset, campaigns]);
+  const yearAmount = useMemo(() =>
+    campaigns.reduce((s, c) => {
+      if (!c.visitDate) return s;
+      if (Number(c.visitDate.slice(0, 4)) !== year) return s;
+      return s + (c.amount ?? 0);
+    }, 0),
+    [campaigns, year]
+  );
 
-  // 월별 통계 (방문/수령일 기준, 최근 12개월)
-  const monthlyStats = useMemo(() => {
-    const now = new Date();
-    const rows: {
-      month: string;
-      건수: number;
-      완료: number;
-      혜택금액: number;
-      리뷰완료: number;
-    }[] = [];
-
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const label = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const monthly = campaigns.filter(c => c.visitDate?.startsWith(key));
-      rows.push({
-        month: label,
-        건수: monthly.length,
-        완료: monthly.filter(c => c.completed).length,
-        혜택금액: monthly.reduce((s, c) => s + (c.amount ?? 0), 0),
-        리뷰완료: monthly.filter(c => c.reviewDone).length,
-      });
+  // ─── 차트 데이터 ─────────────────────────────────────────────────────────
+  const yearlyChart = useMemo(() => {
+    const map: Record<number, number> = {};
+    for (let m = 1; m <= 12; m++) map[m] = 0;
+    for (const c of campaigns) {
+      if (!c.visitDate) continue;
+      const [y, m] = c.visitDate.split("-").map(Number);
+      if (y === year) map[m] += c.amount ?? 0;
     }
-    return rows;
+    return Array.from({ length: 12 }, (_, i) => ({
+      month: `${i + 1}월`,
+      혜택금액: map[i + 1],
+    }));
+  }, [campaigns, year]);
+
+  const fiveYearChart = useMemo(() => {
+    const currentYear = now.getFullYear();
+    const map: Record<number, number> = {};
+    for (let y = currentYear - 4; y <= currentYear; y++) map[y] = 0;
+    for (const c of campaigns) {
+      if (!c.visitDate) continue;
+      const y = Number(c.visitDate.slice(0, 4));
+      if (y in map) map[y] += c.amount ?? 0;
+    }
+    return Object.keys(map).map(Number).sort().map(y => ({ year: `${y}년`, 혜택금액: map[y] }));
   }, [campaigns]);
 
-  const openCreate = () => {
-    setEditing(null);
-    setForm({ ...EMPTY_FORM });
-    setDialogOpen(true);
-  };
+  const typeChart = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const c of campaigns) {
+      const t = c.campaignType ?? "기타";
+      map[t] = (map[t] ?? 0) + 1;
+    }
+    return Object.entries(map).map(([name, value]) => ({ name, value, color: TYPE_CHART_COLORS[name] ?? "#94a3b8" }));
+  }, [campaigns]);
 
+  const CATEGORY_COLORS = ["#10b981", "#5b7cfa", "#f59e0b", "#a855f7", "#f97316", "#06b6d4", "#94a3b8"];
+  const categoryChart = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const c of campaigns) {
+      const cat = c.category ?? "기타";
+      map[cat] = (map[cat] ?? 0) + 1;
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value], i) => ({ name, value, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }));
+  }, [campaigns]);
+
+  const [hiddenType, setHiddenType] = useState<Record<string, boolean>>({});
+  const [hiddenCategory, setHiddenCategory] = useState<Record<string, boolean>>({});
+
+  // ─── 폼 핸들러 ───────────────────────────────────────────────────────────
+  const openCreate = () => { setEditing(null); setForm({ ...EMPTY_FORM }); setDialogOpen(true); };
   const openEdit = (c: Campaign) => {
     setEditing(c);
     setForm({
-      platform: c.platform ?? "",
-      campaignType: c.campaignType ?? "방문형",
-      category: c.category ?? "카페",
-      businessName: c.businessName ?? "",
-      amount: c.amount ?? 0,
-      endDate: c.endDate ?? "",
-      visitDate: c.visitDate ?? "",
-      reviewDone: c.reviewDone ?? false,
-      completed: c.completed ?? false,
-      note: c.note ?? "",
+      platform: c.platform ?? "", campaignType: c.campaignType ?? "방문형",
+      category: c.category ?? "카페", businessName: c.businessName ?? "",
+      amount: c.amount ?? 0, endDate: c.endDate ?? "", visitDate: c.visitDate ?? "",
+      reviewDone: c.reviewDone ?? false, completed: c.completed ?? false, note: c.note ?? "",
     });
     setDialogOpen(true);
   };
 
   const handleSubmit = () => {
     const data = {
-      platform: form.platform || undefined,
-      campaignType: form.campaignType || undefined,
-      category: form.category || undefined,
-      businessName: form.businessName || undefined,
-      amount: form.amount || undefined,
-      endDate: form.endDate || undefined,
-      visitDate: form.visitDate || undefined,
-      reviewDone: form.reviewDone,
-      completed: form.completed,
-      note: form.note || undefined,
+      platform: form.platform || undefined, campaignType: form.campaignType || undefined,
+      category: form.category || undefined, businessName: form.businessName || undefined,
+      amount: form.amount || undefined, endDate: form.endDate || undefined,
+      visitDate: form.visitDate || undefined, reviewDone: form.reviewDone,
+      completed: form.completed, note: form.note || undefined,
     };
-    if (editing) {
-      updateMutation.mutate({ id: editing.id, data });
-    } else {
-      createMutation.mutate(data);
-    }
+    if (editing) updateMutation.mutate({ id: editing.id, data });
+    else createMutation.mutate(data);
   };
 
-  const typeColors: Record<string, string> = {
-    "방문형": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    "배송형": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-    "원고형": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    "기타": "bg-muted text-muted-foreground",
-  };
+  // ─── 테이블 렌더 ─────────────────────────────────────────────────────────
+  function renderTable(records: Campaign[]) {
+    if (records.length === 0) return null;
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-muted-foreground">
+              <th className="text-left py-2 px-3 font-medium">방문/수령일</th>
+              <th className="text-left py-2 px-3 font-medium">업체명</th>
+              <th className="text-center py-2 px-3 font-medium">타입</th>
+              <th className="text-right py-2 px-3 font-medium">혜택금액</th>
+              <th className="text-left py-2 px-3 font-medium">마감일</th>
+              <th className="text-center py-2 px-3 font-medium">D-day</th>
+              <th className="text-center py-2 px-3 font-medium">리뷰</th>
+              <th className="text-center py-2 px-3 font-medium">완료</th>
+              <th className="py-2 px-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {records.map(c => {
+              const dday = getDday(c.endDate);
+              return (
+                <tr key={c.id} className={`border-b hover:bg-muted/30 transition-colors ${c.completed ? "opacity-60" : ""}`}>
+                  <td className="py-2.5 px-3 text-muted-foreground">{c.visitDate ?? "—"}</td>
+                  <td className="py-2.5 px-3">
+                    <p className={`font-medium ${c.completed ? "line-through text-muted-foreground" : ""}`}>
+                      {c.businessName ?? "—"}
+                    </p>
+                    {(c.category || c.platform) && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {[c.category, c.platform].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3 text-center">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[c.campaignType ?? "기타"] ?? TYPE_COLORS["기타"]}`}>
+                      {c.campaignType ?? "—"}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-semibold text-emerald-600">
+                    {c.amount ? fmt(c.amount) : <span className="text-muted-foreground font-normal">—</span>}
+                  </td>
+                  <td className="py-2.5 px-3 text-muted-foreground text-xs">{c.endDate ?? "—"}</td>
+                  <td className="py-2.5 px-3 text-center">
+                    {dday ? (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${dday.className}`}>{dday.label}</span>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="py-2.5 px-3 text-center">
+                    <Switch
+                      checked={c.reviewDone ?? false}
+                      onCheckedChange={() => updateMutation.mutate({ id: c.id, data: { reviewDone: !c.reviewDone } })}
+                    />
+                  </td>
+                  <td className="py-2.5 px-3 text-center">
+                    <Switch
+                      checked={c.completed ?? false}
+                      onCheckedChange={() => updateMutation.mutate({ id: c.id, data: { completed: !c.completed } })}
+                    />
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(c.id)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">블로그 체험단</h1>
@@ -290,12 +384,8 @@ export default function BlogCampaigns() {
                   <span className={`font-semibold mr-2 ${isToday ? "text-red-700 dark:text-red-400" : "text-orange-700 dark:text-orange-400"}`}>
                     {dday?.label}
                   </span>
-                  <span className="text-foreground font-medium truncate">
-                    {c.businessName ?? c.platform ?? "체험단"}
-                  </span>
-                  {c.endDate && (
-                    <span className="text-muted-foreground ml-2 text-xs">마감 {c.endDate}</span>
-                  )}
+                  <span className="text-foreground font-medium truncate">{c.businessName ?? c.platform ?? "체험단"}</span>
+                  {c.endDate && <span className="text-muted-foreground ml-2 text-xs">마감 {c.endDate}</span>}
                 </div>
                 <button
                   onClick={() => setDismissedAlerts((prev) => [...prev, c.id])}
@@ -309,336 +399,319 @@ export default function BlogCampaigns() {
         </div>
       )}
 
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground mb-1">총 체험단 수</p>
-          <p className="text-xl font-bold">{campaigns.length}건</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground mb-1">완료 / 리뷰 완료</p>
-          <p className="text-xl font-bold">{completedCount} / {reviewDoneCount}</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs text-muted-foreground mb-1">총 혜택 금액</p>
-          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">₩{formatAmount(totalAmount)}</p>
-        </div>
-      </div>
-
-      {/* 월별 통계 토글 */}
-      <Card>
-        <CardHeader
-          className="py-3 px-4 cursor-pointer select-none"
-          onClick={() => setShowStats(v => !v)}
-        >
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <BarChart2 className="w-4 h-4 text-primary" />
-              월별 통계 (최근 12개월 · 방문/수령일 기준)
-            </CardTitle>
-            <span className="text-xs text-muted-foreground">{showStats ? "접기 ▲" : "펼치기 ▼"}</span>
-          </div>
-        </CardHeader>
-
-        {showStats && (
-          <CardContent className="pt-0 space-y-4">
-            {/* 바 차트 */}
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={monthlyStats} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tickFormatter={v => v >= 10000 ? `${(v / 10000).toFixed(0)}만` : String(v)}
-                  tick={{ fontSize: 10 }}
-                />
-                <Tooltip
-                  formatter={(value: number, name: string) =>
-                    name === "혜택금액" ? [`₩${formatAmount(value)}`, "혜택금액"] : [value, name]
-                  }
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }}
-                />
-                <Legend />
-                <Bar yAxisId="right" dataKey="혜택금액" fill="#22c55e" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-
-            {/* 월별 상세 테이블 */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-2 px-3 text-muted-foreground font-medium">월</th>
-                    <th className="text-center py-2 px-3 text-muted-foreground font-medium">건수</th>
-                    <th className="text-center py-2 px-3 text-muted-foreground font-medium">완료</th>
-                    <th className="text-center py-2 px-3 text-muted-foreground font-medium">리뷰완료</th>
-                    <th className="text-right py-2 px-3 text-muted-foreground font-medium">혜택금액</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyStats.map(row => (
-                    <tr
-                      key={row.month}
-                      className={`border-b border-border/50 hover:bg-muted/30 ${row.건수 === 0 ? "opacity-40" : ""}`}
-                    >
-                      <td className="py-2 px-3 font-medium">{row.month}</td>
-                      <td className="py-2 px-3 text-center">
-                        {row.건수 > 0 ? `${row.건수}건` : <span className="text-muted-foreground">-</span>}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <span className={row.완료 > 0 ? "text-emerald-600 dark:text-emerald-400 font-semibold" : "text-muted-foreground"}>
-                          {row.완료 > 0 ? `${row.완료}건` : "-"}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <span className={row.리뷰완료 > 0 ? "text-blue-600 dark:text-blue-400 font-semibold" : "text-muted-foreground"}>
-                          {row.리뷰완료 > 0 ? `${row.리뷰완료}건` : "-"}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                        {row.혜택금액 > 0 ? `₩${formatAmount(row.혜택금액)}` : "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* 요약 카드 */}
+      <div className="grid grid-cols-5 gap-4">
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-teal-500/10"><TrendingUp className="w-5 h-5 text-teal-500" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">{year}년 혜택금액</p>
+                <p className="text-xl font-bold text-teal-600">{fmt(yearAmount)}</p>
+              </div>
             </div>
           </CardContent>
-        )}
-      </Card>
-
-      {/* 월별 리스트 */}
-      <Card>
-        <CardHeader className="pb-2 px-4 pt-4">
-          <div className="flex items-center justify-between">
-            <Button variant="ghost" size="icon" onClick={() => setMonthOffset(o => o - 1)}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <div className="text-center">
-              <p className="text-base font-bold">{selectedMonthData.label}</p>
-              <p className="text-xs text-muted-foreground">방문/수령일 기준 · {selectedMonthData.items.length}건</p>
-              {monthOffset !== 0 && (
-                <button className="text-xs text-primary underline underline-offset-2" onClick={() => setMonthOffset(0)}>
-                  이번달로
-                </button>
-              )}
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10"><TrendingUp className="w-5 h-5 text-emerald-500" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">{month}월 혜택금액</p>
+                <p className="text-xl font-bold text-emerald-600">{fmt(monthAmount)}</p>
+              </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setMonthOffset(o => o + 1)}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          {selectedMonthData.items.length === 0 ? (
-            <p className="text-center text-sm text-muted-foreground py-6">이 달에 방문/수령 예정인 체험단이 없습니다</p>
-          ) : (
-            <div className="space-y-2">
-              {selectedMonthData.items.map(c => {
-                const dday = getDday(c.endDate);
-                return (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-3 rounded-xl border px-4 py-3 hover:bg-muted/30 transition-colors"
-                  >
-                    {/* 타입 뱃지 */}
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${typeColors[c.campaignType ?? "기타"] ?? typeColors["기타"]}`}>
-                      {c.campaignType ?? "-"}
-                    </span>
-                    {/* 업체명 + 카테고리 */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{c.businessName ?? "-"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {c.category && `${c.category} · `}
-                        {c.platform && c.platform}
-                        {c.visitDate && ` · 방문 ${c.visitDate}`}
-                      </p>
-                    </div>
-                    {/* D-day */}
-                    {dday && (
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${dday.className}`}>
-                        {dday.label}
-                      </span>
-                    )}
-                    {/* 금액 */}
-                    {c.amount ? (
-                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
-                        ₩{formatAmount(c.amount)}
-                      </span>
-                    ) : null}
-                    {/* 리뷰 / 완료 토글 */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        title="리뷰 완료"
-                        onClick={() => toggleMutation.mutate({ id: c.id, data: { reviewDone: !c.reviewDone } })}
-                        className={`transition-colors ${c.reviewDone ? "text-emerald-500" : "text-muted-foreground hover:text-emerald-400"}`}
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        title="체험단 완료"
-                        onClick={() => toggleMutation.mutate({ id: c.id, data: { completed: !c.completed } })}
-                        className={`transition-colors ${c.completed ? "text-blue-500" : "text-muted-foreground hover:text-blue-400"}`}
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openEdit(c)}
-                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-500/10"><ListChecks className="w-5 h-5 text-blue-500" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">{month}월 체험단</p>
+                <p className="text-xl font-bold">{monthlyRecords.length}건</p>
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Filter */}
-      <div className="flex gap-2">
-        {(["전체", "완료"] as const).map(f => (
-          <button key={f} onClick={() => { setFilterCompleted(f); setPage(1); }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterCompleted === f ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}>
-            {f}
-          </button>
-        ))}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-violet-500/10"><CheckCircle2 className="w-5 h-5 text-violet-500" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">완료</p>
+                <p className="text-xl font-bold">{monthCompleted}건</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/10"><Star className="w-5 h-5 text-amber-500" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">리뷰 완료</p>
+                <p className="text-xl font-bold">{monthReviewDone}건</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Table */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px]">
-            <thead>
-              <tr className="bg-muted/50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">플랫폼</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">타입</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">업체명</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">금액</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">마감일</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">D-day</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">방문/수령일</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">리뷰</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">완료</th>
-                <th className="px-4 py-3 w-16"></th>
-              </tr>
-            </thead>
-            <tbody>
+      <Tabs defaultValue="monthly">
+        <TabsList>
+          <TabsTrigger value="monthly">월별 내역</TabsTrigger>
+          <TabsTrigger value="all">전체 내역</TabsTrigger>
+          <TabsTrigger value="chart">그래프</TabsTrigger>
+        </TabsList>
+
+        {/* ─── 월별 내역 탭 ─── */}
+        <TabsContent value="monthly" className="mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">{year}년 {month}월 체험단 내역</CardTitle>
+                <div className="flex items-center gap-1">
+                  {(year !== now.getFullYear() || month !== now.getMonth() + 1) && (
+                    <Button
+                      variant="outline" size="sm" className="h-7 text-xs px-2 mr-1"
+                      onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth() + 1); }}
+                    >
+                      오늘
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
+                  <Popover open={pickerOpen} onOpenChange={open => { setPickerOpen(open); if (open) setPickerYear(year); }}>
+                    <PopoverTrigger asChild>
+                      <button className="text-sm font-medium w-20 text-center hover:bg-muted rounded px-2 py-1 transition-colors">
+                        {year}.{String(month).padStart(2, "0")}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-3" align="center">
+                      <div className="flex items-center justify-between mb-3">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y - 1)}>
+                          <ChevronLeft className="w-4 h-4" />
+                        </Button>
+                        <span className="text-sm font-semibold">{pickerYear}년</span>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y + 1)}>
+                          <ChevronRight className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map(m => {
+                          const isSelected = pickerYear === year && m === month;
+                          return (
+                            <button
+                              key={m}
+                              onClick={() => { setYear(pickerYear); setMonth(m); setPickerOpen(false); }}
+                              className={`rounded py-1.5 text-sm font-medium transition-colors ${
+                                isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"
+                              }`}
+                            >
+                              {m}월
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
               {isLoading ? (
-                <tr><td colSpan={10} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-10 text-muted-foreground text-sm">체험단 내역이 없습니다</td></tr>
+                <p className="text-center text-muted-foreground py-8">불러오는 중...</p>
+              ) : monthlyRecords.length === 0 ? (
+                <div className="text-center py-12">
+                  <ListChecks className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+                  <p className="text-muted-foreground">이번 달 체험단 내역이 없습니다</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={openCreate}>
+                    <Plus className="w-3.5 h-3.5 mr-1" /> 추가하기
+                  </Button>
+                </div>
               ) : (
-                paginated.map(c => {
-                  const dday = getDday(c.endDate);
-                  return (
-                    <tr key={c.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3 text-sm">{c.platform ?? "-"}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeColors[c.campaignType ?? "기타"] ?? typeColors["기타"]}`}>
-                          {c.campaignType ?? "-"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="text-sm font-medium">{c.businessName ?? "-"}</p>
-                          {c.category && <p className="text-xs text-muted-foreground">{c.category}</p>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right font-medium">
-                        {c.amount ? `₩${formatAmount(c.amount)}` : "-"}
-                      </td>
-                      {/* 마감일 */}
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {c.endDate ?? "-"}
-                      </td>
-                      {/* D-day */}
-                      <td className="px-4 py-3 text-center">
-                        {dday ? (
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${dday.className}`}>
-                            {dday.label}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
-                        )}
-                      </td>
-                      {/* 방문/수령일 */}
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {c.visitDate ?? "-"}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => toggleMutation.mutate({ id: c.id, data: { reviewDone: !c.reviewDone } })}
-                          className={`transition-colors ${c.reviewDone ? "text-emerald-500" : "text-muted-foreground hover:text-emerald-400"}`}
-                        >
-                          {c.reviewDone ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => toggleMutation.mutate({ id: c.id, data: { completed: !c.completed } })}
-                          className={`transition-colors ${c.completed ? "text-blue-500" : "text-muted-foreground hover:text-blue-400"}`}
-                        >
-                          {c.completed ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 justify-end">
-                          <button onClick={() => openEdit(c)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => deleteMutation.mutate({ id: c.id })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-muted-foreground hover:text-red-500">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                <>
+                  {renderTable(monthlyRecords)}
+                  <div className="mt-2 pt-2 border-t flex justify-end gap-8 text-sm px-3">
+                    <span className="text-muted-foreground font-medium">합계</span>
+                    <span className="font-bold text-emerald-600">{fmt(monthAmount)}</span>
+                  </div>
+                </>
               )}
-            </tbody>
-          </table>
-        </div>
-        {/* 페이지 컨트롤 */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-            <p className="text-xs text-muted-foreground">
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} / 총 {filtered.length}건
-            </p>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline" size="icon" className="h-7 w-7"
-                disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </Button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                <Button
-                  key={p}
-                  variant={p === page ? "default" : "outline"}
-                  size="icon"
-                  className="h-7 w-7 text-xs"
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </Button>
-              ))}
-              <Button
-                variant="outline" size="icon" className="h-7 w-7"
-                disabled={page === totalPages}
-                onClick={() => setPage(p => p + 1)}
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Dialog */}
+        {/* ─── 전체 내역 탭 ─── */}
+        <TabsContent value="all" className="mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">전체 체험단 내역 ({campaigns.length}건)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <p className="text-center text-muted-foreground py-8">불러오는 중...</p>
+              ) : campaigns.length === 0 ? (
+                <div className="text-center py-12">
+                  <ListChecks className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+                  <p className="text-muted-foreground">체험단 내역이 없습니다</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={openCreate}>
+                    <Plus className="w-3.5 h-3.5 mr-1" /> 추가하기
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {renderTable([...campaigns].sort((a, b) => {
+                    const da = a.visitDate ?? "";
+                    const db = b.visitDate ?? "";
+                    if (!da && !db) return 0;
+                    if (!da) return 1;
+                    if (!db) return -1;
+                    return db.localeCompare(da);
+                  }))}
+                  <div className="mt-2 pt-2 border-t flex justify-end gap-8 text-sm px-3">
+                    <span className="text-muted-foreground font-medium">총 혜택금액</span>
+                    <span className="font-bold text-emerald-600">
+                      {fmt(campaigns.reduce((s, c) => s + (c.amount ?? 0), 0))}
+                    </span>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ─── 그래프 탭 ─── */}
+        <TabsContent value="chart" className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            {/* 연간 월별 혜택금액 */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{year}년 월별 혜택금액</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={yearlyChart} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={v => `${(v / 10000).toFixed(0)}만`} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v: number) => [`₩${formatAmount(v)}`, "혜택금액"]} />
+                    <Bar dataKey="혜택금액" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* 최근 5개년 혜택금액 */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">최근 5개년 혜택금액 합계</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {fiveYearChart.every(d => d.혜택금액 === 0) ? (
+                  <div className="flex items-center justify-center h-[220px] text-muted-foreground text-sm">데이터 없음</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={fiveYearChart} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="year" tick={{ fontSize: 11 }} />
+                      <YAxis tickFormatter={v => `${(v / 10000).toFixed(0)}만`} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: number) => [`₩${formatAmount(v)}`, "혜택금액"]} />
+                      <Bar dataKey="혜택금액" fill="#5b7cfa" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 타입별 · 카테고리별 파이 차트 */}
+          <div className="grid grid-cols-2 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">전체 타입 분포</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {typeChart.length === 0 ? (
+                  <div className="flex items-center justify-center h-[220px] text-muted-foreground text-sm">데이터 없음</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={typeChart.filter(d => !hiddenType[d.name])}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {typeChart.filter(d => !hiddenType[d.name]).map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => `${v}건`} />
+                      <Legend
+                        payload={typeChart.map(d => ({ value: d.name, type: "square" as const, color: d.color }))}
+                        onClick={(e: any) => {
+                          const key = String(e.value ?? "");
+                          if (key) setHiddenType(prev => ({ ...prev, [key]: !prev[key] }));
+                        }}
+                        formatter={(value: string) => (
+                          <span style={{ opacity: hiddenType[value] ? 0.35 : 1, cursor: "pointer" }}>{value}</span>
+                        )}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">전체 카테고리 분포</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {categoryChart.length === 0 ? (
+                  <div className="flex items-center justify-center h-[220px] text-muted-foreground text-sm">데이터 없음</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={categoryChart.filter(d => !hiddenCategory[d.name])}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {categoryChart.filter(d => !hiddenCategory[d.name]).map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => `${v}건`} />
+                      <Legend
+                        payload={categoryChart.map(d => ({ value: d.name, type: "square" as const, color: d.color }))}
+                        onClick={(e: any) => {
+                          const key = String(e.value ?? "");
+                          if (key) setHiddenCategory(prev => ({ ...prev, [key]: !prev[key] }));
+                        }}
+                        formatter={(value: string) => (
+                          <span style={{ opacity: hiddenCategory[value] ? 0.35 : 1, cursor: "pointer" }}>{value}</span>
+                        )}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* 추가/수정 다이얼로그 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editing ? "체험단 수정" : "체험단 추가"}</DialogTitle></DialogHeader>
@@ -673,35 +746,22 @@ export default function BlogCampaigns() {
               <Label className="text-xs">금액 (원)</Label>
               <CurrencyInput value={form.amount} onChange={(v) => setForm(f => ({ ...f, amount: v }))} placeholder="0" suffix="원" className="mt-1" />
             </div>
-            {/* 마감일 - 달력 선택 */}
             <div>
               <Label className="text-xs">마감일</Label>
               <div className="mt-1">
-                <DatePickerField
-                  value={form.endDate}
-                  onChange={(v) => setForm(f => ({ ...f, endDate: v }))}
-                  placeholder="마감일 선택"
-                />
+                <DatePickerField value={form.endDate} onChange={(v) => setForm(f => ({ ...f, endDate: v }))} placeholder="마감일 선택" />
               </div>
-              {/* D-day 미리보기 */}
               {form.endDate && (() => {
                 const dday = getDday(form.endDate);
                 return dday ? (
-                  <span className={`inline-block text-xs font-semibold mt-1 px-2 py-0.5 rounded-full ${dday.className}`}>
-                    {dday.label}
-                  </span>
+                  <span className={`inline-block text-xs font-semibold mt-1 px-2 py-0.5 rounded-full ${dday.className}`}>{dday.label}</span>
                 ) : null;
               })()}
             </div>
-            {/* 방문/수령일 - 달력 선택 */}
             <div>
               <Label className="text-xs">방문/수령일</Label>
               <div className="mt-1">
-                <DatePickerField
-                  value={form.visitDate}
-                  onChange={(v) => setForm(f => ({ ...f, visitDate: v }))}
-                  placeholder="방문/수령일 선택"
-                />
+                <DatePickerField value={form.visitDate} onChange={(v) => setForm(f => ({ ...f, visitDate: v }))} placeholder="방문/수령일 선택" />
               </div>
             </div>
             <div className="flex gap-4">
@@ -721,7 +781,21 @@ export default function BlogCampaigns() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>취소</Button>
-            <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>{editing ? "수정" : "추가"}</Button>
+            <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
+              {editing ? "수정" : "추가"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 삭제 확인 */}
+      <Dialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>체험단 삭제</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">이 항목을 삭제하시겠습니까?</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>취소</Button>
+            <Button variant="destructive" onClick={() => deleteId !== null && deleteMutation.mutate({ id: deleteId })}>삭제</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
