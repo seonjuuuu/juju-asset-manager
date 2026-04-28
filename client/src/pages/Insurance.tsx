@@ -18,9 +18,12 @@ import { Calendar } from "@/components/ui/calendar";
 interface InsuranceRecord {
   id: number;
   name: string;
+  insuranceType: "보장형" | "저축형" | null;
   paymentMethod: string | null;
   startDate: string;
   endDate: string | null;
+  renewalType: "비갱신형" | "갱신형";
+  renewalCycleYears: number | null;
   paymentType: "monthly" | "annual";
   paymentDay: number | null;
   paymentAmount: number;
@@ -167,9 +170,12 @@ function DatePickerField({
 // ─── 다이얼로그 폼 ────────────────────────────────────────────────────────────
 const defaultForm = {
   name: "",
+  insuranceType: null as "보장형" | "저축형" | null,
   paymentMethod: "",
   startDate: "",
   endDate: "",
+  renewalType: "비갱신형" as "비갱신형" | "갱신형",
+  renewalCycleYears: "" as string,
   paymentType: "monthly" as "monthly" | "annual",
   paymentDay: "" as string,
   paymentAmount: 0,
@@ -194,9 +200,12 @@ function InsuranceDialog({
     editing
       ? {
           name: editing.name,
+          insuranceType: editing.insuranceType ?? null,
           paymentMethod: editing.paymentMethod ?? "",
           startDate: editing.startDate,
           endDate: editing.endDate ?? "",
+          renewalType: editing.renewalType ?? "비갱신형",
+          renewalCycleYears: editing.renewalCycleYears ? String(editing.renewalCycleYears) : "",
           paymentType: editing.paymentType,
           paymentDay: editing.paymentDay ? String(editing.paymentDay) : "",
           paymentAmount: editing.paymentAmount,
@@ -243,6 +252,70 @@ function InsuranceDialog({
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
           </div>
+
+          {/* 보험 종류 */}
+          <div className="space-y-1">
+            <Label>보험 종류</Label>
+            <div className="flex gap-2">
+              {(["보장형", "저축형"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({ ...f, insuranceType: f.insuranceType === type ? null : type }))
+                  }
+                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    form.insuranceType === type
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border hover:bg-muted"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 갱신 여부 */}
+          <div className="space-y-1">
+            <Label>갱신 여부</Label>
+            <div className="flex gap-2">
+              {(["비갱신형", "갱신형"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      renewalType: type,
+                      renewalCycleYears: type === "갱신형" ? f.renewalCycleYears : "",
+                    }))
+                  }
+                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    form.renewalType === type
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border hover:bg-muted"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {form.renewalType === "갱신형" && (
+            <div className="space-y-1">
+              <Label>갱신 주기 (년) *</Label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                placeholder="예: 3"
+                value={form.renewalCycleYears}
+                onChange={(e) => setForm((f) => ({ ...f, renewalCycleYears: e.target.value }))}
+              />
+            </div>
+          )}
 
           {/* 납부 수단 */}
           <div className="space-y-1">
@@ -374,6 +447,7 @@ function InsuranceDialog({
             onClick={() => {
               if (!form.name.trim()) { toast.error("보험명을 입력하세요"); return; }
               if (!form.startDate || !isValidDate(form.startDate)) { toast.error("보험 가입 시기를 올바르게 입력하세요"); return; }
+              if (form.renewalType === "갱신형" && (!form.renewalCycleYears || parseInt(form.renewalCycleYears) <= 0)) { toast.error("갱신 주기를 입력하세요"); return; }
               if (form.paymentAmount <= 0) { toast.error("납입액을 입력하세요"); return; }
               onSave(form);
             }}
@@ -434,9 +508,12 @@ export default function Insurance() {
   function handleSave(form: typeof defaultForm) {
     const payload = {
       name: form.name,
+      insuranceType: form.insuranceType ?? null,
       paymentMethod: form.paymentMethod || null,
       startDate: form.startDate,
       endDate: form.endDate || null,
+      renewalType: form.renewalType,
+      renewalCycleYears: form.renewalType === "갱신형" && form.renewalCycleYears ? parseInt(form.renewalCycleYears) : null,
       paymentType: form.paymentType,
       paymentDay: form.paymentDay ? parseInt(form.paymentDay) : null,
       paymentAmount: form.paymentAmount,
@@ -552,7 +629,20 @@ export default function Insurance() {
                         </p>
                       )}
                     </div>
-                    <div className="flex gap-1 ml-2 flex-shrink-0">
+                    <div className="flex gap-1 ml-2 flex-shrink-0 flex-wrap justify-end">
+                      {rec.insuranceType && (
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${rec.insuranceType === "보장형" ? "border-blue-400 text-blue-600 dark:text-blue-400" : "border-emerald-400 text-emerald-600 dark:text-emerald-400"}`}
+                        >
+                          {rec.insuranceType}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        {rec.renewalType === "갱신형" && rec.renewalCycleYears
+                          ? `${rec.renewalCycleYears}년 갱신`
+                          : "비갱신형"}
+                      </Badge>
                       <Badge variant={rec.paymentType === "monthly" ? "secondary" : "outline"} className="text-xs">
                         {rec.paymentType === "monthly" ? "월납" : "연납"}
                       </Badge>
