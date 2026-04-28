@@ -149,7 +149,11 @@ function InstallmentDialog({
   cards: Card[];
   onSave: (data: typeof defaultForm) => void;
 }) {
-  const { data: categoryList = [] } = trpc.categories.list.useQuery();
+  const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
 
   const [form, setForm] = useState(() =>
     editing
@@ -378,7 +382,11 @@ export default function Installments() {
   const utils = trpc.useUtils();
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
-  const { data: categoryList = [] } = trpc.categories.list.useQuery();
+  const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Installment | null>(null);

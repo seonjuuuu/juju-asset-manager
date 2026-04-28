@@ -39,6 +39,14 @@ export function returnRateColor(rate: number | string | null | undefined): strin
   return "text-muted-foreground";
 }
 
+/** 브라우저 로컬 기준 YYYY-MM-DD (일시정지·가계부 날짜에 사용, UTC toISOString 지양) */
+export function formatLocalDateYMD(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 /** 날짜 포맷 */
 export function formatDate(dateStr: string | Date | null | undefined): string {
   if (!dateStr) return "-";
@@ -50,8 +58,8 @@ export function formatDate(dateStr: string | Date | null | undefined): string {
 export const currentYear = new Date().getFullYear();
 export const currentMonth = new Date().getMonth() + 1;
 export const MONTH_NAMES = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
-export const MAIN_CATEGORIES = ["수입", "고정지출", "변동지출", "저축/투자"];
+export const MAIN_CATEGORIES = ["소득", "고정지출", "변동지출", "사업지출", "저축/투자"];
 export const VARIABLE_SUB_CATEGORIES = ["식비","교통비","꾸밈비","교육비","자기개발","여가","생활용품","선물/경조","변동 세금","건강1","변동 업무"];
-export const INCOME_SUB_CATEGORIES = ["월급","상여","부수입","기타수입"];
+export const INCOME_SUB_CATEGORIES = ["급여","사업소득","부수입","투자수익","기타수입"];
 export const FIXED_SUB_CATEGORIES = ["주거비","통신비","보험료","OTT","모임회비","교통/차량","업무"];
 export const SAVINGS_SUB_CATEGORIES = ["예적금","현금성통장","투자","연금저축","주택청약","기타저축"];

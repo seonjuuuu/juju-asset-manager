@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Tag, Layers, Lock } from "lucide-react";
 
-const PROTECTED_SUB_NAMES = ["구독서비스", "보험"];
+const PROTECTED_SUB_NAMES = ["구독서비스", "보험", "광고", "사업소득", "부수입"];
 
 type CategoryType = "expense" | "income" | "both";
 
@@ -141,33 +141,49 @@ function SubCategoryDialog({
 // ─── 메인 페이지 ──────────────────────────────────────────────────────────────
 export default function Categories() {
   const utils = trpc.useUtils();
-  const { data: categoryList = [], isLoading } = trpc.categories.list.useQuery();
+  const { data: categoryList = [], isLoading } = trpc.categories.list.useQuery(undefined, {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const invalidateCategoryConsumers = async () => {
+    await Promise.all([
+      utils.categories.list.invalidate(),
+      utils.ledger.list.invalidate(),
+      utils.ledger.monthSummary.invalidate(),
+      utils.ledger.yearlySubCatExpense.invalidate(),
+      utils.dashboard.yearlySummary.invalidate(),
+      utils.fixedExpense.list.invalidate(),
+      utils.installment.list.invalidate(),
+    ]);
+  };
 
   // 대분류 뮤테이션
   const addMain = trpc.categories.addMain.useMutation({
-    onSuccess: () => { utils.categories.list.invalidate(); toast.success("대분류가 추가되었습니다"); setMainDialog(null); },
+    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("대분류가 추가되었습니다"); setMainDialog(null); },
     onError: () => toast.error("추가 실패"),
   });
   const updateMain = trpc.categories.updateMain.useMutation({
-    onSuccess: () => { utils.categories.list.invalidate(); toast.success("수정되었습니다"); setMainDialog(null); },
+    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("수정되었습니다"); setMainDialog(null); },
     onError: () => toast.error("수정 실패"),
   });
   const deleteMain = trpc.categories.deleteMain.useMutation({
-    onSuccess: () => { utils.categories.list.invalidate(); toast.success("삭제되었습니다"); },
+    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("삭제되었습니다"); },
     onError: () => toast.error("삭제 실패"),
   });
 
   // 중분류 뮤테이션
   const addSub = trpc.categories.addSub.useMutation({
-    onSuccess: () => { utils.categories.list.invalidate(); toast.success("중분류가 추가되었습니다"); setSubDialog(null); },
+    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("중분류가 추가되었습니다"); setSubDialog(null); },
     onError: () => toast.error("추가 실패"),
   });
   const updateSub = trpc.categories.updateSub.useMutation({
-    onSuccess: () => { utils.categories.list.invalidate(); toast.success("수정되었습니다"); setSubDialog(null); },
+    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("수정되었습니다"); setSubDialog(null); },
     onError: () => toast.error("수정 실패"),
   });
   const deleteSub = trpc.categories.deleteSub.useMutation({
-    onSuccess: () => { utils.categories.list.invalidate(); toast.success("삭제되었습니다"); },
+    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("삭제되었습니다"); },
     onError: () => toast.error("삭제 실패"),
   });
 

@@ -24,6 +24,13 @@ const PRESET_COLORS = [
 ];
 
 const fmt = (n: number) => n.toLocaleString("ko-KR");
+const fmtDate = (d: Date | string): string => {
+  if (typeof d === "string") return d.slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 // ─── 카테고리 다이얼로그 ──────────────────────────────────────────────────────
 function CategoryDialog({
@@ -357,6 +364,7 @@ export default function SideIncome() {
                     </Button>
                   </div>
                 ) : (
+                  <>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -375,7 +383,7 @@ export default function SideIncome() {
                           const cat = categories.find(c => c.name === inc.categoryName);
                           return (
                             <tr key={inc.id} className="border-b hover:bg-muted/30 transition-colors">
-                              <td className="py-2.5 px-3 text-muted-foreground">{String(inc.incomeDate)}</td>
+                              <td className="py-2.5 px-3 text-muted-foreground">{fmtDate(inc.incomeDate)}</td>
                               <td className="py-2.5 px-3">
                                 {inc.categoryName ? (
                                   <span className="flex items-center gap-1.5">
@@ -398,7 +406,7 @@ export default function SideIncome() {
                                     open: true,
                                     item: {
                                       id: inc.id,
-                                      incomeDate: String(inc.incomeDate),
+                                      incomeDate: fmtDate(inc.incomeDate),
                                       categoryId: inc.categoryId ? String(inc.categoryId) : "",
                                       amount: inc.amount ?? 0,
                                       description: inc.description ?? "",
@@ -418,15 +426,13 @@ export default function SideIncome() {
                           );
                         })}
                       </tbody>
-                      <tfoot>
-                        <tr className="bg-muted/30">
-                          <td colSpan={3} className="py-2.5 px-3 font-semibold text-right">합계</td>
-                          <td className="py-2.5 px-3 text-right font-bold text-emerald-600">+₩{fmt(totalAmount)}</td>
-                          <td colSpan={3} />
-                        </tr>
-                      </tfoot>
                     </table>
                   </div>
+                  <div className="mt-2 pt-2 border-t flex justify-end gap-8 text-sm px-3">
+                    <span className="text-muted-foreground font-medium">합계</span>
+                    <span className="font-bold text-emerald-600">+₩{fmt(totalAmount)}</span>
+                  </div>
+                  </>
                 )}
               </CardContent>
             </Card>
