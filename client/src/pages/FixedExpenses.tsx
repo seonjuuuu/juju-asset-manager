@@ -90,6 +90,12 @@ function isValidDateInput(value: string) {
   return !Number.isNaN(new Date(value).getTime());
 }
 
+function comparableDateKey(value: string, boundary: "start" | "end") {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}$/.test(value)) return `${value}-${boundary === "start" ? "01" : "31"}`;
+  return value;
+}
+
 function DateInputWithCalendar({
   label,
   value,
@@ -268,6 +274,22 @@ export default function FixedExpenses() {
   };
 
   const handleSubmit = () => {
+    if (!isValidDateInput(form.startDate)) {
+      toast.error("시작일 형식을 확인해주세요");
+      return;
+    }
+    if (!isValidDateInput(form.expiryDate)) {
+      toast.error("만기일 형식을 확인해주세요");
+      return;
+    }
+    if (
+      form.startDate &&
+      form.expiryDate &&
+      comparableDateKey(form.expiryDate, "end") < comparableDateKey(form.startDate, "start")
+    ) {
+      toast.error("만기일은 시작일보다 이전일 수 없습니다");
+      return;
+    }
     const data = {
       mainCategory: form.mainCategory,
       subCategory: form.subCategory || undefined,
@@ -287,6 +309,52 @@ export default function FixedExpenses() {
       createMutation.mutate(data);
     }
   };
+
+  function renderFixedExpenseTable(rows: FixedExpense[], emptyText: string) {
+    return (
+      <table className="w-full">
+        <thead>
+          <tr className="bg-muted/50">
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">대분류</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">중분류</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">내용</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">결제 계좌</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">월 금액</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">납입일</th>
+            <th className="px-4 py-3 w-16"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
+          ) : rows.length === 0 ? (
+            <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">{emptyText}</td></tr>
+          ) : (
+            rows.map((e) => (
+              <tr key={e.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 text-sm font-medium">{e.mainCategory}</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground">{e.subCategory ?? "-"}</td>
+                <td className="px-4 py-3 text-sm">{e.description ?? "-"}</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground">{e.paymentAccount ?? "-"}</td>
+                <td className="px-4 py-3 text-sm text-right font-semibold">₩{formatAmount(e.monthlyAmount)}</td>
+                <td className="px-4 py-3 text-sm text-right text-muted-foreground">{e.paymentDay ? `${e.paymentDay}일` : "-"}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1 justify-end">
+                    <button onClick={() => openEdit(e)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => deleteMutation.mutate({ id: e.id })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-muted-foreground hover:text-red-500">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -330,47 +398,7 @@ export default function FixedExpenses() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Table */}
         <div className="lg:col-span-2 bg-card border border-border rounded-xl overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-muted/50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">대분류</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">중분류</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">내용</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">결제 계좌</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">월 금액</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">납입일</th>
-                <th className="px-4 py-3 w-16"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
-              ) : activeExpenses.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">등록된 고정지출이 없습니다</td></tr>
-              ) : (
-                activeExpenses.map((e) => (
-                  <tr key={e.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium">{e.mainCategory}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{e.subCategory ?? "-"}</td>
-                    <td className="px-4 py-3 text-sm">{e.description ?? "-"}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{e.paymentAccount ?? "-"}</td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold">₩{formatAmount(e.monthlyAmount)}</td>
-                    <td className="px-4 py-3 text-sm text-right text-muted-foreground">{e.paymentDay ? `${e.paymentDay}일` : "-"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => openEdit(e as FixedExpense)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => deleteMutation.mutate({ id: e.id })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-muted-foreground hover:text-red-500">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          {renderFixedExpenseTable(activeExpenses, "등록된 고정지출이 없습니다")}
         </div>
 
         {/* Pie Chart */}
