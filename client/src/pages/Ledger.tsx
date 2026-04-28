@@ -2,6 +2,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount, currentYear, currentMonth, MONTH_NAMES } from "@/lib/utils";
+import { ledgerSubCostForMonth, subscriptionLedgerDate } from "@/lib/subscriptionLedger";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -22,11 +23,24 @@ type LedgerEntry = {
   note: string | null;
 };
 
+type FixedExpenseRow = {
+  id: number;
+  mainCategory: string;
+  subCategory: string | null;
+  description: string | null;
+  paymentAccount: string | null;
+  monthlyAmount: number;
+  paymentDay: number | null;
+  startDate: string | null;
+  expiryDate: string | null;
+  note: string | null;
+};
+
 const EMPTY_FORM = {
   entryDate: new Date().toISOString().split("T")[0],
   year: currentYear,
   month: currentMonth,
-  mainCategory: "수입",
+  mainCategory: "소득",
   subCategory: "",
   description: "",
   amount: 0,
@@ -43,6 +57,8 @@ export default function Ledger() {
   const utils = trpc.useUtils();
   const { data: entries = [], isLoading } = trpc.ledger.list.useQuery({ year, month });
   const { data: summary = [] } = trpc.ledger.monthSummary.useQuery({ year, month });
+  const { data: subscriptions = [] } = trpc.subscription.list.useQuery();
+  const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
 
   const createMutation = trpc.ledger.create.useMutation({
     onSuccess: () => { utils.ledger.list.invalidate(); utils.ledger.monthSummary.invalidate(); toast.success("항목이 추가되었습니다"); setDialogOpen(false); },
@@ -63,14 +79,84 @@ export default function Ledger() {
     return m;
   }, [summary]);
 
-  const income = summaryMap["수입"] ?? 0;
+  const income = summaryMap["소득"] ?? 0;
   const fixedExp = summaryMap["고정지출"] ?? 0;
   const varExp = summaryMap["변동지출"] ?? 0;
+  const businessExp = summaryMap["사업지출"] ?? 0;
   const savings = summaryMap["저축/투자"] ?? 0;
-  const totalExp = fixedExp + varExp + savings;
+
+  // 해당 월 구독결제 가상 행 (날짜 = 결제일 기준 해당 월 일자)
+  const subscriptionRows = useMemo(() => {
+    return subscriptions
+      .map(sub => {
+        const s = sub as {
+          id: number;
+          serviceName: string;
+          price: number;
+          billingCycle: string;
+          sharedCount?: number;
+          billingDay?: number | null;
+          startDate?: string | null;
+          paymentMethod?: string | null;
+          note?: string | null;
+          isPaused?: boolean | null;
+          pausedFrom?: string | null;
+        };
+        const cost = ledgerSubCostForMonth(year, month, s);
+        if (cost === 0) return null;
+        const displayDate = subscriptionLedgerDate(year, month, s.billingCycle, s.billingDay, s.startDate);
+        return { id: s.id, serviceName: s.serviceName, cost, billingCycle: s.billingCycle, paymentMethod: s.paymentMethod ?? null, note: s.note ?? null, displayDate };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+  }, [subscriptions, month, year]);
+
+  const fixedExpenseRows = useMemo(() => {
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+    return (fixedExpenses as FixedExpenseRow[])
+      .filter(expense => !expense.startDate || expense.startDate.slice(0, 7) <= monthKey)
+      .filter(expense => !expense.expiryDate || expense.expiryDate.slice(0, 7) >= monthKey)
+      .filter(expense => (expense.monthlyAmount ?? 0) > 0)
+      .map(expense => {
+        const day = Math.min(Math.max(expense.paymentDay ?? 1, 1), 28);
+        return {
+          ...expense,
+          displayDate: `${monthKey}-${String(day).padStart(2, "0")}`,
+          amount: expense.monthlyAmount,
+        };
+      });
+  }, [fixedExpenses, year, month]);
+
+  const sortedTableRows = useMemo(() => {
+    type EntryRow = { kind: "entry"; sortDate: string; entry: LedgerEntry };
+    type SubRow = { kind: "sub"; sortDate: string; sub: (typeof subscriptionRows)[number] };
+    type FixedRow = { kind: "fixed"; sortDate: string; fixed: (typeof fixedExpenseRows)[number] };
+    const entryRows: EntryRow[] = entries.map((entry) => {
+      const d = entry.entryDate instanceof Date ? entry.entryDate.toISOString().split("T")[0] : String(entry.entryDate).split("T")[0];
+      return { kind: "entry", sortDate: d, entry: entry as LedgerEntry };
+    });
+    const subRows: SubRow[] = subscriptionRows.map((sub) => ({ kind: "sub", sortDate: sub.displayDate, sub }));
+    const fixedRows: FixedRow[] = fixedExpenseRows.map((fixed) => ({ kind: "fixed", sortDate: fixed.displayDate, fixed }));
+    return [...entryRows, ...fixedRows, ...subRows].sort((a, b) => {
+      const cmp = a.sortDate.localeCompare(b.sortDate);
+      if (cmp !== 0) return cmp;
+      if (a.kind === "entry" && b.kind === "entry") return a.entry.id - b.entry.id;
+      if (a.kind === "sub" && b.kind === "sub") return a.sub.id - b.sub.id;
+      if (a.kind === "fixed" && b.kind === "fixed") return a.fixed.id - b.fixed.id;
+      return a.kind === "entry" ? -1 : 1;
+    });
+  }, [entries, fixedExpenseRows, subscriptionRows]);
+
+  const totalSubCost = subscriptionRows.reduce((sum, r) => sum + r.cost, 0);
+  const totalManagedFixedCost = fixedExpenseRows.reduce((sum, r) => sum + r.amount, 0);
+  const fixedExpWithSubscriptions = fixedExp + totalManagedFixedCost + totalSubCost;
+  const totalExp = fixedExp + totalManagedFixedCost + varExp + businessExp + savings + totalSubCost;
   const balance = income - totalExp;
 
-  const { data: categoryList = [] } = trpc.categories.list.useQuery();
+  const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
   const mainCategoryNames = categoryList.map((c) => c.name);
   const getSubCategories = (main: string) => {
     const cat = categoryList.find((c) => c.name === main);
@@ -126,11 +212,16 @@ export default function Ledger() {
     else setMonth(m => m + 1);
   };
 
-  const categoryColor: Record<string, string> = {
+  const ledgerTypeColor: Record<string, string> = {
     "수입": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-    "고정지출": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    "변동지출": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
-    "저축/투자": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+    "지출": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+    "저축": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  };
+
+  const getLedgerType = (mainCategory: string, amount: number) => {
+    if (mainCategory === "저축/투자") return "저축";
+    if (mainCategory === "소득" || amount > 0) return "수입";
+    return "지출";
   };
 
   return (
@@ -158,11 +249,12 @@ export default function Ledger() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: "수입", value: income, cls: "text-emerald-600 dark:text-emerald-400" },
-          { label: "고정지출", value: fixedExp, cls: "text-blue-600 dark:text-blue-400" },
+          { label: "소득", value: income, cls: "text-emerald-600 dark:text-emerald-400" },
+          { label: "고정지출", value: fixedExpWithSubscriptions, cls: "text-blue-600 dark:text-blue-400" },
           { label: "변동지출", value: varExp, cls: "text-orange-600 dark:text-orange-400" },
+          { label: "사업지출", value: businessExp, cls: "text-rose-600 dark:text-rose-400" },
           { label: "저축/투자", value: savings, cls: "text-purple-600 dark:text-purple-400" },
         ].map((s) => (
           <div key={s.label} className="bg-card border border-border rounded-xl p-4">
@@ -174,7 +266,7 @@ export default function Ledger() {
 
       {/* Balance */}
       <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between">
-        <span className="text-sm font-medium text-muted-foreground">잔액 (수입 - 지출/저축)</span>
+        <span className="text-sm font-medium text-muted-foreground">잔액 (소득 - 지출/저축)</span>
         <span className={`text-xl font-bold ${balance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
           ₩{formatAmount(balance)}
         </span>
@@ -186,6 +278,7 @@ export default function Ledger() {
           <thead>
             <tr className="bg-muted/50">
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">날짜</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">구분</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">대분류</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">중분류</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">내용</th>
@@ -196,37 +289,84 @@ export default function Ledger() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
-            ) : entries.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">이번 달 내역이 없습니다</td></tr>
+              <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
+            ) : sortedTableRows.length === 0 ? (
+              <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">이번 달 내역이 없습니다</td></tr>
             ) : (
-              entries.map((entry) => {
-                const d = entry.entryDate instanceof Date ? entry.entryDate.toISOString().split("T")[0] : String(entry.entryDate).split("T")[0];
-                return (
-                  <tr key={entry.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{d}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${categoryColor[entry.mainCategory] ?? "bg-muted text-muted-foreground"}`}>
-                        {entry.mainCategory}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm">{entry.subCategory ?? "-"}</td>
-                    <td className="px-4 py-3 text-sm">{entry.description ?? "-"}</td>
-                    <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(entry.amount)}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{entry.note ?? "-"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => openEdit(entry as LedgerEntry)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => deleteMutation.mutate({ id: entry.id })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-muted-foreground hover:text-red-500">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+              <>
+                {sortedTableRows.map((row) => {
+                  if (row.kind === "entry") {
+                    const entry = row.entry;
+                    const d = entry.entryDate instanceof Date ? entry.entryDate.toISOString().split("T")[0] : String(entry.entryDate).split("T")[0];
+                    const ledgerType = getLedgerType(entry.mainCategory, entry.amount);
+                    return (
+                      <tr key={`e-${entry.id}`} className="border-t border-border hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{d}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor[ledgerType]}`}>
+                            {ledgerType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm text-foreground">{entry.mainCategory}</span>
+                        </td>
+                        <td className="px-4 py-3 text-sm">{entry.subCategory ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm">{entry.description ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(entry.amount)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{entry.note ?? "-"}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button onClick={() => openEdit(entry)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => deleteMutation.mutate({ id: entry.id })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-muted-foreground hover:text-red-500">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  if (row.kind === "fixed") {
+                    return (
+                      <tr key={`f-${row.fixed.id}`} className="border-t border-border bg-blue-50/40 dark:bg-blue-900/10">
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.displayDate}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor["지출"]}`}>
+                            지출
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm text-foreground">{row.fixed.mainCategory}</span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.subCategory ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm">{row.fixed.description ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(-row.fixed.amount)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.paymentAccount ?? row.fixed.note ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={`sub-${row.sub.id}`} className="border-t border-border bg-blue-50/40 dark:bg-blue-900/10">
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.sub.displayDate}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor["지출"]}`}>
+                          지출
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm text-foreground">고정지출</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">구독서비스</td>
+                      <td className="px-4 py-3 text-sm">{row.sub.serviceName}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(-row.sub.cost)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.sub.billingCycle}{row.sub.paymentMethod ? ` · ${row.sub.paymentMethod}` : ""}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
+                    </tr>
+                  );
+                })}
+              </>
             )}
           </tbody>
         </table>
