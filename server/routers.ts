@@ -64,6 +64,8 @@ const installmentInput = z.object({
   categoryId: z.number().int().nullable().optional(),
   subCategoryId: z.number().int().nullable().optional(),
   note: z.string().optional(),
+  earlyRepaymentAmount: z.number().nullable().optional(),
+  earlyRepaymentDate: z.string().nullable().optional(),
 });
 const subscriptionInput = z.object({
   serviceName: z.string(),

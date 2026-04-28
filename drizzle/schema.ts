@@ -396,6 +396,8 @@ export const installments = mysqlTable("installments", {
   categoryId: int("category_id"),
   subCategoryId: int("sub_category_id"),
   note: text("note"),
+  earlyRepaymentAmount: bigint("early_repayment_amount", { mode: "number" }),
+  earlyRepaymentDate: varchar("early_repayment_date", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
