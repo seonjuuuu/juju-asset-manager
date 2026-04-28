@@ -36,11 +36,30 @@ type FixedExpenseRow = {
   note: string | null;
 };
 
+function instIsActiveInMonth(inst: { startDate: string; endDate: string }, y: number, m: number): boolean {
+  if (!inst.startDate || !inst.endDate) return false;
+  const [py, pm] = inst.startDate.split("-").map(Number);
+  const [ey, em] = inst.endDate.split("-").map(Number);
+  const first = py * 12 + pm + 1;
+  const last = ey * 12 + em;
+  const target = y * 12 + m;
+  return target >= first && target <= last;
+}
+
+function instMonthlyPayment(totalAmount: number, months: number, isInterestFree: boolean, interestRate: string | null): number {
+  if (!totalAmount || !months) return 0;
+  if (isInterestFree || !interestRate || parseFloat(interestRate) === 0) return Math.round(totalAmount / months);
+  const r = parseFloat(interestRate) / 100 / 12;
+  if (r === 0) return Math.round(totalAmount / months);
+  return Math.round((totalAmount * r * Math.pow(1 + r, months)) / (Math.pow(1 + r, months) - 1));
+}
+
 const EMPTY_FORM = {
+  entryType: "expense" as "expense" | "income",
   entryDate: new Date().toISOString().split("T")[0],
   year: currentYear,
   month: currentMonth,
-  mainCategory: "소득",
+  mainCategory: "",
   subCategory: "",
   description: "",
   amount: 0,
@@ -59,6 +78,13 @@ export default function Ledger() {
   const { data: summary = [] } = trpc.ledger.monthSummary.useQuery({ year, month });
   const { data: subscriptions = [] } = trpc.subscription.list.useQuery();
   const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
+  const { data: installmentList = [] } = trpc.installment.list.useQuery();
+  const { data: cardList = [] } = trpc.card.list.useQuery();
+  const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
 
   const createMutation = trpc.ledger.create.useMutation({
     onSuccess: () => { utils.ledger.list.invalidate(); utils.ledger.monthSummary.invalidate(); toast.success("항목이 추가되었습니다"); setDialogOpen(false); },
@@ -126,38 +152,62 @@ export default function Ledger() {
       });
   }, [fixedExpenses, year, month]);
 
+  const installmentRows = useMemo(() => {
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+    return (installmentList as {
+      id: number; name: string; cardId: number | null; totalAmount: number; months: number;
+      startDate: string; endDate: string; isInterestFree: boolean; interestRate: string | null;
+      categoryId: number | null; subCategoryId: number | null;
+      earlyRepaymentAmount: number | null; earlyRepaymentDate: string | null;
+    }[]).filter(inst => instIsActiveInMonth(inst, year, month))
+      .map(inst => {
+        const card = (cardList as { id: number; cardCompany: string; cardName: string | null; paymentDate: string | null }[])
+          .find(c => c.id === inst.cardId);
+        const paymentDay = card?.paymentDate ? parseInt(card.paymentDate.replace(/[^0-9]/g, "")) || 15 : 15;
+        const displayDate = `${monthKey}-${String(Math.min(paymentDay, 28)).padStart(2, "0")}`;
+        const amount = instMonthlyPayment(inst.totalAmount, inst.months, inst.isInterestFree, inst.interestRate);
+        const cardLabel = card ? `${card.cardCompany}${card.cardName ? ` ${card.cardName}` : ""}` : "";
+        const cat = categoryList.find(c => c.id === inst.categoryId);
+        const categoryName = cat?.name ?? null;
+        const subCategoryName = cat?.subCategories.find(s => s.id === inst.subCategoryId)?.name ?? null;
+        return { id: inst.id, name: inst.name, amount, cardLabel, displayDate, categoryName, subCategoryName };
+      });
+  }, [installmentList, cardList, categoryList, year, month]);
+
   const sortedTableRows = useMemo(() => {
     type EntryRow = { kind: "entry"; sortDate: string; entry: LedgerEntry };
     type SubRow = { kind: "sub"; sortDate: string; sub: (typeof subscriptionRows)[number] };
     type FixedRow = { kind: "fixed"; sortDate: string; fixed: (typeof fixedExpenseRows)[number] };
+    type InstRow = { kind: "installment"; sortDate: string; inst: (typeof installmentRows)[number] };
     const entryRows: EntryRow[] = entries.map((entry) => {
       const d = entry.entryDate instanceof Date ? entry.entryDate.toISOString().split("T")[0] : String(entry.entryDate).split("T")[0];
       return { kind: "entry", sortDate: d, entry: entry as LedgerEntry };
     });
     const subRows: SubRow[] = subscriptionRows.map((sub) => ({ kind: "sub", sortDate: sub.displayDate, sub }));
     const fixedRows: FixedRow[] = fixedExpenseRows.map((fixed) => ({ kind: "fixed", sortDate: fixed.displayDate, fixed }));
-    return [...entryRows, ...fixedRows, ...subRows].sort((a, b) => {
+    const instRows: InstRow[] = installmentRows.map((inst) => ({ kind: "installment", sortDate: inst.displayDate, inst }));
+    return [...entryRows, ...fixedRows, ...subRows, ...instRows].sort((a, b) => {
       const cmp = a.sortDate.localeCompare(b.sortDate);
       if (cmp !== 0) return cmp;
       if (a.kind === "entry" && b.kind === "entry") return a.entry.id - b.entry.id;
       if (a.kind === "sub" && b.kind === "sub") return a.sub.id - b.sub.id;
       if (a.kind === "fixed" && b.kind === "fixed") return a.fixed.id - b.fixed.id;
+      if (a.kind === "installment" && b.kind === "installment") return a.inst.id - b.inst.id;
       return a.kind === "entry" ? -1 : 1;
     });
-  }, [entries, fixedExpenseRows, subscriptionRows]);
+  }, [entries, fixedExpenseRows, subscriptionRows, installmentRows]);
 
   const totalSubCost = subscriptionRows.reduce((sum, r) => sum + r.cost, 0);
   const totalManagedFixedCost = fixedExpenseRows.reduce((sum, r) => sum + r.amount, 0);
-  const fixedExpWithSubscriptions = fixedExp + totalManagedFixedCost + totalSubCost;
-  const totalExp = fixedExp + totalManagedFixedCost + varExp + businessExp + savings + totalSubCost;
+  const totalInstallmentCost = installmentRows.reduce((sum, r) => sum + r.amount, 0);
+  const fixedExpWithSubscriptions = Math.abs(fixedExp) + totalManagedFixedCost + totalSubCost;
+  const totalExp = Math.abs(fixedExp) + totalManagedFixedCost + Math.abs(varExp) + Math.abs(businessExp) + Math.abs(savings) + totalSubCost + totalInstallmentCost;
   const balance = income - totalExp;
 
-  const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, {
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-  });
-  const mainCategoryNames = categoryList.map((c) => c.name);
+
+  const getFilteredCategories = (entryType: "expense" | "income") =>
+    categoryList.filter(c => entryType === "income" ? (c.type === "income" || c.type === "both") : (c.type === "expense" || c.type === "both"));
+
   const getSubCategories = (main: string) => {
     const cat = categoryList.find((c) => c.name === main);
     return cat ? cat.subCategories.map((s) => s.name) : [];
@@ -172,7 +222,10 @@ export default function Ledger() {
   const openEdit = (entry: LedgerEntry) => {
     setEditing(entry);
     const d = entry.entryDate instanceof Date ? entry.entryDate.toISOString().split("T")[0] : String(entry.entryDate).split("T")[0];
+    const cat = categoryList.find(c => c.name === entry.mainCategory);
+    const entryType = cat?.type === "income" ? "income" : "expense";
     setForm({
+      entryType,
       entryDate: d,
       year: entry.year,
       month: entry.month,
@@ -249,19 +302,31 @@ export default function Ledger() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: "소득", value: income, cls: "text-emerald-600 dark:text-emerald-400" },
-          { label: "고정지출", value: fixedExpWithSubscriptions, cls: "text-blue-600 dark:text-blue-400" },
-          { label: "변동지출", value: varExp, cls: "text-orange-600 dark:text-orange-400" },
-          { label: "사업지출", value: businessExp, cls: "text-rose-600 dark:text-rose-400" },
-          { label: "저축/투자", value: savings, cls: "text-purple-600 dark:text-purple-400" },
-        ].map((s) => (
-          <div key={s.label} className="bg-card border border-border rounded-xl p-4">
-            <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
-            <p className={`text-lg font-bold ${s.cls}`}>₩{formatAmount(s.value)}</p>
+      <div className="grid grid-cols-2 gap-3">
+        {/* 소득 */}
+        <div className="bg-card border border-border rounded-xl p-4">
+          <p className="text-xs text-muted-foreground mb-1">소득</p>
+          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">₩{formatAmount(income)}</p>
+        </div>
+        {/* 지출 */}
+        <div className="bg-card border border-border rounded-xl p-4">
+          <p className="text-xs text-muted-foreground mb-1">지출</p>
+          <p className="text-xl font-bold text-red-500 dark:text-red-400">₩{formatAmount(totalExp)}</p>
+          <div className="mt-2 pt-2 border-t border-border space-y-0.5">
+            {[
+              { label: "고정지출", value: fixedExpWithSubscriptions },
+              { label: "변동지출", value: varExp },
+              { label: "사업지출", value: businessExp },
+              { label: "할부결제", value: totalInstallmentCost },
+              { label: "저축/투자", value: savings },
+            ].filter(item => Math.abs(item.value) > 0).map(item => (
+              <div key={item.label} className="flex justify-between text-xs text-muted-foreground">
+                <span>{item.label}</span>
+                <span>₩{formatAmount(Math.abs(item.value))}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
 
       {/* Balance */}
@@ -341,14 +406,14 @@ export default function Ledger() {
                         </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.subCategory ?? "-"}</td>
                         <td className="px-4 py-3 text-sm">{row.fixed.description ?? "-"}</td>
-                        <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(-row.fixed.amount)}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">-₩{formatAmount(row.fixed.amount)}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.paymentAccount ?? row.fixed.note ?? "-"}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
                       </tr>
                     );
                   }
-                  return (
-                    <tr key={`sub-${row.sub.id}`} className="border-t border-border bg-blue-50/40 dark:bg-blue-900/10">
+                  if (row.kind === "sub") return (
+                    <tr key={`sub-${row.sub.id}`} className="border-t border-border bg-violet-50/40 dark:bg-violet-900/10">
                       <td className="px-4 py-3 text-sm text-muted-foreground">{row.sub.displayDate}</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor["지출"]}`}>
@@ -360,8 +425,29 @@ export default function Ledger() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">구독서비스</td>
                       <td className="px-4 py-3 text-sm">{row.sub.serviceName}</td>
-                      <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(-row.sub.cost)}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">-₩{formatAmount(row.sub.cost)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{row.sub.billingCycle}{row.sub.paymentMethod ? ` · ${row.sub.paymentMethod}` : ""}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
+                    </tr>
+                  );
+                  return (
+                    <tr key={`inst-${row.inst.id}`} className="border-t border-border bg-amber-50/40 dark:bg-amber-900/10">
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.inst.displayDate}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor["지출"]}`}>
+                          지출
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.inst.categoryName ?? "-"}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.inst.subCategoryName ?? "-"}</td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-1.5">
+                          <span>{row.inst.name}</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 shrink-0">할부</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">-₩{formatAmount(row.inst.amount)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.inst.cardLabel || "-"}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
                     </tr>
                   );
@@ -379,29 +465,48 @@ export default function Ledger() {
             <DialogTitle>{editing ? "항목 수정" : "항목 추가"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
+            {/* 수입 / 지출 선택 */}
+            <div className="grid grid-cols-2 gap-2">
+              {(["expense", "income"] as const).map(type => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, entryType: type, mainCategory: "", subCategory: "" }))}
+                  className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    form.entryType === type
+                      ? type === "income"
+                        ? "bg-emerald-500 text-white border-emerald-500"
+                        : "bg-red-500 text-white border-red-500"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted"
+                  }`}
+                >
+                  {type === "income" ? "수입" : "지출"}
+                </button>
+              ))}
+            </div>
+            <div>
+              <Label className="text-xs">날짜</Label>
+              <Input type="date" value={form.entryDate} onChange={e => setForm(f => ({ ...f, entryDate: e.target.value, year: new Date(e.target.value).getFullYear(), month: new Date(e.target.value).getMonth() + 1 }))} className="mt-1" />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">날짜</Label>
-                <Input type="date" value={form.entryDate} onChange={e => setForm(f => ({ ...f, entryDate: e.target.value, year: new Date(e.target.value).getFullYear(), month: new Date(e.target.value).getMonth() + 1 }))} className="mt-1" />
-              </div>
               <div>
                 <Label className="text-xs">대분류</Label>
                 <Select value={form.mainCategory} onValueChange={v => setForm(f => ({ ...f, mainCategory: v, subCategory: "" }))}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="선택" /></SelectTrigger>
                   <SelectContent>
-                    {mainCategoryNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {getFilteredCategories(form.entryType).map(c => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div>
-              <Label className="text-xs">중분류</Label>
-              <Select value={form.subCategory} onValueChange={v => setForm(f => ({ ...f, subCategory: v }))}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="선택" /></SelectTrigger>
-                <SelectContent>
-                  {getSubCategories(form.mainCategory).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <div>
+                <Label className="text-xs">중분류</Label>
+                <Select value={form.subCategory} onValueChange={v => setForm(f => ({ ...f, subCategory: v }))} disabled={!form.mainCategory}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="선택" /></SelectTrigger>
+                  <SelectContent>
+                    {getSubCategories(form.mainCategory).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
               <Label className="text-xs">내용</Label>
