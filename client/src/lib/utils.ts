@@ -22,11 +22,10 @@ export function formatAmountInManwon(amount: number | null | undefined): string 
 
 /** 수익률을 % 포맷으로 변환 */
 export function formatReturnRate(rate: number | string | null | undefined): string {
-  if (rate === null || rate === undefined) return "0%";
+  if (rate === null || rate === undefined) return "-";
   const num = typeof rate === "string" ? parseFloat(rate) : rate;
-  if (isNaN(num)) return "0%";
-  const pct = Math.abs(num) < 10 ? num * 100 : num;
-  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+  if (isNaN(num)) return "-";
+  return `${num >= 0 ? "+" : ""}${num.toFixed(2)}%`;
 }
 
 /** 수익률 색상 클래스 반환 */
