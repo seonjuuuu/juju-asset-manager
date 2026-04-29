@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount, formatReturnRate, returnRateColor } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, RefreshCw, Loader2, TrendingUp } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw, Loader2, TrendingUp, Search } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
@@ -48,9 +48,36 @@ export default function StockPortfolio() {
   const [priceFetching, setPriceFetching] = useState(false);
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [tickerQuery, setTickerQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  // 검색어 디바운스 (400ms)
+  const handleTickerSearch = () => {
+    if (tickerQuery.trim().length >= 1) {
+      setDebouncedQuery(tickerQuery.trim());
+      setSearchOpen(true);
+    }
+  };
+
+  // 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const utils = trpc.useUtils();
   const { data: stocks = [], isLoading } = trpc.stock.list.useQuery({});
+  const { data: searchResults = [], isFetching: isSearching } = trpc.etfPrice.search.useQuery(
+    { query: debouncedQuery, market: form.market },
+    { enabled: debouncedQuery.length >= 1 }
+  );
 
   const createMutation = trpc.stock.create.useMutation({
     onSuccess: () => { utils.stock.list.invalidate(); toast.success("추가되었습니다"); setDialogOpen(false); },
@@ -79,23 +106,17 @@ export default function StockPortfolio() {
   const pieData = Object.entries(sectorMap).map(([name, value]) => ({ name, value })).filter(d => d.value > 0);
 
   // 현재가 변경 시 평가금액·수익률 자동 계산
-  useEffect(() => {
-    const qty = parseFloat(form.quantity);
-    const currentPrice = typeof form.currentPrice === "number" ? form.currentPrice : parseFloat(String(form.currentPrice));
-    const avgBuy = typeof form.avgBuyPrice === "number" ? form.avgBuyPrice : parseFloat(String(form.avgBuyPrice));
-    if (!isNaN(qty) && !isNaN(currentPrice) && qty > 0 && currentPrice > 0) {
-      const currentAmount = Math.round(currentPrice * qty);
-      const buyAmount = !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : (typeof form.buyAmount === "number" ? form.buyAmount : parseFloat(String(form.buyAmount))) || 0;
-      const returnRate = buyAmount > 0 ? (((currentAmount - buyAmount) / buyAmount) * 100).toFixed(2) : "";
-      setForm(f => ({
-        ...f,
-        currentAmount: currentAmount,
-        buyAmount: !isNaN(avgBuy) && avgBuy > 0 ? Math.round(avgBuy * qty) : f.buyAmount,
-        returnRate,
-      }));
+  // 수익률 + 현재금액 + 수량으로 매수원금·평균매수가 계산
+  const calcBuySide = (returnRateStr: string, currentAmt: number, quantityStr: string) => {
+    const qty = parseFloat(quantityStr);
+    const rate = parseFloat(returnRateStr);
+    if (!isNaN(qty) && qty > 0 && !isNaN(rate) && currentAmt > 0) {
+      const buyAmount = Math.round(currentAmt / (1 + rate / 100));
+      const avgBuyPrice = Math.round(buyAmount / qty);
+      return { buyAmount, avgBuyPrice };
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.currentPrice, form.quantity, form.avgBuyPrice]);
+    return { buyAmount: 0, avgBuyPrice: 0 };
+  };
 
   // 현재가 조회 함수
   const fetchPrice = useCallback(async (ticker: string, market: "국내" | "해외") => {
@@ -108,7 +129,7 @@ export default function StockPortfolio() {
     }
   }, [utils]);
 
-  // 단일 종목 현재가 조회
+  // 단일 종목 현재가 조회 (해외는 USD→KRW 자동 환산)
   const handleFetchPrice = async () => {
     if (!form.ticker.trim()) {
       toast.error("종목코드(티커)를 입력해주세요");
@@ -116,21 +137,39 @@ export default function StockPortfolio() {
     }
     setPriceFetching(true);
     const result = await fetchPrice(form.ticker.trim(), form.market);
-    setPriceFetching(false);
     if (result) {
-      setForm(f => ({
-        ...f,
-        currentPrice: result.price,
-        stockName: f.stockName || result.name,
-      }));
+      let krwPrice = result.price;
+      if (result.currency && result.currency !== "KRW") {
+        try {
+          const rateResult = await utils.exchangeRate.get.fetch({ currency: result.currency });
+          krwPrice = Math.round(result.price * rateResult.rate);
+        } catch {
+          toast.error("환율 조회 실패");
+          setPriceFetching(false);
+          return;
+        }
+      }
+      setForm(f => {
+        const qty = parseFloat(f.quantity);
+        const currentAmount = qty > 0 ? Math.round(krwPrice * qty) : krwPrice;
+        const buySide = calcBuySide(f.returnRate, currentAmount, f.quantity);
+        return {
+          ...f,
+          currentPrice: krwPrice,
+          currentAmount,
+          stockName: f.stockName || result.name,
+          ...(buySide.buyAmount > 0 ? buySide : {}),
+        };
+      });
       setLastUpdated(new Date().toLocaleString("ko-KR"));
-      toast.success(`현재가 조회 완료: ${form.market === "해외" ? "$" : "₩"}${result.price.toLocaleString("ko-KR")}`);
+      toast.success(`현재가 조회 완료: ₩${krwPrice.toLocaleString("ko-KR")}`);
     } else {
       toast.error("현재가 조회 실패. 종목코드를 확인해주세요.");
     }
+    setPriceFetching(false);
   };
 
-  // 전체 종목 일괄 업데이트
+  // 전체 종목 일괄 업데이트 (해외는 USD→KRW 자동 환산)
   const handleBulkUpdate = async () => {
     const tickerStocks = stocks.filter(s => s.ticker);
     if (tickerStocks.length === 0) {
@@ -144,8 +183,18 @@ export default function StockPortfolio() {
       const market = stock.market === "해외" ? "해외" : "국내";
       const result = await fetchPrice(stock.ticker!, market as "국내" | "해외");
       if (result) {
+        let krwPrice = result.price;
+        if (result.currency && result.currency !== "KRW") {
+          try {
+            const rateResult = await utils.exchangeRate.get.fetch({ currency: result.currency });
+            krwPrice = Math.round(result.price * rateResult.rate);
+          } catch {
+            failCount++;
+            continue;
+          }
+        }
         const qty = parseFloat(stock.quantity ?? "0");
-        const currentAmount = qty > 0 ? Math.round(result.price * qty) : undefined;
+        const currentAmount = qty > 0 ? Math.round(krwPrice * qty) : undefined;
         const buyAmount = stock.buyAmount ?? 0;
         const returnRate = buyAmount > 0 && currentAmount
           ? (((currentAmount - buyAmount) / buyAmount) * 100).toFixed(2)
@@ -153,7 +202,7 @@ export default function StockPortfolio() {
         await updateMutation.mutateAsync({
           id: stock.id,
           data: {
-            currentPrice: result.price,
+            currentPrice: krwPrice,
             currentAmount: currentAmount ?? stock.currentAmount ?? undefined,
             returnRate,
           },
@@ -169,9 +218,12 @@ export default function StockPortfolio() {
     if (failCount > 0) toast.error(`${failCount}개 종목 업데이트 실패`);
   };
 
+  const resetSearch = () => { setTickerQuery(""); setDebouncedQuery(""); setSearchOpen(false); };
+
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
+    resetSearch();
     setDialogOpen(true);
   };
 
@@ -192,6 +244,8 @@ export default function StockPortfolio() {
       snapshotMonth: s.snapshotMonth ?? new Date().toISOString().slice(0, 7),
       note: s.note ?? "",
     });
+    setTickerQuery(s.ticker ?? "");
+    setSearchOpen(false);
     setDialogOpen(true);
   };
 
@@ -267,7 +321,7 @@ export default function StockPortfolio() {
         <TrendingUp className="w-4 h-4 mt-0.5 flex-shrink-0" />
         <div>
           <span className="font-semibold">현재가 자동 조회</span>
-          <span className="ml-1">— 종목코드(티커)가 등록된 종목은 상단 <strong>현재가 일괄 업데이트</strong> 버튼으로 한 번에 업데이트할 수 있습니다. 한국 주식은 숫자 코드(예: 005930), 해외 주식은 티커(예: AAPL, QQQ)를 입력하세요.</span>
+          <span className="ml-1">— 종목코드가 등록된 국내·해외 종목 모두 <strong>현재가 일괄 업데이트</strong>로 자동 조회합니다. 해외 종목은 달러 현재가를 실시간 환율로 원화 환산합니다.</span>
         </div>
       </div>
 
@@ -324,7 +378,7 @@ export default function StockPortfolio() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{s.sector ?? "-"}</td>
                       <td className="px-4 py-3 text-sm text-right text-muted-foreground">
-                        {s.currentPrice ? `${s.market === "해외" ? "$" : "₩"}${s.currentPrice.toLocaleString("ko-KR")}` : "-"}
+                        {s.currentPrice ? `₩${s.currentPrice.toLocaleString("ko-KR")}` : "-"}
                       </td>
                       <td className="px-4 py-3 text-sm text-right">₩{formatAmount(s.buyAmount)}</td>
                       <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(s.currentAmount)}</td>
@@ -373,17 +427,26 @@ export default function StockPortfolio() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{editing ? "종목 수정" : "종목 추가"}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label className="text-xs">시장</Label>
-                <Select value={form.market} onValueChange={v => setForm(f => ({ ...f, market: v as "국내" | "해외" }))}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="국내">국내</SelectItem>
-                    <SelectItem value="해외">해외</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div>
+              <Label className="text-xs">시장</Label>
+              <div className="flex mt-1 rounded-lg border border-border overflow-hidden">
+                {(["국내", "해외"] as const).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, market: m }))}
+                    className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                      form.market === m
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">증권사</Label>
                 <Input value={form.broker} onChange={e => setForm(f => ({ ...f, broker: e.target.value }))} placeholder="예: 키움" className="mt-1" />
@@ -397,6 +460,47 @@ export default function StockPortfolio() {
               </div>
             </div>
 
+            {/* 종목 검색 */}
+            <div ref={searchRef} className="relative">
+              <Label className="text-xs">종목 검색</Label>
+              <div className="flex gap-1.5 mt-1">
+                <Input
+                  value={tickerQuery}
+                  onChange={e => setTickerQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleTickerSearch(); } }}
+                  placeholder="종목명 또는 티커 입력 (예: 삼성전자, AAPL)"
+                />
+                <Button type="button" variant="outline" size="sm" onClick={handleTickerSearch} disabled={isSearching} className="shrink-0 px-3">
+                  {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                </Button>
+              </div>
+              {searchOpen && searchResults.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+                  {searchResults.map(r => (
+                    <button
+                      key={r.ticker}
+                      type="button"
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted transition-colors text-left"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setForm(f => ({ ...f, ticker: r.ticker, stockName: f.stockName || r.name }));
+                        setTickerQuery(r.ticker);
+                        setSearchOpen(false);
+                      }}
+                    >
+                      <div>
+                        <span className="text-sm font-medium">{r.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground font-mono">{r.ticker}</span>
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${r.market === "국내" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"}`}>
+                        {r.market}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">종목명 *</Label>
@@ -408,95 +512,98 @@ export default function StockPortfolio() {
               </div>
             </div>
 
-            {/* 현재가 자동 조회 섹션 */}
-            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-3 space-y-2">
-              <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                현재가 자동 조회
-                <span className="font-normal ml-1 text-blue-500">
-                  — {form.market === "해외" ? "해외 티커(AAPL, QQQ 등)" : "한국 종목코드(005930 등)"}
-                </span>
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <Label className="text-xs">현재가</Label>
-                  <CurrencyInput
-                    value={form.currentPrice}
-                    onChange={(v) => setForm(f => ({ ...f, currentPrice: v }))}
-                    placeholder="조회 버튼 클릭 또는 직접 입력"
+            {/* 수익률 계산 카드 */}
+            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+              <p className="text-xs font-semibold text-foreground">수익률 계산</p>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">수량</Label>
+                  <Input
+                    value={form.quantity}
+                    onChange={e => {
+                      const v = e.target.value;
+                      const qty = parseFloat(v);
+                      setForm(f => {
+                        const currentAmount = f.currentPrice > 0 && !isNaN(qty) && qty > 0
+                          ? Math.round(f.currentPrice * qty)
+                          : f.currentAmount;
+                        return { ...f, quantity: v, currentAmount, ...calcBuySide(f.returnRate, currentAmount, v) };
+                      });
+                    }}
+                    placeholder="예: 10"
                     className="mt-1"
                   />
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-5 gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300"
-                  onClick={handleFetchPrice}
-                  disabled={priceFetching || !form.ticker.trim()}
-                >
-                  {priceFetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  조회
-                </Button>
+                <div className="col-span-2">
+                  <Label className="text-xs">현재 평가금액 (원)</Label>
+                  <div className="flex gap-1.5 mt-1">
+                    <CurrencyInput
+                      value={form.currentAmount}
+                      onChange={v => {
+                        setForm(f => ({ ...f, currentAmount: v, currentPrice: 0, ...calcBuySide(f.returnRate, v, f.quantity) }));
+                      }}
+                      placeholder="직접 입력 또는 조회"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleFetchPrice}
+                      disabled={priceFetching || !form.ticker.trim()}
+                      className="gap-1 shrink-0"
+                    >
+                      {priceFetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      조회
+                    </Button>
+                  </div>
+                </div>
               </div>
-              {form.currentPrice && form.quantity && (
-                <p className="text-xs text-blue-600 dark:text-blue-400">
-                  ✓ 수량 입력 시 평가금액·수익률이 자동 계산됩니다
-                </p>
-              )}
-            </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">평균 매수가 (원)</Label>
-                <CurrencyInput value={form.avgBuyPrice} onChange={(v) => setForm(f => ({ ...f, avgBuyPrice: v }))} placeholder="0" className="mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs">수량</Label>
-                <Input value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" className="mt-1" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">매수원금 (원)</Label>
-                <CurrencyInput
-                  value={form.buyAmount}
-                  onChange={(v) => setForm(f => ({ ...f, buyAmount: v }))}
-                  placeholder="매수가×수량 자동 계산"
-                  className="mt-1"
-                  disabled={!!form.avgBuyPrice && !!form.quantity}
-                />
-              </div>
-              <div>
-                <Label className="text-xs">평가금액 (원)</Label>
-                <CurrencyInput
-                  value={form.currentAmount}
-                  onChange={(v) => setForm(f => ({ ...f, currentAmount: v }))}
-                  placeholder="현재가×수량 자동 계산"
-                  className="mt-1"
-                  disabled={!!form.currentPrice && !!form.quantity}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">수익률 (%)</Label>
                 <Input
                   value={form.returnRate}
-                  onChange={e => setForm(f => ({ ...f, returnRate: e.target.value }))}
-                  placeholder="자동 계산"
+                  onChange={e => {
+                    const v = e.target.value;
+                    setForm(f => ({ ...f, returnRate: v, ...calcBuySide(v, f.currentAmount, f.quantity) }));
+                  }}
+                  placeholder="예: -10.5  (증권앱에서 확인한 수익률 입력)"
                   className="mt-1"
-                  readOnly={!!form.buyAmount && !!form.currentAmount}
                 />
               </div>
+
+              {/* 계산 결과 */}
+              {(form.avgBuyPrice > 0 || form.buyAmount > 0) && (
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
+                  <div className="bg-background rounded-lg px-3 py-2.5">
+                    <p className="text-xs text-muted-foreground mb-0.5">평균매수가</p>
+                    <p className="text-base font-bold">₩{formatAmount(form.avgBuyPrice)}</p>
+                  </div>
+                  <div className="bg-background rounded-lg px-3 py-2.5">
+                    <p className="text-xs text-muted-foreground mb-0.5">매수원금</p>
+                    <p className="text-base font-semibold">₩{formatAmount(form.buyAmount)}</p>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                {form.market === "해외"
+                  ? "티커 입력 후 조회 — 달러 현재가를 실시간 환율로 원화 환산"
+                  : "티커 입력 후 조회로 현재 평가금액 자동 계산"}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">스냅샷 월</Label>
                 <Input type="month" value={form.snapshotMonth} onChange={e => setForm(f => ({ ...f, snapshotMonth: e.target.value }))} className="mt-1" />
               </div>
-            </div>
-            <div>
-              <Label className="text-xs">비고</Label>
-              <Input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="비고" className="mt-1" />
+              <div>
+                <Label className="text-xs">비고</Label>
+                <Input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="비고" className="mt-1" />
+              </div>
             </div>
           </div>
           <DialogFooter>
