@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, CreditCard, ChevronLeft, ChevronRight, ChevronDown, TrendingDown, Layers } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { formatAmount } from "@/lib/utils";
@@ -143,7 +144,7 @@ function InstallmentDialog({ open, onClose, editing, cards, onSave }: {
                 <SelectTrigger><SelectValue placeholder="대분류 선택" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">없음</SelectItem>
-                  {categoryList.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                  {categoryList.filter(c => c.type === "expense" || c.type === "both").map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -280,6 +281,8 @@ export default function Installments() {
   const [editing, setEditing] = useState<Installment | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [monthOffset, setMonthOffset] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
 
   const now = new Date();
   const selectedDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
@@ -387,7 +390,48 @@ export default function Installments() {
         <button onClick={() => setMonthOffset((o) => o - 1)} className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors">
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <span className="text-base font-semibold w-28 text-center">{selectedYear}년 {String(selectedMonth).padStart(2, "0")}월</span>
+        <Popover open={pickerOpen} onOpenChange={(open) => { setPickerOpen(open); if (open) setPickerYear(selectedYear); }}>
+          <PopoverTrigger asChild>
+            <button className="text-base font-semibold w-32 text-center px-2 py-1 rounded-lg hover:bg-muted transition-colors">
+              {selectedYear}년 {String(selectedMonth).padStart(2, "0")}월
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3" align="center">
+            {/* 연도 선택 */}
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => setPickerYear(y => y - 1)} className="p-1 rounded hover:bg-muted transition-colors">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm font-semibold">{pickerYear}년</span>
+              <button onClick={() => setPickerYear(y => y + 1)} className="p-1 rounded hover:bg-muted transition-colors">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            {/* 월 그리드 */}
+            <div className="grid grid-cols-4 gap-1">
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => {
+                const isSelected = pickerYear === selectedYear && m === selectedMonth;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      const offset = (pickerYear - now.getFullYear()) * 12 + (m - (now.getMonth() + 1));
+                      setMonthOffset(offset);
+                      setPickerOpen(false);
+                    }}
+                    className={`py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted text-foreground"
+                    }`}
+                  >
+                    {m}월
+                  </button>
+                );
+              })}
+            </div>
+          </PopoverContent>
+        </Popover>
         <button onClick={() => setMonthOffset((o) => o + 1)} className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors">
           <ChevronRight className="w-4 h-4" />
         </button>
