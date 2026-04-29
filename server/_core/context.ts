@@ -1,7 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
-import { getUserById, getUserByOpenId } from "../db";
+import { getUserById, getUserByClerkId } from "../db";
+import { verifyToken } from "@clerk/backend";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -14,14 +14,13 @@ const DEV_USER_ID = 1;
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
-  // 로컬 개발 환경에서는 DB에서 실제 유저를 읽어 최신 정보를 반영
   if (process.env.NODE_ENV === "development") {
     const dbUser = await getUserById(DEV_USER_ID);
     const user: User = dbUser ?? {
       id: DEV_USER_ID,
-      openId: "jY7bjoHqY74ENsqhHuGYab",
-      name: "seonju Moon",
-      email: "seonjuuu116@gmail.com",
+      clerkId: "dev_user",
+      name: "Dev User",
+      email: "dev@localhost",
       loginMethod: null,
       role: "admin",
       birthDate: null,
@@ -34,17 +33,39 @@ export async function createContext(
 
   let user: User | null = null;
   try {
-    const sessionUser = await sdk.authenticateRequest(opts.req);
-    if (sessionUser?.openId) {
-      const dbUser = await getUserByOpenId(sessionUser.openId);
-      user = dbUser ?? sessionUser;
+    const authHeader = opts.req.headers.authorization;
+    const token = authHeader?.replace("Bearer ", "");
+    if (token) {
+      const payload = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY!,
+      });
+      if (payload.sub) {
+        user = (await getUserByClerkId(payload.sub)) ?? null;
+      }
     }
-  } catch (error) {
+  } catch {
     user = null;
   }
-  return {
-    req: opts.req,
-    res: opts.res,
-    user,
-  };
+  return { req: opts.req, res: opts.res, user };
+}
+
+// Vercel Functions용 context (fetch Request 기반)
+export async function createContextFromRequest(req: Request): Promise<{ user: User | null }> {
+  if (process.env.NODE_ENV === "development") {
+    const dbUser = await getUserById(DEV_USER_ID);
+    return { user: dbUser ?? null };
+  }
+
+  try {
+    const authHeader = req.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    if (!token) return { user: null };
+    const payload = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY!,
+    });
+    const user = payload.sub ? ((await getUserByClerkId(payload.sub)) ?? null) : null;
+    return { user };
+  } catch {
+    return { user: null };
+  }
 }

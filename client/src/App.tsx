@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SignIn, useAuth } from "@clerk/react";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Ledger from "./pages/Ledger";
@@ -51,13 +52,24 @@ function Router() {
   );
 }
 
+function AuthGate() {
+  const { isLoaded, isSignedIn } = useAuth();
+  if (!isLoaded) return <div className="flex items-center justify-center h-screen text-muted-foreground">로딩 중...</div>;
+  if (!isSignedIn) return (
+    <div className="flex items-center justify-center h-screen bg-background">
+      <SignIn routing="hash" />
+    </div>
+  );
+  return <Router />;
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <AuthGate />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
