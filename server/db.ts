@@ -584,7 +584,7 @@ export async function getSideIncomes(userId: number, year: number, month: number
 export async function createSideIncome(userId: number, data: InsertSideIncome) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(sideIncomes).values({ ...data, userId }).$returningId();
+  const [result] = await db.insert(sideIncomes).values({ ...data, userId }).returning({ id: categories.id });
   return result;
 }
 export async function updateSideIncome(userId: number, id: number, data: Partial<InsertSideIncome>) {
@@ -644,7 +644,7 @@ export async function listInstallments(userId: number) {
 export async function createInstallment(userId: number, data: InsertInstallment) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(installments).values({ ...data, userId }).$returningId();
+  const [result] = await db.insert(installments).values({ ...data, userId }).returning({ id: categories.id });
   return result;
 }
 export async function updateInstallment(userId: number, id: number, data: Partial<InsertInstallment>) {
@@ -676,7 +676,7 @@ export async function listCategories(userId: number) {
 export async function createCategory(userId: number, data: Pick<InsertCategory, "name" | "type" | "sortOrder">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(categories).values({ ...data, userId }).$returningId();
+  const [result] = await db.insert(categories).values({ ...data, userId }).returning({ id: categories.id });
   return result;
 }
 export async function updateCategory(userId: number, id: number, data: Partial<Pick<InsertCategory, "name" | "type" | "sortOrder">>) {
@@ -708,7 +708,7 @@ export async function deleteCategory(userId: number, id: number) {
 export async function createSubCategory(userId: number, data: Pick<InsertSubCategory, "categoryId" | "name" | "sortOrder">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(subCategories).values({ ...data, userId }).$returningId();
+  const [result] = await db.insert(subCategories).values({ ...data, userId }).returning({ id: categories.id });
   return result;
 }
 export async function updateSubCategory(userId: number, id: number, data: Partial<Pick<InsertSubCategory, "name" | "sortOrder">>) {
@@ -802,7 +802,7 @@ export async function ensureDefaultCategorySet(userId: number) {
         .set({ type: cat.type, sortOrder: i })
         .where(and(eq(categories.id, categoryId), eq(categories.userId, userId)));
     } else {
-      const [result] = await db.insert(categories).values({ name: cat.name, type: cat.type, sortOrder: i, userId }).$returningId();
+      const [result] = await db.insert(categories).values({ name: cat.name, type: cat.type, sortOrder: i, userId }).returning({ id: categories.id });
       categoryId = result.id;
     }
 
@@ -847,7 +847,7 @@ export async function ensureFixedExpenseCategory(userId: number) {
 
   let fixedId = fixed?.id;
   if (!fixedId) {
-    const [result] = await db.insert(categories).values({ name: "고정지출", type: "expense", sortOrder: 0, userId }).$returningId();
+    const [result] = await db.insert(categories).values({ name: "고정지출", type: "expense", sortOrder: 0, userId }).returning({ id: categories.id });
     fixedId = result.id;
   }
 
@@ -878,7 +878,7 @@ export async function ensureBusinessExpenseCategory(userId: number) {
 
   let businessId = business?.id;
   if (!businessId) {
-    const [result] = await db.insert(categories).values({ name: "사업지출", type: "expense", sortOrder: 1, userId }).$returningId();
+    const [result] = await db.insert(categories).values({ name: "사업지출", type: "expense", sortOrder: 1, userId }).returning({ id: categories.id });
     businessId = result.id;
   }
 
@@ -905,7 +905,7 @@ export async function ensureIncomeCategory(userId: number) {
 
   let incomeId = income?.id;
   if (!incomeId) {
-    const [result] = await db.insert(categories).values({ name: "소득", type: "income", sortOrder: 0, userId }).$returningId();
+    const [result] = await db.insert(categories).values({ name: "소득", type: "income", sortOrder: 0, userId }).returning({ id: categories.id });
     incomeId = result.id;
   }
 

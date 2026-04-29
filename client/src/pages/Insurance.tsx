@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -463,7 +463,7 @@ function InsuranceDialog({
 // ─── 메인 페이지 ──────────────────────────────────────────────────────────────
 export default function Insurance() {
   const utils = trpc.useUtils();
-  const { user } = useAuth();
+  const { user } = useUser();
   const birthDate = (user as { birthDate?: string | null })?.birthDate ?? null;
 
   const { data: insuranceList = [] } = trpc.insurance.list.useQuery();

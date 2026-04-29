@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,7 @@ function calcAge(birthDate: string): number {
 }
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user } = useUser();
   const utils = trpc.useUtils();
 
   const [birthDate, setBirthDate] = useState((user as { birthDate?: string | null })?.birthDate ?? "");
@@ -68,13 +68,13 @@ export default function Profile() {
           {/* 이름 (읽기 전용) */}
           <div className="space-y-1">
             <Label>이름</Label>
-            <Input value={user?.name ?? ""} disabled className="bg-muted" />
+            <Input value={user?.fullName ?? ""} disabled className="bg-muted" />
           </div>
 
           {/* 이메일 (읽기 전용) */}
           <div className="space-y-1">
             <Label>이메일</Label>
-            <Input value={user?.email ?? ""} disabled className="bg-muted" />
+            <Input value={user?.primaryEmailAddress?.emailAddress ?? ""} disabled className="bg-muted" />
           </div>
 
           {/* 생년월일 */}

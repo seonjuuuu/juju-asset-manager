@@ -180,7 +180,7 @@ export default function Ledger() {
     type FixedRow = { kind: "fixed"; sortDate: string; fixed: (typeof fixedExpenseRows)[number] };
     type InstRow = { kind: "installment"; sortDate: string; inst: (typeof installmentRows)[number] };
     const entryRows: EntryRow[] = entries.map((entry) => {
-      const d = entry.entryDate instanceof Date ? entry.entryDate.toISOString().split("T")[0] : String(entry.entryDate).split("T")[0];
+      const d = String(entry.entryDate).split("T")[0];
       return { kind: "entry", sortDate: d, entry: entry as LedgerEntry };
     });
     const subRows: SubRow[] = subscriptionRows.map((sub) => ({ kind: "sub", sortDate: sub.displayDate, sub }));
@@ -362,7 +362,7 @@ export default function Ledger() {
                 {sortedTableRows.map((row) => {
                   if (row.kind === "entry") {
                     const entry = row.entry;
-                    const d = entry.entryDate instanceof Date ? entry.entryDate.toISOString().split("T")[0] : String(entry.entryDate).split("T")[0];
+                    const d = String(entry.entryDate).split("T")[0];
                     const ledgerType = getLedgerType(entry.mainCategory, entry.amount);
                     return (
                       <tr key={`e-${entry.id}`} className="border-t border-border hover:bg-muted/30 transition-colors">

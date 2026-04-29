@@ -280,7 +280,7 @@ export const appRouter = router({
     create: protectedProcedure.input(ledgerEntryInput).mutation(({ input, ctx }) =>
       db.createLedgerEntry(ctx.user.id, {
         ...input,
-        entryDate: input.entryDate as unknown as Date,
+        entryDate: input.entryDate,
       })
     ),
     update: protectedProcedure
@@ -570,7 +570,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         // 가계부 수입 항목 자동 추가
         const ledgerResult = await db.createLedgerEntry(ctx.user.id, {
-          entryDate: input.incomeDate as unknown as Date,
+          entryDate: input.incomeDate,
           year: input.year,
           month: input.month,
           mainCategory: "소득",
@@ -582,7 +582,7 @@ export const appRouter = router({
         const ledgerEntryId = ledgerResult?.insertId;
         return db.createSideIncome(ctx.user.id, {
           ...input,
-          incomeDate: input.incomeDate as unknown as Date,
+          incomeDate: input.incomeDate,
           ledgerEntryId,
         });
       }),
@@ -605,7 +605,7 @@ export const appRouter = router({
         const { incomeDate, ...rest } = input.data;
         return db.updateSideIncome(ctx.user.id, input.id, {
           ...rest,
-          ...(incomeDate ? { incomeDate: incomeDate as unknown as Date } : {}),
+          ...(incomeDate ? { incomeDate: incomeDate } : {}),
         });
       }),
     delete: protectedProcedure
@@ -710,7 +710,7 @@ export const appRouter = router({
         if (input.workStartDate && input.workStartDate <= today && deposit > 0) {
           const [y, m] = input.workStartDate.split("-").map(Number);
           const r = await db.createLedgerEntry(ctx.user.id, {
-            entryDate: input.workStartDate as unknown as Date,
+            entryDate: input.workStartDate,
             year: y, month: m,
             mainCategory: "소득", subCategory: "사업소득",
             description: `${input.clientName} 계약금`,
@@ -722,7 +722,7 @@ export const appRouter = router({
         if (input.isCompleted && input.settlementDate && balance > 0) {
           const [y, m] = input.settlementDate.split("-").map(Number);
           const r = await db.createLedgerEntry(ctx.user.id, {
-            entryDate: input.settlementDate as unknown as Date,
+            entryDate: input.settlementDate,
             year: y, month: m,
             mainCategory: "소득", subCategory: "사업소득",
             description: `${input.clientName} 잔금`,
@@ -768,7 +768,7 @@ export const appRouter = router({
           const [y, m] = merged.workStartDate!.split("-").map(Number);
           if (depositLedgerEntryId) {
             await db.updateLedgerEntry(ctx.user.id, depositLedgerEntryId, {
-              entryDate: merged.workStartDate as unknown as Date,
+              entryDate: merged.workStartDate!,
               year: y, month: m,
               mainCategory: "소득",
               subCategory: "사업소득",
@@ -777,7 +777,7 @@ export const appRouter = router({
             });
           } else {
             const r = await db.createLedgerEntry(ctx.user.id, {
-              entryDate: merged.workStartDate as unknown as Date,
+              entryDate: merged.workStartDate!,
               year: y, month: m,
               mainCategory: "소득", subCategory: "사업소득",
               description: `${merged.clientName} 계약금`,
@@ -797,7 +797,7 @@ export const appRouter = router({
           const [y, m] = merged.settlementDate!.split("-").map(Number);
           if (balanceLedgerEntryId) {
             await db.updateLedgerEntry(ctx.user.id, balanceLedgerEntryId, {
-              entryDate: merged.settlementDate as unknown as Date,
+              entryDate: merged.settlementDate!,
               year: y, month: m,
               mainCategory: "소득",
               subCategory: "사업소득",
@@ -806,7 +806,7 @@ export const appRouter = router({
             });
           } else {
             const r = await db.createLedgerEntry(ctx.user.id, {
-              entryDate: merged.settlementDate as unknown as Date,
+              entryDate: merged.settlementDate!,
               year: y, month: m,
               mainCategory: "소득", subCategory: "사업소득",
               description: `${merged.clientName} 잔금`,
@@ -841,7 +841,7 @@ export const appRouter = router({
         let ledgerEntryId: number | null = null;
         if (input.category === "광고" && input.amount > 0) {
           const r = await db.createLedgerEntry(ctx.user.id, {
-            entryDate: input.expenseDate as unknown as Date,
+            entryDate: input.expenseDate,
             year: input.year,
             month: input.month,
             mainCategory: "사업지출",
@@ -854,7 +854,7 @@ export const appRouter = router({
         }
         return db.createBusinessExpense(ctx.user.id, {
           ...input,
-          expenseDate: input.expenseDate as unknown as Date,
+          expenseDate: input.expenseDate,
           ledgerEntryId,
         });
       }),
@@ -867,13 +867,13 @@ export const appRouter = router({
         const merged = {
           ...current,
           ...input.data,
-          expenseDate: expenseDate ?? (current.expenseDate instanceof Date ? current.expenseDate.toISOString().slice(0, 10) : String(current.expenseDate).split("T")[0]),
+          expenseDate: expenseDate ?? String(current.expenseDate).split("T")[0],
         };
         let ledgerEntryId = current.ledgerEntryId ?? null;
         const needsLedger = merged.category === "광고" && merged.amount > 0;
         if (needsLedger) {
           const ledgerData = {
-            entryDate: merged.expenseDate as unknown as Date,
+            entryDate: merged.expenseDate,
             year: merged.year,
             month: merged.month,
             mainCategory: "사업지출",
@@ -894,7 +894,7 @@ export const appRouter = router({
         }
         return db.updateBusinessExpense(ctx.user.id, input.id, {
           ...rest,
-          ...(expenseDate ? { expenseDate: expenseDate as unknown as Date } : {}),
+          ...(expenseDate ? { expenseDate: expenseDate } : {}),
           ledgerEntryId,
         });
       }),

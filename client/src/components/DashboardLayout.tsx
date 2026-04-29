@@ -1,5 +1,4 @@
-import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
+import { useAuth, useUser, useClerk } from "@clerk/react";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
@@ -9,7 +8,6 @@ import {
   ChevronRight,
   CreditCard,
   Coins,
-  LogIn,
   LogOut,
   PiggyBank,
   Shield,
@@ -60,7 +58,9 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [location] = useLocation();
-  const { user, isAuthenticated, loading, logout } = useAuth();
+  const { isLoaded } = useAuth();
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const [collapsed, setCollapsed] = useState(false);
 
   const renderSection = (label: string, items: typeof navItems) => (
@@ -97,39 +97,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 
-  if (loading) {
+  if (!isLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-muted-foreground">로딩 중...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-6 max-w-sm mx-auto px-6">
-          <div className="space-y-3">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-gold-66xeFmKPQdsqm8Tgcg76ZU.webp" alt="Monelio" className="w-12 h-12 object-contain" />
-            </div>
-            <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Playfair Display', serif" }}>
-              Monelio
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              개인 재무를 한눈에 관리하세요
-            </p>
-          </div>
-          <a
-            href={getLoginUrl()}
-            className="flex items-center justify-center gap-2 w-full py-3 px-6 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
-          >
-            <LogIn className="w-4 h-4" />
-            로그인하여 시작하기
-          </a>
         </div>
       </div>
     );
@@ -159,12 +132,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         >
           {!collapsed && (
             <div className="flex items-center gap-2 min-w-0">
-              <img
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-gold-66xeFmKPQdsqm8Tgcg76ZU.webp"
-                alt="Monelio"
-                className="w-8 h-8 object-contain flex-shrink-0"
-                
-              />
               <span
                 className="font-bold text-sm truncate"
                 style={{ fontFamily: "'Playfair Display', serif" }}
@@ -174,12 +141,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
           )}
           {collapsed && (
-            <img
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663399785344/NNNgtb3Z4keER7ESAY7Eaj/monelio-logo-gold-66xeFmKPQdsqm8Tgcg76ZU.webp"
-              alt="M"
-              className="w-8 h-8 object-contain"
-              
-            />
+            <span className="font-bold text-sm" style={{ fontFamily: "'Playfair Display', serif" }}>M</span>
           )}
           {!collapsed && (
             <button
@@ -216,10 +178,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               </Link>
             );
           })}
-
-          {/* 기록 섹션 */}
           {renderSection("기록", recordItems)}
-          {/* 설정 섹션 */}
           {renderSection("설정", settingItems)}
         </nav>
 
@@ -246,17 +205,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     color: "var(--sidebar-primary-foreground)",
                   }}
                 >
-                  {user?.name?.[0] ?? "U"}
+                  {user?.firstName?.[0] ?? user?.emailAddresses?.[0]?.emailAddress?.[0] ?? "U"}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium truncate">{user?.name ?? "사용자"}</p>
+                  <p className="text-xs font-medium truncate">{user?.firstName ?? "사용자"}</p>
                   <p className="text-xs truncate" style={{ opacity: 0.5 }}>
-                    {user?.email ?? ""}
+                    {user?.emailAddresses?.[0]?.emailAddress ?? ""}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => logout()}
+                onClick={() => signOut()}
                 className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-xs"
                 style={{ color: "var(--sidebar-foreground)", opacity: 0.6 }}
               >
