@@ -466,6 +466,57 @@ export const appRouter = router({
           throw new Error(`ETF 현재가 조회 실패: ${(e as Error).message}`);
         }
       }),
+
+    // 종목명·티커로 검색
+    // 한글 포함 → NAVER Finance, 영문/숫자 → Yahoo Finance
+    search: protectedProcedure
+      .input(z.object({ query: z.string().min(1), market: z.enum(["국내", "해외"]).optional() }))
+      .query(async ({ input }) => {
+        const isKoreanQuery = /[가-힣]/.test(input.query);
+
+        // 해외 탭에서는 한글이어도 Yahoo Finance 사용
+        if (isKoreanQuery && input.market !== "해외") {
+          // NAVER 주식 자동완성 API (ac.stock.naver.com)
+          const url = `https://ac.stock.naver.com/ac?q=${encodeURIComponent(input.query)}&target=stock,index,marketindicator`;
+          try {
+            const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+            if (!res.ok) return [];
+            const data = await res.json() as { items?: Array<{ code: string; name: string; typeCode: string }> };
+            return (data.items ?? []).slice(0, 8).map(item => ({
+              ticker: item.code,
+              name: item.name,
+              exchange: item.typeCode,
+              market: "국내" as const,
+            })).filter(r => r.ticker);
+          } catch {
+            return [];
+          }
+        }
+
+        // Yahoo Finance — 영문 종목명 또는 티커 검색
+        const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(input.query)}&quotesCount=10&newsCount=0&listsCount=0&enableFuzzyQuery=false`;
+        try {
+          const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (!res.ok) return [];
+          const data = await res.json() as { quotes?: Array<{ symbol: string; shortname?: string; longname?: string; exchange?: string; quoteType?: string }> };
+          const KOREAN_EXCHANGES = new Set(["KSC", "KOE", "KOS"]);
+          return (data.quotes ?? [])
+            .filter(q => q.quoteType === "EQUITY" || q.quoteType === "ETF")
+            .slice(0, 8)
+            .map(q => {
+              const isKorean = q.symbol.endsWith(".KS") || q.symbol.endsWith(".KQ")
+                || KOREAN_EXCHANGES.has(q.exchange ?? "");
+              return {
+                ticker: isKorean ? q.symbol.replace(/\.(KS|KQ)$/, "") : q.symbol,
+                name: q.longname || q.shortname || q.symbol,
+                exchange: q.exchange ?? "",
+                market: isKorean ? "국내" as const : "해외" as const,
+              };
+            });
+        } catch {
+          return [];
+        }
+      }),
   }),
 
   // ─── 부체 ───────────────────────────────────────────────────────────────────────────
