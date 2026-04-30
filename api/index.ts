@@ -16,7 +16,7 @@ app.use(clerkMiddleware({
 
 registerStorageProxy(app);
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", (_req: any, res: any) => {
   res.json({ ok: true });
 });
 
