@@ -1,7 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { getAuth } from "@clerk/express";
-import { getUserById, getUserByOpenId } from "../db";
+import { getUserById, getUserByOpenId, upsertUser } from "../db";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -38,6 +38,11 @@ export async function createContext(
     const openId = auth?.userId;
     if (openId) {
       user = await getUserByOpenId(openId) ?? null;
+      if (!user) {
+        // Auto-create user on first login via Clerk
+        await upsertUser({ openId, lastSignedIn: new Date() });
+        user = await getUserByOpenId(openId) ?? null;
+      }
     }
   } catch (err) {
     console.error("[Context] auth error:", err);

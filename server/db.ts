@@ -689,7 +689,7 @@ export async function getSideIncomes(userId: number, year: number, month: number
 export async function createSideIncome(userId: number, data: InsertSideIncome) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(sideIncomes).values({ ...data, userId }).returning({ id: categories.id });
+  const [result] = await db.insert(sideIncomes).values({ ...data, userId }).returning({ id: sideIncomes.id });
   return result;
 }
 export async function updateSideIncome(userId: number, id: number, data: Partial<InsertSideIncome>) {
@@ -749,7 +749,7 @@ export async function listInstallments(userId: number) {
 export async function createInstallment(userId: number, data: InsertInstallment) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(installments).values({ ...data, userId }).returning({ id: categories.id });
+  const [result] = await db.insert(installments).values({ ...data, userId }).returning({ id: installments.id });
   return result;
 }
 export async function updateInstallment(userId: number, id: number, data: Partial<InsertInstallment>) {
@@ -813,7 +813,7 @@ export async function deleteCategory(userId: number, id: number) {
 export async function createSubCategory(userId: number, data: Pick<InsertSubCategory, "categoryId" | "name" | "sortOrder">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(subCategories).values({ ...data, userId }).returning({ id: categories.id });
+  const [result] = await db.insert(subCategories).values({ ...data, userId }).returning({ id: subCategories.id });
   return result;
 }
 export async function updateSubCategory(userId: number, id: number, data: Partial<Pick<InsertSubCategory, "name" | "sortOrder">>) {
