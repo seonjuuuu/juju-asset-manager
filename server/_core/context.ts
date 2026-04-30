@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
+import { clerkClient } from "./sdk";
 import { getUserById, getUserByOpenId } from "../db";
 
 export type TrpcContext = {
@@ -34,12 +34,15 @@ export async function createContext(
 
   let user: User | null = null;
   try {
-    const sessionUser = await sdk.authenticateRequest(opts.req);
-    if (sessionUser?.openId) {
-      const dbUser = await getUserByOpenId(sessionUser.openId);
-      user = dbUser ?? sessionUser;
+    const requestState = await clerkClient.authenticateRequest(opts.req as unknown as Request, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+    });
+    const payload = requestState.toAuth();
+    const openId = payload?.userId;
+    if (openId) {
+      user = await getUserByOpenId(openId) ?? null;
     }
-  } catch (error) {
+  } catch {
     user = null;
   }
   return {

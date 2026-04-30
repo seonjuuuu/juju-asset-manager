@@ -1,2 +1,5 @@
-// Manus SDK removed — authentication is handled by Clerk.
-export const sdk = {} as never;
+import { createClerkClient } from "@clerk/backend";
+
+export const clerkClient = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY,
+});
