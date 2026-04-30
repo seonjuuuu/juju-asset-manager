@@ -142,7 +142,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     }
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -1165,7 +1165,7 @@ export async function createLaborCost(userId: number, data: Omit<InsertLaborCost
     const [y, m] = data.paymentDate.split("-").map(Number);
     const expDesc = laborExpenseDescription(data.freelancerName, data.description as string | null);
     await db.insert(businessExpenses).values({
-      userId, expenseDate: data.paymentDate as unknown as Date,
+      userId, expenseDate: data.paymentDate as unknown as string,
       year: y, month: m, category: "인건비",
       vendor: data.freelancerName, description: expDesc,
       amount: data.netAmount, isTaxDeductible: true,
@@ -1204,12 +1204,12 @@ export async function updateLaborCost(userId: number, id: number, data: Partial<
     const expDesc = laborExpenseDescription(newName, newDesc as string | null);
     if (linkedExpenseId) {
       await db.update(businessExpenses).set({
-        expenseDate: newPaymentDate as unknown as Date, year: y, month: m,
+        expenseDate: newPaymentDate as unknown as string, year: y, month: m,
         vendor: newName, description: expDesc, amount: newNetAmount,
       }).where(and(eq(businessExpenses.id, linkedExpenseId), eq(businessExpenses.userId, userId)));
     } else {
       await db.insert(businessExpenses).values({
-        userId, expenseDate: newPaymentDate as unknown as Date,
+        userId, expenseDate: newPaymentDate as unknown as string,
         year: y, month: m, category: "인건비",
         vendor: newName, description: expDesc,
         amount: newNetAmount, isTaxDeductible: true,
