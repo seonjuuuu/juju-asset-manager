@@ -1,5 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   InsertUser,
   blogCampaigns,
@@ -45,6 +46,8 @@ import {
   InsertCategory,
   InsertSubCategory,
   users,
+  laborCosts,
+  InsertLaborCost,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -53,7 +56,8 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const client = postgres(process.env.DATABASE_URL, { max: 10 });
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -113,7 +117,7 @@ export async function getUserById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function updateUserProfile(userId: number, data: { birthDate?: string | null }) {
+export async function updateUserProfile(userId: number, data: { birthDate?: string | null; name?: string | null }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(users).set(data).where(eq(users.id, userId));
@@ -1035,5 +1039,107 @@ export async function deleteBusinessExpense(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(businessExpenses).where(and(eq(businessExpenses.id, id), eq(businessExpenses.userId, userId)));
+  return { id };
+}
+
+// ─── 인건비 ───────────────────────────────────────────────────────────────────
+export async function listLaborCosts(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(laborCosts)
+    .where(eq(laborCosts.userId, userId))
+    .orderBy(desc(laborCosts.paymentDate), desc(laborCosts.createdAt));
+}
+
+function laborExpenseDescription(name: string, desc: string | null | undefined) {
+  return desc ? `${name} 인건비 (${desc})` : `${name} 인건비`;
+}
+
+export async function createLaborCost(userId: number, data: Omit<InsertLaborCost, "userId" | "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  let linkedExpenseId: number | undefined;
+  if (data.paymentDate && data.netAmount) {
+    const [y, m] = data.paymentDate.split("-").map(Number);
+    const expDesc = laborExpenseDescription(data.freelancerName, data.description as string | null);
+    await db.insert(businessExpenses).values({
+      userId, expenseDate: data.paymentDate as unknown as Date,
+      year: y, month: m, category: "인건비",
+      vendor: data.freelancerName, description: expDesc,
+      amount: data.netAmount, isTaxDeductible: true,
+    });
+    const exp = await db.select().from(businessExpenses)
+      .where(eq(businessExpenses.userId, userId))
+      .orderBy(desc(businessExpenses.createdAt)).limit(1);
+    linkedExpenseId = exp[0]?.id;
+  }
+
+  await db.insert(laborCosts).values({ ...data, userId, linkedExpenseId });
+  const result = await db.select().from(laborCosts)
+    .where(eq(laborCosts.userId, userId))
+    .orderBy(desc(laborCosts.createdAt)).limit(1);
+  return result[0];
+}
+
+export async function updateLaborCost(userId: number, id: number, data: Partial<Omit<InsertLaborCost, "userId" | "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const current = await db.select().from(laborCosts)
+    .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId))).limit(1);
+  const cur = current[0];
+  if (!cur) throw new Error("Not found");
+
+  const newPaymentDate = "paymentDate" in data ? data.paymentDate : cur.paymentDate;
+  const newNetAmount = "netAmount" in data ? data.netAmount : cur.netAmount;
+  const newName = "freelancerName" in data ? data.freelancerName! : cur.freelancerName;
+  const newDesc = "description" in data ? data.description : cur.description;
+
+  let linkedExpenseId = cur.linkedExpenseId;
+
+  if (newPaymentDate && newNetAmount) {
+    const [y, m] = newPaymentDate.split("-").map(Number);
+    const expDesc = laborExpenseDescription(newName, newDesc as string | null);
+    if (linkedExpenseId) {
+      await db.update(businessExpenses).set({
+        expenseDate: newPaymentDate as unknown as Date, year: y, month: m,
+        vendor: newName, description: expDesc, amount: newNetAmount,
+      }).where(and(eq(businessExpenses.id, linkedExpenseId), eq(businessExpenses.userId, userId)));
+    } else {
+      await db.insert(businessExpenses).values({
+        userId, expenseDate: newPaymentDate as unknown as Date,
+        year: y, month: m, category: "인건비",
+        vendor: newName, description: expDesc,
+        amount: newNetAmount, isTaxDeductible: true,
+      });
+      const exp = await db.select().from(businessExpenses)
+        .where(eq(businessExpenses.userId, userId))
+        .orderBy(desc(businessExpenses.createdAt)).limit(1);
+      linkedExpenseId = exp[0]?.id;
+    }
+  } else if (!newPaymentDate && linkedExpenseId) {
+    await db.delete(businessExpenses).where(and(eq(businessExpenses.id, linkedExpenseId), eq(businessExpenses.userId, userId)));
+    linkedExpenseId = null;
+  }
+
+  await db.update(laborCosts).set({ ...data, linkedExpenseId })
+    .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId)));
+  const result = await db.select().from(laborCosts)
+    .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId))).limit(1);
+  return result[0];
+}
+
+export async function deleteLaborCost(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const current = await db.select().from(laborCosts)
+    .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId))).limit(1);
+  if (current[0]?.linkedExpenseId) {
+    await db.delete(businessExpenses).where(
+      and(eq(businessExpenses.id, current[0].linkedExpenseId), eq(businessExpenses.userId, userId))
+    );
+  }
+  await db.delete(laborCosts).where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId)));
   return { id };
 }

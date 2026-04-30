@@ -122,7 +122,7 @@ const defaultForm = (): FormState => ({
   note: "",
 });
 
-const expenseCategories = ["광고", "대납", "세금", "수수료", "소모품", "기타"] as const;
+const expenseCategories = ["광고", "대납", "세금", "수수료", "소모품", "인건비", "기타"] as const;
 type ExpenseCategory = typeof expenseCategories[number];
 
 type ExpenseRow = {
@@ -1046,7 +1046,11 @@ export default function BusinessIncome() {
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tickFormatter={v => `${(v / 10000).toFixed(0)}만`} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v: number) => [`₩${v.toLocaleString("ko-KR")}`, "순이익"]} />
-                  <Bar dataKey="순이익" fill="#5b7cfa" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="순이익" radius={[4, 4, 0, 0]}>
+                    {yearlyNetProfitChart.map((entry, i) => (
+                      <Cell key={i} fill={entry.순이익 >= 0 ? "#5b7cfa" : "#ef4444"} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -1067,7 +1071,11 @@ export default function BusinessIncome() {
                   <XAxis dataKey="year" tick={{ fontSize: 11 }} />
                   <YAxis tickFormatter={v => `${(v / 10000).toFixed(0)}만`} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v: number) => [`₩${v.toLocaleString("ko-KR")}`, "순이익"]} />
-                  <Bar dataKey="순이익" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="순이익" radius={[4, 4, 0, 0]}>
+                    {yearlyNetProfitByYearChart.map((entry, i) => (
+                      <Cell key={i} fill={entry.순이익 >= 0 ? "#0d9488" : "#ef4444"} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}

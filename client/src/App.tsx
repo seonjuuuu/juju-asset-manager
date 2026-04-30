@@ -1,3 +1,4 @@
+import { ClerkProvider } from "@clerk/react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
@@ -20,6 +21,7 @@ import SideIncome from "./pages/SideIncome";
 import Installments from "./pages/Installments";
 import Insurance from "./pages/Insurance";
 import BusinessIncome from "./pages/BusinessIncome";
+import LaborCosts from "./pages/LaborCosts";
 import Categories from "./pages/Categories";
 import Profile from "./pages/Profile";
 
@@ -42,6 +44,7 @@ function Router() {
         <Route path="/installments" component={Installments} />
         <Route path="/insurance" component={Insurance} />
         <Route path="/business-income" component={BusinessIncome} />
+        <Route path="/labor-costs" component={LaborCosts} />
         <Route path="/categories" component={Categories} />
         <Route path="/profile" component={Profile} />
         <Route path="/404" component={NotFound} />
@@ -53,14 +56,16 @@ function Router() {
 
 function App() {
   return (
-    <ErrorBoundary>
-      <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
+    <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
+      <ErrorBoundary>
+        <ThemeProvider defaultTheme="light">
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </ClerkProvider>
   );
 }
 

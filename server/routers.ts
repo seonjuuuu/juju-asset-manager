@@ -26,7 +26,7 @@ const businessExpenseInput = z.object({
   expenseDate: z.string(),
   year: z.number().int(),
   month: z.number().int().min(1).max(12),
-  category: z.enum(["광고", "대납", "세금", "수수료", "소모품", "기타"]).default("기타"),
+  category: z.enum(["광고", "대납", "세금", "수수료", "소모품", "인건비", "기타"]).default("기타"),
   vendor: z.string().nullable().optional(),
   description: z.string().min(1),
   amount: z.number().default(0),
@@ -252,7 +252,7 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     updateProfile: protectedProcedure
-      .input(z.object({ birthDate: z.string().nullable().optional() }))
+      .input(z.object({ birthDate: z.string().nullable().optional(), name: z.string().nullable().optional() }))
       .mutation(({ input, ctx }) => db.updateUserProfile(ctx.user.id, input)),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -443,17 +443,16 @@ export const appRouter = router({
     getPrice: protectedProcedure
       .input(z.object({ ticker: z.string(), market: z.enum(["KR", "US"]).default("KR") }))
       .query(async ({ input }) => {
-        const { callDataApi } = await import("./_core/dataApi");
-        // 한국 시장은 .KS 접미사 추가, 해외는 그대로
         const symbol = input.market === "KR"
           ? (input.ticker.includes(".") ? input.ticker : `${input.ticker}.KS`)
           : input.ticker;
         try {
-          const resp = await callDataApi("YahooFinance/get_stock_chart", {
-            query: { symbol, region: input.market === "KR" ? "KR" : "US", interval: "1d", range: "1d" },
-          }) as { chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; longName?: string; currency?: string } }> } };
+          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+          const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const resp = await res.json() as { chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; longName?: string; currency?: string } }> } };
           const meta = resp?.chart?.result?.[0]?.meta;
-          if (!meta?.regularMarketPrice) throw new Error("현재가 조회 실패");
+          if (!meta?.regularMarketPrice) throw new Error("현재가 없음");
           return {
             ticker: input.ticker,
             symbol,
@@ -463,59 +462,59 @@ export const appRouter = router({
             updatedAt: new Date().toISOString(),
           };
         } catch (e) {
-          throw new Error(`ETF 현재가 조회 실패: ${(e as Error).message}`);
+          throw new Error(`현재가 조회 실패: ${(e as Error).message}`);
         }
       }),
 
-    // 종목명·티커로 검색
-    // 한글 포함 → NAVER Finance, 영문/숫자 → Yahoo Finance
+    // 종목명·티커로 검색 — 한글/영문 모두 NAVER + Yahoo Finance 병렬 시도 후 합산
     search: protectedProcedure
       .input(z.object({ query: z.string().min(1), market: z.enum(["국내", "해외"]).optional() }))
       .query(async ({ input }) => {
         const isKoreanQuery = /[가-힣]/.test(input.query);
+        const KOREAN_EXCHANGES = new Set(["KSC", "KOE", "KOS"]);
 
-        // 해외 탭에서는 한글이어도 Yahoo Finance 사용
-        if (isKoreanQuery && input.market !== "해외") {
-          // NAVER 주식 자동완성 API (ac.stock.naver.com)
-          const url = `https://ac.stock.naver.com/ac?q=${encodeURIComponent(input.query)}&target=stock,index,marketindicator`;
-          try {
-            const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-            if (!res.ok) return [];
-            const data = await res.json() as { items?: Array<{ code: string; name: string; typeCode: string }> };
-            return (data.items ?? []).slice(0, 8).map(item => ({
-              ticker: item.code,
-              name: item.name,
-              exchange: item.typeCode,
-              market: "국내" as const,
-            })).filter(r => r.ticker);
-          } catch {
-            return [];
-          }
-        }
+        const [naverResults, yahooResults] = await Promise.all([
+          // NAVER — 한글 쿼리일 때만
+          isKoreanQuery
+            ? fetch(`https://ac.stock.naver.com/ac?q=${encodeURIComponent(input.query)}&target=stock,index,marketindicator`, { headers: { "User-Agent": "Mozilla/5.0" } })
+                .then(r => r.ok ? r.json() : { items: [] })
+                .then((data: { items?: Array<{ code: string; name: string; typeCode: string }> }) =>
+                  (data.items ?? []).filter(i => i.code).map(i => ({
+                    ticker: i.code,
+                    name: i.name,
+                    exchange: i.typeCode,
+                    market: "국내" as const,
+                  }))
+                )
+                .catch(() => [])
+            : Promise.resolve([]),
 
-        // Yahoo Finance — 영문 종목명 또는 티커 검색
-        const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(input.query)}&quotesCount=10&newsCount=0&listsCount=0&enableFuzzyQuery=false`;
-        try {
-          const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-          if (!res.ok) return [];
-          const data = await res.json() as { quotes?: Array<{ symbol: string; shortname?: string; longname?: string; exchange?: string; quoteType?: string }> };
-          const KOREAN_EXCHANGES = new Set(["KSC", "KOE", "KOS"]);
-          return (data.quotes ?? [])
-            .filter(q => q.quoteType === "EQUITY" || q.quoteType === "ETF")
-            .slice(0, 8)
-            .map(q => {
-              const isKorean = q.symbol.endsWith(".KS") || q.symbol.endsWith(".KQ")
-                || KOREAN_EXCHANGES.has(q.exchange ?? "");
-              return {
-                ticker: isKorean ? q.symbol.replace(/\.(KS|KQ)$/, "") : q.symbol,
-                name: q.longname || q.shortname || q.symbol,
-                exchange: q.exchange ?? "",
-                market: isKorean ? "국내" as const : "해외" as const,
-              };
-            });
-        } catch {
-          return [];
-        }
+          // Yahoo Finance — 항상 시도
+          fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(input.query)}&quotesCount=10&newsCount=0&listsCount=0&enableFuzzyQuery=false`, { headers: { "User-Agent": "Mozilla/5.0" } })
+            .then(r => r.ok ? r.json() : { quotes: [] })
+            .then((data: { quotes?: Array<{ symbol: string; shortname?: string; longname?: string; exchange?: string; quoteType?: string }> }) =>
+              (data.quotes ?? [])
+                .filter(q => q.quoteType === "EQUITY" || q.quoteType === "ETF")
+                .map(q => {
+                  const isKorean = q.symbol.endsWith(".KS") || q.symbol.endsWith(".KQ") || KOREAN_EXCHANGES.has(q.exchange ?? "");
+                  return {
+                    ticker: isKorean ? q.symbol.replace(/\.(KS|KQ)$/, "") : q.symbol,
+                    name: q.longname || q.shortname || q.symbol,
+                    exchange: q.exchange ?? "",
+                    market: isKorean ? "국내" as const : "해외" as const,
+                  };
+                })
+            )
+            .catch(() => []),
+        ]);
+
+        // NAVER 결과 우선, Yahoo 결과에서 티커 중복 제거 후 합산, 최대 10개
+        const seen = new Set(naverResults.map(r => r.ticker));
+        const merged = [
+          ...naverResults,
+          ...yahooResults.filter(r => !seen.has(r.ticker)),
+        ];
+        return merged.slice(0, 10);
       }),
   }),
 
@@ -905,6 +904,45 @@ export const appRouter = router({
         if (current?.ledgerEntryId) await db.deleteLedgerEntry(ctx.user.id, current.ledgerEntryId);
         return db.deleteBusinessExpense(ctx.user.id, input.id);
       }),
+  }),
+  laborCost: router({
+    list: protectedProcedure.query(({ ctx }) => db.listLaborCosts(ctx.user.id)),
+    create: protectedProcedure
+      .input(z.object({
+        freelancerName: z.string().min(1),
+        description: z.string().nullable().optional(),
+        grossAmount: z.number().int().min(0),
+        withholdingRate: z.string().default("3.30"),
+        withholdingAmount: z.number().int().min(0),
+        netAmount: z.number().int().min(0),
+        paymentDate: z.string().nullable().optional(),
+        reportDate: z.string().nullable().optional(),
+        taxPaymentDate: z.string().nullable().optional(),
+        taxPaymentAccount: z.string().nullable().optional(),
+        note: z.string().nullable().optional(),
+      }))
+      .mutation(({ input, ctx }) => db.createLaborCost(ctx.user.id, input)),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        data: z.object({
+          freelancerName: z.string().min(1).optional(),
+          description: z.string().nullable().optional(),
+          grossAmount: z.number().int().min(0).optional(),
+          withholdingRate: z.string().optional(),
+          withholdingAmount: z.number().int().min(0).optional(),
+          netAmount: z.number().int().min(0).optional(),
+          paymentDate: z.string().nullable().optional(),
+          reportDate: z.string().nullable().optional(),
+          taxPaymentDate: z.string().nullable().optional(),
+          taxPaymentAccount: z.string().nullable().optional(),
+          note: z.string().nullable().optional(),
+        }),
+      }))
+      .mutation(({ input, ctx }) => db.updateLaborCost(ctx.user.id, input.id, input.data)),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(({ input, ctx }) => db.deleteLaborCost(ctx.user.id, input.id)),
   }),
   exchangeRate: router({
     get: protectedProcedure

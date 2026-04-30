@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   UserCircle,
   BriefcaseBusiness,
+  Users,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -46,6 +47,10 @@ const recordItems = [
   { href: "/business-income", icon: BriefcaseBusiness, label: "사업소득" },
 ];
 
+const businessSubItems = [
+  { href: "/labor-costs", icon: Users, label: "인건비" },
+];
+
 const settingItems = [
   { href: "/cards", icon: CreditCard, label: "보유카드/계좌" },
   { href: "/categories", icon: Tags, label: "카테고리 관리" },
@@ -62,6 +67,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user } = useUser();
   const { signOut } = useClerk();
   const [collapsed, setCollapsed] = useState(false);
+  const businessExpanded = location === "/business-income" || businessSubItems.some(i => location === i.href);
 
   const renderSection = (label: string, items: typeof navItems) => (
     <div className="pt-2">
@@ -74,24 +80,49 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
       {items.map((item) => {
         const isActive = location === item.href;
+        const isBusinessIncome = item.href === "/business-income";
         return (
-          <Link key={item.href} href={item.href}>
-            <div
-              className={cn(
-                "flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all duration-150 text-sm font-medium",
-                collapsed ? "justify-center" : ""
-              )}
-              style={{
-                backgroundColor: isActive ? "var(--sidebar-accent)" : "transparent",
-                color: isActive ? "var(--sidebar-primary)" : "var(--sidebar-foreground)",
-                opacity: isActive ? 1 : 0.72,
-              }}
-              title={collapsed ? item.label : undefined}
-            >
-              <item.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </div>
-          </Link>
+          <div key={item.href}>
+            <Link href={item.href}>
+              <div
+                className={cn(
+                  "flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all duration-150 text-sm font-medium",
+                  collapsed ? "justify-center" : ""
+                )}
+                style={{
+                  backgroundColor: isActive ? "var(--sidebar-accent)" : "transparent",
+                  color: isActive ? "var(--sidebar-primary)" : "var(--sidebar-foreground)",
+                  opacity: isActive ? 1 : 0.72,
+                }}
+                title={collapsed ? item.label : undefined}
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </div>
+            </Link>
+            {isBusinessIncome && businessExpanded && !collapsed && (
+              <div className="ml-3 pl-3 border-l border-border/60">
+                {businessSubItems.map(sub => {
+                  const isSubActive = location === sub.href;
+                  return (
+                    <Link key={sub.href} href={sub.href}>
+                      <div
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 text-xs font-medium"
+                        style={{
+                          backgroundColor: isSubActive ? "var(--sidebar-accent)" : "transparent",
+                          color: isSubActive ? "var(--sidebar-primary)" : "var(--sidebar-foreground)",
+                          opacity: isSubActive ? 1 : 0.65,
+                        }}
+                      >
+                        <sub.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="truncate">{sub.label}</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })}
     </div>
