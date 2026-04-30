@@ -29,7 +29,9 @@ export default function Profile() {
   const { user } = useUser();
   const utils = trpc.useUtils();
 
-  const [birthDate, setBirthDate] = useState((user as { birthDate?: string | null })?.birthDate ?? "");
+  const dbUser = trpc.auth.me.useQuery().data as { name?: string | null; birthDate?: string | null } | null;
+  const [name, setName] = useState(dbUser?.name ?? user?.fullName ?? "");
+  const [birthDate, setBirthDate] = useState(dbUser?.birthDate ?? "");
   const [calOpen, setCalOpen] = useState(false);
 
   const updateMutation = trpc.auth.updateProfile.useMutation({
@@ -48,7 +50,7 @@ export default function Profile() {
       toast.error("생년월일 형식이 올바르지 않습니다 (YYYY-MM-DD)");
       return;
     }
-    updateMutation.mutate({ birthDate: birthDate || null });
+    updateMutation.mutate({ name: name || null, birthDate: birthDate || null });
   }
 
   return (
@@ -65,10 +67,10 @@ export default function Profile() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* 이름 (읽기 전용) */}
+          {/* 이름 */}
           <div className="space-y-1">
             <Label>이름</Label>
-            <Input value={user?.fullName ?? ""} disabled className="bg-muted" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="이름 입력" />
           </div>
 
           {/* 이메일 (읽기 전용) */}
@@ -83,7 +85,15 @@ export default function Profile() {
             <div className="flex gap-2">
               <Input
                 value={birthDate}
-                onChange={(e) => setBirthDate(e.target.value)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const digits = raw.replace(/\D/g, "");
+                  if (digits.length === 8) {
+                    setBirthDate(`${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`);
+                  } else {
+                    setBirthDate(raw);
+                  }
+                }}
                 placeholder="YYYY-MM-DD"
                 className={invalid ? "border-destructive" : ""}
               />

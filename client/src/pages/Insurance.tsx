@@ -138,7 +138,15 @@ function DatePickerField({
       <div className="flex gap-2">
         <Input
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            const raw = e.target.value;
+            const digits = raw.replace(/\D/g, "");
+            if (digits.length === 8) {
+              onChange(`${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`);
+            } else {
+              onChange(raw);
+            }
+          }}
           placeholder={placeholder}
           className={invalid ? "border-destructive" : ""}
         />
