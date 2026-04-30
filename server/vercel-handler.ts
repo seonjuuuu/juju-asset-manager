@@ -10,8 +10,12 @@ const app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+const fallbackClerkPublishableKey =
+  "pk_test_YmFsYW5jZWQtb3N0cmljaC0yNi5jbGVyay5hY2NvdW50cy5kZXYk";
 const clerkPublishableKey =
-  process.env.CLERK_PUBLISHABLE_KEY ?? process.env.VITE_CLERK_PUBLISHABLE_KEY;
+  process.env.CLERK_PUBLISHABLE_KEY ??
+  process.env.VITE_CLERK_PUBLISHABLE_KEY ??
+  fallbackClerkPublishableKey;
 
 app.use(clerkMiddleware({
   publishableKey: clerkPublishableKey,
