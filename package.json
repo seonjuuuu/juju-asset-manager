@@ -16,6 +16,7 @@
     "@aws-sdk/client-s3": "^3.693.0",
     "@aws-sdk/s3-request-presigner": "^3.693.0",
     "@clerk/backend": "^3.4.3",
+    "@clerk/express": "^2.1.11",
     "@clerk/react": "^6.4.6",
     "@hookform/resolvers": "^5.2.2",
     "@neondatabase/serverless": "^1.1.0",

@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { clerkClient } from "./sdk";
+import { getAuth } from "@clerk/express";
 import { getUserById, getUserByOpenId } from "../db";
 
 export type TrpcContext = {
@@ -14,7 +14,6 @@ const DEV_USER_ID = 1;
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
-  // 로컬 개발 환경에서는 DB에서 실제 유저를 읽어 최신 정보를 반영
   if (process.env.NODE_ENV === "development") {
     const dbUser = await getUserById(DEV_USER_ID);
     const user: User = dbUser ?? {
@@ -34,20 +33,15 @@ export async function createContext(
 
   let user: User | null = null;
   try {
-    const requestState = await clerkClient.authenticateRequest(opts.req as unknown as Request, {
-      secretKey: process.env.CLERK_SECRET_KEY,
-    });
-    const payload = requestState.toAuth();
-    const openId = payload?.userId;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const auth = getAuth(opts.req as any);
+    const openId = auth?.userId;
     if (openId) {
       user = await getUserByOpenId(openId) ?? null;
     }
-  } catch {
+  } catch (err) {
+    console.error("[Context] auth error:", err);
     user = null;
   }
-  return {
-    req: opts.req,
-    res: opts.res,
-    user,
-  };
+  return { req: opts.req, res: opts.res, user };
 }
