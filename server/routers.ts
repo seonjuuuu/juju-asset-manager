@@ -277,7 +277,8 @@ export const appRouter = router({
       .mutation(({ input, ctx }) => db.updateUserProfile(ctx.user.id, input)),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      (ctx.res as import("express").Response).clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (ctx.res as any).clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
   }),
