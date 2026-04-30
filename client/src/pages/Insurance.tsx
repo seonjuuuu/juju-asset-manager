@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -471,8 +470,8 @@ function InsuranceDialog({
 // ─── 메인 페이지 ──────────────────────────────────────────────────────────────
 export default function Insurance() {
   const utils = trpc.useUtils();
-  const { user } = useUser();
-  const birthDate = (user as { birthDate?: string | null })?.birthDate ?? null;
+  const dbUser = trpc.auth.me.useQuery().data as { name?: string | null; birthDate?: string | null } | null;
+  const birthDate = dbUser?.birthDate ?? null;
 
   const { data: insuranceList = [] } = trpc.insurance.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
@@ -553,8 +552,8 @@ export default function Insurance() {
           <h1 className="text-xl font-bold text-foreground">보험</h1>
           <p className="text-muted-foreground text-sm mt-1">보험 납입 현황을 관리합니다</p>
         </div>
-        <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
-          <Plus className="w-4 h-4 mr-2" /> 보험 추가
+        <Button onClick={() => { setEditing(null); setDialogOpen(true); }} size="sm">
+          <Plus className="w-4 h-4 mr-1 sm:mr-2" /> <span className="hidden sm:inline">보험 추가</span><span className="sm:hidden">추가</span>
         </Button>
       </div>
 
@@ -569,7 +568,7 @@ export default function Insurance() {
       )}
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card>
           <CardContent className="pt-5">
             <div className="flex items-center gap-3">

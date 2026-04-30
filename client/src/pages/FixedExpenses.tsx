@@ -398,7 +398,9 @@ export default function FixedExpenses() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Table */}
         <div className="lg:col-span-2 bg-card border border-border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           {renderFixedExpenseTable(activeExpenses, "등록된 고정지출이 없습니다")}
+          </div>
         </div>
 
         {/* Pie Chart */}
@@ -444,6 +446,7 @@ export default function FixedExpenses() {
             <h2 className="text-sm font-semibold">구독서비스</h2>
             <p className="text-xs text-muted-foreground mt-0.5">고정지출 &gt; 구독서비스</p>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-muted/50">
@@ -472,6 +475,7 @@ export default function FixedExpenses() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -479,6 +483,7 @@ export default function FixedExpenses() {
             <h2 className="text-sm font-semibold">보험</h2>
             <p className="text-xs text-muted-foreground mt-0.5">고정지출 &gt; 보험</p>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-muted/50">
@@ -507,6 +512,7 @@ export default function FixedExpenses() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 

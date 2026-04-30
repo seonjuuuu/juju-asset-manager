@@ -141,6 +141,20 @@
       "when": 1777404000000,
       "tag": "0019_fixed_expense_start_date",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1777535000000,
+      "tag": "0020_user_memos",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1777535600000,
+      "tag": "0021_loans",
+      "breakpoints": true
     }
   ]
 }

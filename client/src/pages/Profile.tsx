@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,15 @@ export default function Profile() {
   const [name, setName] = useState(dbUser?.name ?? user?.fullName ?? "");
   const [birthDate, setBirthDate] = useState(dbUser?.birthDate ?? "");
   const [calOpen, setCalOpen] = useState(false);
+
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (dbUser && !initialized.current) {
+      setName(dbUser.name ?? user?.fullName ?? "");
+      setBirthDate(dbUser.birthDate ?? "");
+      initialized.current = true;
+    }
+  }, [dbUser, user]);
 
   const updateMutation = trpc.auth.updateProfile.useMutation({
     onSuccess: () => {

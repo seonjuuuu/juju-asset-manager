@@ -67,6 +67,22 @@ const installmentInput = z.object({
   earlyRepaymentAmount: z.number().nullable().optional(),
   earlyRepaymentDate: z.string().nullable().optional(),
 });
+const loanInput = z.object({
+  name: z.string(),
+  loanType: z.enum(["주택담보대출", "신용대출", "전세대출", "사업자대출", "마이너스통장", "기타"]).default("기타"),
+  lender: z.string().nullable().optional(),
+  principalAmount: z.number().default(0),
+  remainingPrincipal: z.number().default(0),
+  interestRate: z.string().optional(),
+  repaymentType: z.enum(["원리금균등", "원금균등", "만기일시", "체납식", "수동입력"]).default("수동입력"),
+  startDate: z.string(),
+  maturityDate: z.string().nullable().optional(),
+  paymentDay: z.number().int().min(1).max(31).nullable().optional(),
+  monthlyPayment: z.number().default(0),
+  graceMonths: z.number().int().min(0).optional(),
+  note: z.string().nullable().optional(),
+  isActive: z.boolean().optional(),
+});
 const subscriptionInput = z.object({
   serviceName: z.string(),
   category: z.enum(["비즈니스", "미디어", "자기계발", "기타"]).default("기타"),
@@ -160,6 +176,11 @@ const stockInput = z.object({
   returnRate: z.string().optional(),
   note: z.string().optional(),
   snapshotMonth: z.string().optional(),
+});
+
+const userMemoInput = z.object({
+  key: z.string().min(1).max(100),
+  content: z.string().max(20000).default(""),
 });
 
 const savingsInput = z.object({
@@ -321,6 +342,15 @@ export const appRouter = router({
       .mutation(({ input, ctx }) => db.updateStockEntry(ctx.user.id, input.id, input.data as Parameters<typeof db.updateStockEntry>[2])),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
       db.deleteStockEntry(ctx.user.id, input.id)
+    ),
+  }),
+
+  userMemo: router({
+    get: protectedProcedure.input(z.object({ key: z.string().min(1).max(100) })).query(({ input, ctx }) =>
+      db.getUserMemo(ctx.user.id, input.key)
+    ),
+    upsert: protectedProcedure.input(userMemoInput).mutation(({ input, ctx }) =>
+      db.upsertUserMemo(ctx.user.id, { memoKey: input.key, content: input.content })
     ),
   }),
 
@@ -639,6 +669,29 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteInstallment(ctx.user.id, input.id)),
+  }),
+  loan: router({
+    list: protectedProcedure.query(({ ctx }) => db.listLoans(ctx.user.id)),
+    create: protectedProcedure.input(loanInput).mutation(({ input, ctx }) => db.createLoan(ctx.user.id, {
+      ...input,
+      lender: input.lender ?? null,
+      maturityDate: input.maturityDate ?? null,
+      paymentDay: input.paymentDay ?? null,
+      interestRate: input.interestRate ?? "0",
+      graceMonths: input.graceMonths ?? 0,
+      isActive: input.isActive ?? true,
+    })),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: loanInput.partial() }))
+      .mutation(({ input, ctx }) => db.updateLoan(ctx.user.id, input.id, {
+        ...input.data,
+        lender: input.data.lender ?? undefined,
+        maturityDate: input.data.maturityDate ?? undefined,
+        paymentDay: input.data.paymentDay ?? undefined,
+      })),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input, ctx }) => db.deleteLoan(ctx.user.id, input.id)),
   }),
   categories: router({
     list: protectedProcedure

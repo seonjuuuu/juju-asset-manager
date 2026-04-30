@@ -1,0 +1,20 @@
+CREATE TABLE "loans" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer DEFAULT 0 NOT NULL,
+	"name" varchar(200) NOT NULL,
+	"loan_type" varchar(50) DEFAULT '기타' NOT NULL,
+	"lender" varchar(100),
+	"principal_amount" bigint DEFAULT 0 NOT NULL,
+	"remaining_principal" bigint DEFAULT 0 NOT NULL,
+	"interest_rate" numeric(10, 4) DEFAULT '0',
+	"repayment_type" varchar(50) DEFAULT '수동입력' NOT NULL,
+	"start_date" varchar(20) NOT NULL,
+	"maturity_date" varchar(20),
+	"payment_day" integer,
+	"monthly_payment" bigint DEFAULT 0 NOT NULL,
+	"grace_months" integer DEFAULT 0,
+	"note" text,
+	"is_active" boolean DEFAULT true NOT NULL,
+	"createdAt" timestamp DEFAULT now() NOT NULL,
+	"updatedAt" timestamp DEFAULT now() NOT NULL
+);

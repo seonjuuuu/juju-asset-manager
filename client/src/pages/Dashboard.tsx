@@ -14,18 +14,38 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { TrendingUp, TrendingDown, Wallet, PiggyBank, Shield, Coins, Briefcase } from "lucide-react";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { useMemo, useState } from "react";
 
 function getInstallmentCostForMonth(
-  inst: { totalAmount: number; months: number; startDate: string; endDate: string },
+  inst: { totalAmount: number; months: number; startDate: string; endDate: string; isInterestFree?: boolean; interestRate?: string | null },
   yr: number, mo: number
 ): number {
-  const key = `${yr}-${String(mo).padStart(2, "0")}`;
-  if (inst.startDate.slice(0, 7) <= key && inst.endDate.slice(0, 7) >= key) {
-    return Math.round(inst.totalAmount / inst.months);
+  if (!inst.startDate || !inst.endDate) return 0;
+  const [py, pm] = inst.startDate.split("-").map(Number);
+  const [ey, em] = inst.endDate.split("-").map(Number);
+  // 구매 다음 달부터 청구 (Installments.tsx isActiveInMonth 동일 로직)
+  const first = py * 12 + pm + 1;
+  const last = ey * 12 + em;
+  const target = yr * 12 + mo;
+  if (target < first || target > last) return 0;
+  if (!inst.isInterestFree && inst.interestRate && parseFloat(inst.interestRate) > 0) {
+    const r = parseFloat(inst.interestRate) / 100 / 12;
+    return Math.round((inst.totalAmount * r * Math.pow(1 + r, inst.months)) / (Math.pow(1 + r, inst.months) - 1));
   }
-  return 0;
+  return Math.round(inst.totalAmount / inst.months);
+}
+
+function getLoanCostForMonth(
+  loan: { startDate: string; maturityDate?: string | null; remainingPrincipal: number; monthlyPayment: number },
+  yr: number,
+  mo: number
+): number {
+  const key = `${yr}-${String(mo).padStart(2, "0")}`;
+  if (loan.remainingPrincipal <= 0 || loan.monthlyPayment <= 0) return 0;
+  if (loan.startDate && loan.startDate.slice(0, 7) > key) return 0;
+  if (loan.maturityDate && loan.maturityDate.slice(0, 7) < key) return 0;
+  return loan.monthlyPayment;
 }
 
 function calcDeposit(workAmount: number, depositPercent: number) {
@@ -49,35 +69,6 @@ function bizRecognizedInMonth(
 
 const COLORS = ["#5b7cfa", "#4ecdc4", "#45b7d1", "#f9ca24", "#f0932b"];
 
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  color,
-  sub,
-}: {
-  title: string;
-  value: string;
-  icon: React.ElementType;
-  color: string;
-  sub?: string;
-}) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{title}</p>
-          <p className="text-2xl font-bold text-foreground">{value}</p>
-          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-        </div>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
-          <Icon className="w-5 h-5" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const EXPENSE_COLORS = [
   "#5b7cfa","#f97316","#22c55e","#a855f7","#ec4899",
   "#14b8a6","#f59e0b","#ef4444","#06b6d4","#84cc16",
@@ -99,6 +90,7 @@ export default function Dashboard() {
 
   // 할부 목록
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
+  const { data: loanList = [] } = trpc.loan.list.useQuery();
 
   // 차트 legend 토글 state
   const [hiddenMonthly, setHiddenMonthly] = useState<Record<string, boolean>>({});
@@ -112,24 +104,6 @@ export default function Dashboard() {
 
   // 보험 목록
   const { data: insuranceList = [] } = trpc.insurance.list.useQuery();
-
-  // 월별 구독결제 구독비 (모든 달에 동일하게 적용)
-  const monthlySubCost = useMemo(() => {
-    if (!subscriptions) return 0;
-    const mo = new Date().getMonth() + 1;
-    return subscriptions.reduce((sum, sub) => {
-      const s = sub as {
-        price: number;
-        billingCycle: string;
-        sharedCount?: number;
-        billingDay?: number | null;
-        startDate?: string | null;
-        isPaused?: boolean | null;
-        pausedFrom?: string | null;
-      };
-      return sum + ledgerSubCostForMonth(currentYear, mo, s);
-    }, 0);
-  }, [subscriptions]);
 
   // 부수입 월별 합계 맵 (month → total)
   const sideIncomeByMonth = useMemo(() => {
@@ -171,10 +145,14 @@ export default function Dashboard() {
         return sum + ledgerSubCostForMonth(currentYear, month, s);
       }, 0);
       const installmentThisMonth = installmentList.reduce((sum, inst) => {
-        const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string };
+        const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string; isInterestFree: boolean; interestRate: string | null };
         return sum + getInstallmentCostForMonth(i, currentYear, month);
       }, 0);
-      const totalExp = fixedExp + varExp + businessExp + subCostThisMonth + installmentThisMonth;
+      const loanThisMonth = loanList.reduce((sum, loan) => {
+        const l = loan as { startDate: string; maturityDate: string | null; remainingPrincipal: number; monthlyPayment: number };
+        return sum + getLoanCostForMonth(l, currentYear, month);
+      }, 0);
+      const totalExp = fixedExp + varExp + businessExp + subCostThisMonth + installmentThisMonth + loanThisMonth;
 
       // 총 수입 = 가계부 수입 (부수입이 가계부에 자동 반영되므로 ledgerIncome 사용)
       // 단, 부수입이 가계부에 반영되지 않은 경우를 대비해 sideIncome도 함께 표시
@@ -182,7 +160,7 @@ export default function Dashboard() {
 
       return { name, income: totalIncome, expense: totalExp, savings, sideIncome };
     });
-  }, [yearly, subscriptions, sideIncomeByMonth, installmentList]);
+  }, [yearly, subscriptions, sideIncomeByMonth, installmentList, loanList]);
 
   // 연간 중분류별 지출 → 월별 스택 바 차트 데이터
   const { expenseStackData, expenseSubCatKeys } = useMemo(() => {
@@ -201,6 +179,7 @@ export default function Dashboard() {
     }
     if ((subscriptions ?? []).length > 0) allKeysSet.add("구독서비스");
     if ((installmentList ?? []).length > 0) allKeysSet.add("할부");
+    if ((loanList ?? []).length > 0) allKeysSet.add("대출");
     const allKeys = Array.from(allKeysSet);
 
     // 월별 데이터 빌드
@@ -238,10 +217,16 @@ export default function Dashboard() {
 
       // 할부 (해당 월 납부액)
       const installCost = (installmentList ?? []).reduce((sum, inst) => {
-        const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string };
+        const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string; isInterestFree: boolean; interestRate: string | null };
         return sum + getInstallmentCostForMonth(i, currentYear, month);
       }, 0);
       if (installCost > 0) entry["할부"] = ((entry["할부"] as number) || 0) + installCost;
+
+      const loanCost = (loanList ?? []).reduce((sum, loan) => {
+        const l = loan as { startDate: string; maturityDate: string | null; remainingPrincipal: number; monthlyPayment: number };
+        return sum + getLoanCostForMonth(l, currentYear, month);
+      }, 0);
+      if (loanCost > 0) entry["대출"] = ((entry["대출"] as number) || 0) + loanCost;
 
       return entry;
     });
@@ -256,7 +241,7 @@ export default function Dashboard() {
     const sortedKeys = allKeys.sort((a, b) => (keyTotals[b] ?? 0) - (keyTotals[a] ?? 0));
 
     return { expenseStackData: data, expenseSubCatKeys: sortedKeys };
-  }, [subCatExpense, insuranceList, subscriptions, installmentList]);
+  }, [subCatExpense, insuranceList, subscriptions, installmentList, loanList]);
 
   // 사업소득 월별 인식수익 맵
   const businessIncomeByMonth = useMemo(() => {
@@ -272,15 +257,6 @@ export default function Dashboard() {
     }
     return fullMap;
   }, [businessIncomeList]);
-
-  // 이번 달 구독결제 총 구독비 (monthlySubCost가 이미 현재 월 기준으로 계산됨)
-  const currentMonthSubCost = monthlySubCost;
-
-  // 이번 달 부수입 합계
-  const currentMonthSideIncome = sideIncomeByMonth[currentMonth] ?? 0;
-
-  // 이달 사업소득 인식수익
-  const currentMonthBusinessIncome = businessIncomeByMonth[currentMonth] ?? 0;
 
   // 이달 수입·지출 요약 (monthlyData 기준)
   const currentMonthIncome = (yearly ?? []).filter(r => r.month === currentMonth)
@@ -303,10 +279,14 @@ export default function Dashboard() {
       return sum + ledgerSubCostForMonth(currentYear, currentMonth, s);
     }, 0);
     const installCost = installmentList.reduce((sum, inst) => {
-      const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string };
+      const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string; isInterestFree: boolean; interestRate: string | null };
       return sum + getInstallmentCostForMonth(i, currentYear, currentMonth);
     }, 0);
-    return fixedExp + varExp + businessExp + subCost + installCost;
+    const loanCost = loanList.reduce((sum, loan) => {
+      const l = loan as { startDate: string; maturityDate: string | null; remainingPrincipal: number; monthlyPayment: number };
+      return sum + getLoanCostForMonth(l, currentYear, currentMonth);
+    }, 0);
+    return fixedExp + varExp + businessExp + subCost + installCost + loanCost;
   })();
 
   // 월별 수입 현황 스택 바 (사업소득 + 부수입 + 기타수입)
@@ -334,10 +314,6 @@ export default function Dashboard() {
       ].filter((d) => d.value > 0)
     : [];
 
-  const totalAsset = summary
-    ? summary.stockTotal + summary.savingsTotal + summary.pensionTotal + summary.otherTotal
-    : 0;
-
   if (summaryLoading || yearlyLoading || subsLoading || sideIncomeLoading) {
     return (
       <div className="p-6 space-y-6">
@@ -361,46 +337,6 @@ export default function Dashboard() {
         <p className="text-sm text-muted-foreground mt-0.5">{currentYear}년 자산 현황</p>
       </div>
 
-      {/* 총 자산 요약 */}
-      <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-6 text-primary-foreground">
-        <p className="text-sm font-medium opacity-80 mb-1">순 자산 (총자산 - 부채)</p>
-        <p className="text-4xl font-bold" style={{ fontFamily: "'Playfair Display', serif" }}>
-          ₩{formatAmount(summary?.netAsset ?? 0)}
-        </p>
-        <div className="flex gap-6 mt-4 text-sm opacity-80">
-          <span>총자산 ₩{formatAmount(totalAsset)}</span>
-          <span>부채 ₩{formatAmount(summary?.debtTotal ?? 0)}</span>
-        </div>
-      </div>
-
-      {/* 자산 카드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="주식투자"
-          value={`₩${formatAmount(summary?.stockTotal ?? 0)}`}
-          icon={TrendingUp}
-          color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-        />
-        <StatCard
-          title="저축/현금성"
-          value={`₩${formatAmount(summary?.savingsTotal ?? 0)}`}
-          icon={PiggyBank}
-          color="bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400"
-        />
-        <StatCard
-          title="연금"
-          value={`₩${formatAmount(summary?.pensionTotal ?? 0)}`}
-          icon={Shield}
-          color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
-        />
-        <StatCard
-          title="기타 자산"
-          value={`₩${formatAmount(summary?.otherTotal ?? 0)}`}
-          icon={Coins}
-          color="bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
-        />
-      </div>
-
       {/* 이달 수입·지출 요약 */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
@@ -420,7 +356,7 @@ export default function Dashboard() {
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">이달 지출</p>
               <p className="text-2xl font-bold text-foreground">₩{formatAmount(currentMonthExpense)}</p>
-              <p className="text-xs text-muted-foreground mt-1">가계부 + 구독 + 할부</p>
+              <p className="text-xs text-muted-foreground mt-1">가계부 + 구독 + 할부 + 대출</p>
             </div>
             <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
               <TrendingDown className="w-5 h-5" />
@@ -428,48 +364,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {/* 이달 세부 수입 배너 */}
-      {(currentMonthSubCost > 0 || currentMonthSideIncome > 0 || currentMonthBusinessIncome > 0) && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {currentMonthBusinessIncome > 0 && (
-            <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <Briefcase className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">이달 사업소득</p>
-                <p className="text-lg font-bold text-foreground">₩{formatAmount(currentMonthBusinessIncome)}</p>
-                <p className="text-xs text-muted-foreground">{currentYear}년 {currentMonth}월 인식수익</p>
-              </div>
-            </div>
-          )}
-          {currentMonthSideIncome > 0 && (
-            <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">이달 부수입</p>
-                <p className="text-lg font-bold text-foreground">₩{formatAmount(currentMonthSideIncome)}</p>
-                <p className="text-xs text-muted-foreground">{currentYear}년 {currentMonth}월 합계</p>
-              </div>
-            </div>
-          )}
-          {currentMonthSubCost > 0 && (
-            <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400 flex items-center justify-center shrink-0">
-                <Wallet className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">이달 구독결제 부담액</p>
-                <p className="text-lg font-bold text-foreground">₩{formatAmount(currentMonthSubCost)}</p>
-                <p className="text-xs text-muted-foreground">{subscriptions?.length ?? 0}개 서비스 · 월 합산</p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 차트 영역 — 수입·지출·저축 합산 + 자산 파이 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -551,17 +445,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 부채 현황 */}
-      {(summary?.debtTotal ?? 0) > 0 && (
-        <div className="bg-card border border-border rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingDown className="w-4 h-4 text-red-500" />
-            <h2 className="text-sm font-semibold text-foreground">부채 현황</h2>
-          </div>
-          <p className="text-2xl font-bold text-red-500">₩{formatAmount(summary?.debtTotal ?? 0)}</p>
-        </div>
-      )}
-
       {/* 연간 수입 현황 (스택 바) */}
       {hasIncomeData && (
         <div className="bg-card border border-border rounded-xl p-5">
@@ -610,7 +493,7 @@ export default function Dashboard() {
           <h2 className="text-sm font-semibold text-foreground mb-0.5">
             {currentYear}년 월별 지출 현황
           </h2>
-          <p className="text-xs text-muted-foreground mb-4">중분류 기준 · 가계부 지출 + 보험 + 구독 + 할부</p>
+          <p className="text-xs text-muted-foreground mb-4">중분류 기준 · 가계부 지출 + 보험 + 구독 + 할부 + 대출</p>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={expenseStackData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />

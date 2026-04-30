@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2, CreditCard, ChevronLeft, ChevronRight, ChevronDown, TrendingDown, Layers } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { formatAmount } from "@/lib/utils";
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -79,6 +79,12 @@ function monthlyPayment(totalAmount: number, months: number, isInterestFree: boo
   return Math.round((totalAmount * r * Math.pow(1 + r, months)) / (Math.pow(1 + r, months) - 1));
 }
 
+function isInstallmentDone(inst: Installment): boolean {
+  if (inst.earlyRepaymentAmount && inst.earlyRepaymentAmount >= inst.totalAmount) return true;
+  if (!inst.endDate) return false;
+  return inst.endDate < new Date().toISOString().slice(0, 10);
+}
+
 // ─── 다이얼로그 ───────────────────────────────────────────────────────────────
 const defaultForm = {
   name: "", cardId: "" as string, totalAmount: 0, months: 3,
@@ -87,13 +93,12 @@ const defaultForm = {
   earlyRepaymentAmount: 0, earlyRepaymentDate: "",
 };
 
-function InstallmentDialog({ open, onClose, editing, cards, onSave }: {
+function InstallmentDialog({ open, onClose, editing, cards, categoryList, catLoading, onSave }: {
   open: boolean; onClose: () => void; editing: Installment | null;
-  cards: Card[]; onSave: (data: typeof defaultForm) => void;
+  cards: Card[]; categoryList: { id: number; name: string; type: string | null; subCategories: { id: number; name: string }[] }[];
+  catLoading?: boolean;
+  onSave: (data: typeof defaultForm) => void;
 }) {
-  const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, {
-    staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true,
-  });
 
   const [form, setForm] = useState(() =>
     editing ? {
@@ -144,7 +149,11 @@ function InstallmentDialog({ open, onClose, editing, cards, onSave }: {
                 <SelectTrigger><SelectValue placeholder="대분류 선택" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">없음</SelectItem>
-                  {categoryList.filter(c => c.type === "expense" || c.type === "both").map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                  {catLoading ? (
+                    <SelectItem value="__loading__" disabled>로딩 중...</SelectItem>
+                  ) : (
+                    categoryList.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -275,7 +284,7 @@ export default function Installments() {
   const utils = trpc.useUtils();
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
-  const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, { staleTime: 0, refetchOnMount: "always" });
+  const { data: categoryList = [], isLoading: catLoading } = trpc.categories.list.useQuery();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Installment | null>(null);
@@ -283,6 +292,7 @@ export default function Installments() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
+  const [statusTab, setStatusTab] = useState<"active" | "completed">("active");
 
   const now = new Date();
   const selectedDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
@@ -341,6 +351,15 @@ export default function Installments() {
     installmentList.filter((i) => isActiveInMonth(i, selectedYear, selectedMonth)),
     [installmentList, selectedYear, selectedMonth]
   );
+  const activeMonthInstallments = useMemo(
+    () => selectedMonthInstallments.filter((i) => !isInstallmentDone(i as Installment)),
+    [selectedMonthInstallments]
+  );
+  const completedInstallments = useMemo(
+    () => (installmentList as Installment[]).filter(isInstallmentDone).sort((a, b) => b.endDate.localeCompare(a.endDate)),
+    [installmentList]
+  );
+  const visibleInstallments = statusTab === "completed" ? completedInstallments : activeMonthInstallments;
   const selectedMonthTotal = useMemo(() =>
     selectedMonthInstallments.reduce((sum, i) => sum + monthlyPayment(i.totalAmount, i.months, i.isInterestFree, i.interestRate), 0),
     [selectedMonthInstallments]
@@ -356,16 +375,17 @@ export default function Installments() {
     return Object.entries(map).map(([name, amount]) => ({ name, amount }));
   }, [selectedMonthInstallments, cardList]);
 
-  // 최근 1년 월별 차트
+  // 월별 차트 (과거 3개월 + 현재 + 미래 8개월)
   const pastYearChart = useMemo(() => {
-    const result: { month: string; total: number }[] = [];
-    for (let i = -11; i <= 0; i++) {
+    const result: { month: string; total: number; isCurrent: boolean }[] = [];
+    for (let i = -3; i <= 8; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
       const y = d.getFullYear(), m = d.getMonth() + 1;
       result.push({
-        month: `${String(m).padStart(2, "0")}월`,
+        month: `${y !== now.getFullYear() ? `${y % 100}년` : ""}${String(m).padStart(2, "0")}월`,
         total: installmentList.filter((inst) => isActiveInMonth(inst, y, m))
           .reduce((sum, inst) => sum + monthlyPayment(inst.totalAmount, inst.months, inst.isInterestFree, inst.interestRate), 0),
+        isCurrent: i === 0,
       });
     }
     return result;
@@ -377,7 +397,7 @@ export default function Installments() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">대출 / 할부</h1>
+          <h1 className="text-xl font-bold text-foreground">할부</h1>
           <p className="text-muted-foreground text-sm mt-0.5">카드 할부 현황 관리</p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
@@ -459,6 +479,31 @@ export default function Installments() {
         </div>
       </div>
 
+      {cardSummary.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm font-semibold">카드별 이달 할부금</h2>
+              <p className="text-xs text-muted-foreground">
+                {selectedYear}년 {String(selectedMonth).padStart(2, "0")}월 청구 기준
+              </p>
+            </div>
+            <p className="text-sm font-bold">₩{formatAmount(selectedMonthTotal)}</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {cardSummary.map((summary, idx) => (
+              <div key={summary.name} className="rounded-lg border border-border px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 shrink-0" style={{ color: CARD_COLORS[idx % CARD_COLORS.length] }} />
+                  <span className="text-xs text-muted-foreground truncate">{summary.name}</span>
+                </div>
+                <p className="mt-1 text-base font-bold">₩{formatAmount(summary.amount)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 탭: 목록 / 그래프 */}
       <Tabs defaultValue="list">
         <TabsList className="grid w-full grid-cols-2">
@@ -468,6 +513,35 @@ export default function Installments() {
 
         {/* ── 목록 탭 ── */}
         <TabsContent value="list" className="mt-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {statusTab === "completed" ? "상환이 완료된 할부 목록" : `${selectedYear}년 ${String(selectedMonth).padStart(2, "0")}월 청구 예정 목록`}
+            </p>
+            <div className="inline-flex rounded-full border border-border bg-background p-1">
+              <button
+                type="button"
+                onClick={() => setStatusTab("active")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  statusTab === "active"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                진행중 {activeMonthInstallments.length}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusTab("completed")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  statusTab === "completed"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                완료 {completedInstallments.length}
+              </button>
+            </div>
+          </div>
           {installmentList.length === 0 ? (
             <div className="bg-card border border-border rounded-xl py-16 text-center text-muted-foreground text-sm">
               등록된 할부가 없습니다
@@ -489,13 +563,13 @@ export default function Installments() {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedMonthInstallments.length === 0 ? (
+                  {visibleInstallments.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="text-center py-10 text-muted-foreground text-sm">
-                        이달 청구되는 할부가 없습니다
+                        {statusTab === "completed" ? "완료된 할부가 없습니다" : "이달 청구되는 진행중 할부가 없습니다"}
                       </td>
                     </tr>
-                  ) : selectedMonthInstallments.map((inst) => {
+                  ) : visibleInstallments.map((inst) => {
                     const fullyRepaid = !!(inst.earlyRepaymentAmount && inst.earlyRepaymentAmount >= inst.totalAmount);
                     const payNo = paymentNoForMonth(inst.startDate, selectedYear, selectedMonth);
                     const repaidRatio = inst.earlyRepaymentAmount && inst.totalAmount > 0
@@ -600,20 +674,24 @@ export default function Installments() {
 
         {/* ── 그래프 탭 ── */}
         <TabsContent value="chart" className="mt-4 space-y-6">
-          {/* 최근 1년 월별 할부 총액 */}
+          {/* 월별 할부 청구 예정 */}
           <div className="bg-card border border-border rounded-xl p-5">
-            <h3 className="text-sm font-semibold mb-1">최근 1년 월별 할부 총액</h3>
-            <p className="text-xs text-muted-foreground mb-4">월별 청구 합산 기준</p>
+            <h3 className="text-sm font-semibold mb-1">월별 할부 청구 현황</h3>
+            <p className="text-xs text-muted-foreground mb-4">과거 3개월 · 현재 · 미래 8개월 합산</p>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={pastYearChart} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                 <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} tickFormatter={(v) => `${Math.round(v / 10000)}만`} />
                 <Tooltip
                   formatter={(value: number) => [`₩${formatAmount(value)}`, "총 할부금"]}
                   contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "12px" }}
                 />
-                <Bar dataKey="total" fill="#5b7cfa" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                  {pastYearChart.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.isCurrent ? "#f97316" : "#5b7cfa"} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -652,6 +730,8 @@ export default function Installments() {
           onClose={() => { setDialogOpen(false); setEditing(null); }}
           editing={editing}
           cards={cardList as Card[]}
+          categoryList={categoryList}
+          catLoading={catLoading}
           onSave={handleSave}
         />
       )}

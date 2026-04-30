@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 type LedgerEntry = {
   id: number;
@@ -36,6 +38,20 @@ type FixedExpenseRow = {
   note: string | null;
 };
 
+type LoanRow = {
+  id: number;
+  name: string;
+  loanType: string;
+  lender: string | null;
+  startDate: string;
+  maturityDate: string | null;
+  paymentDay: number | null;
+  monthlyPayment: number;
+  remainingPrincipal: number;
+  repaymentType: string;
+  note: string | null;
+};
+
 function instIsActiveInMonth(inst: { startDate: string; endDate: string }, y: number, m: number): boolean {
   if (!inst.startDate || !inst.endDate) return false;
   const [py, pm] = inst.startDate.split("-").map(Number);
@@ -54,6 +70,19 @@ function instMonthlyPayment(totalAmount: number, months: number, isInterestFree:
   return Math.round((totalAmount * r * Math.pow(1 + r, months)) / (Math.pow(1 + r, months) - 1));
 }
 
+function loanAppliesToMonth(loan: LoanRow, year: number, month: number) {
+  const key = `${year}-${String(month).padStart(2, "0")}`;
+  if (loan.remainingPrincipal <= 0 || loan.monthlyPayment <= 0) return false;
+  if (loan.startDate && loan.startDate.slice(0, 7) > key) return false;
+  if (loan.maturityDate && loan.maturityDate.slice(0, 7) < key) return false;
+  return true;
+}
+
+const PIE_COLORS = [
+  "#5b7cfa","#f97316","#22c55e","#a855f7","#ec4899",
+  "#14b8a6","#f59e0b","#ef4444","#06b6d4","#84cc16","#8b5cf6","#f43f5e",
+];
+
 const EMPTY_FORM = {
   entryType: "expense" as "expense" | "income",
   entryDate: new Date().toISOString().split("T")[0],
@@ -71,6 +100,9 @@ export default function Ledger() {
   const [month, setMonth] = useState(currentMonth);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(currentYear);
+  const [rowFilter, setRowFilter] = useState<"all" | "manual" | "auto">("all");
   const [form, setForm] = useState({ ...EMPTY_FORM });
 
   const utils = trpc.useUtils();
@@ -79,6 +111,7 @@ export default function Ledger() {
   const { data: subscriptions = [] } = trpc.subscription.list.useQuery();
   const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
+  const { data: loanList = [] } = trpc.loan.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
   const { data: categoryList = [] } = trpc.categories.list.useQuery(undefined, {
     staleTime: 0,
@@ -174,11 +207,26 @@ export default function Ledger() {
       });
   }, [installmentList, cardList, categoryList, year, month]);
 
+  const loanRows = useMemo(() => {
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+    return (loanList as LoanRow[])
+      .filter(loan => loanAppliesToMonth(loan, year, month))
+      .map(loan => {
+        const day = Math.min(Math.max(loan.paymentDay ?? 1, 1), 28);
+        return {
+          ...loan,
+          displayDate: `${monthKey}-${String(day).padStart(2, "0")}`,
+          amount: loan.monthlyPayment,
+        };
+      });
+  }, [loanList, year, month]);
+
   const sortedTableRows = useMemo(() => {
     type EntryRow = { kind: "entry"; sortDate: string; entry: LedgerEntry };
     type SubRow = { kind: "sub"; sortDate: string; sub: (typeof subscriptionRows)[number] };
     type FixedRow = { kind: "fixed"; sortDate: string; fixed: (typeof fixedExpenseRows)[number] };
     type InstRow = { kind: "installment"; sortDate: string; inst: (typeof installmentRows)[number] };
+    type LoanTableRow = { kind: "loan"; sortDate: string; loan: (typeof loanRows)[number] };
     const entryRows: EntryRow[] = entries.map((entry) => {
       const d = String(entry.entryDate).split("T")[0];
       return { kind: "entry", sortDate: d, entry: entry as LedgerEntry };
@@ -186,24 +234,72 @@ export default function Ledger() {
     const subRows: SubRow[] = subscriptionRows.map((sub) => ({ kind: "sub", sortDate: sub.displayDate, sub }));
     const fixedRows: FixedRow[] = fixedExpenseRows.map((fixed) => ({ kind: "fixed", sortDate: fixed.displayDate, fixed }));
     const instRows: InstRow[] = installmentRows.map((inst) => ({ kind: "installment", sortDate: inst.displayDate, inst }));
-    return [...entryRows, ...fixedRows, ...subRows, ...instRows].sort((a, b) => {
+    const loanTableRows: LoanTableRow[] = loanRows.map((loan) => ({ kind: "loan", sortDate: loan.displayDate, loan }));
+    return [...entryRows, ...fixedRows, ...subRows, ...instRows, ...loanTableRows].sort((a, b) => {
       const cmp = a.sortDate.localeCompare(b.sortDate);
       if (cmp !== 0) return cmp;
       if (a.kind === "entry" && b.kind === "entry") return a.entry.id - b.entry.id;
       if (a.kind === "sub" && b.kind === "sub") return a.sub.id - b.sub.id;
       if (a.kind === "fixed" && b.kind === "fixed") return a.fixed.id - b.fixed.id;
       if (a.kind === "installment" && b.kind === "installment") return a.inst.id - b.inst.id;
+      if (a.kind === "loan" && b.kind === "loan") return a.loan.id - b.loan.id;
       return a.kind === "entry" ? -1 : 1;
     });
-  }, [entries, fixedExpenseRows, subscriptionRows, installmentRows]);
+  }, [entries, fixedExpenseRows, subscriptionRows, installmentRows, loanRows]);
+
+  const visibleTableRows = useMemo(() => {
+    if (rowFilter === "manual") return sortedTableRows.filter(row => row.kind === "entry");
+    if (rowFilter === "auto") return sortedTableRows.filter(row => row.kind !== "entry");
+    return sortedTableRows;
+  }, [rowFilter, sortedTableRows]);
 
   const totalSubCost = subscriptionRows.reduce((sum, r) => sum + r.cost, 0);
   const totalManagedFixedCost = fixedExpenseRows.reduce((sum, r) => sum + r.amount, 0);
   const totalInstallmentCost = installmentRows.reduce((sum, r) => sum + r.amount, 0);
+  const totalLoanCost = loanRows.reduce((sum, r) => sum + r.amount, 0);
   const fixedExpWithSubscriptions = Math.abs(fixedExp) + totalManagedFixedCost + totalSubCost;
-  const totalExp = Math.abs(fixedExp) + totalManagedFixedCost + Math.abs(varExp) + Math.abs(businessExp) + Math.abs(savings) + totalSubCost + totalInstallmentCost;
+  const totalExp = Math.abs(fixedExp) + totalManagedFixedCost + Math.abs(varExp) + Math.abs(businessExp) + Math.abs(savings) + totalSubCost + totalInstallmentCost + totalLoanCost;
   const balance = income - totalExp;
 
+
+  // 항목별 비율 파이 차트 데이터
+  const expensePieData = useMemo(() => {
+    const map: Record<string, number> = {};
+
+    // 실제 가계부 항목 (소득 제외)
+    for (const row of visibleTableRows) {
+      if (row.kind === "entry") {
+        const e = row.entry;
+        if (e.mainCategory === "소득") continue;
+        const key = e.subCategory?.trim() || e.mainCategory;
+        map[key] = (map[key] ?? 0) + Math.abs(e.amount);
+      } else if (row.kind === "fixed") {
+        const key = row.fixed.subCategory?.trim() || row.fixed.description?.trim() || row.fixed.mainCategory;
+        map[key] = (map[key] ?? 0) + row.fixed.amount;
+      } else if (row.kind === "sub") {
+        map["구독서비스"] = (map["구독서비스"] ?? 0) + row.sub.cost;
+      } else if (row.kind === "installment") {
+        map["할부결제"] = (map["할부결제"] ?? 0) + row.inst.amount;
+      } else if (row.kind === "loan") {
+        map["대출상환"] = (map["대출상환"] ?? 0) + row.loan.amount;
+      }
+    }
+
+    const sorted = Object.entries(map)
+      .filter(([, v]) => v > 0)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    // 8개 초과 시 나머지는 기타로 합산
+    if (sorted.length > 8) {
+      const top = sorted.slice(0, 7);
+      const etcValue = sorted.slice(7).reduce((s, d) => s + d.value, 0);
+      return [...top, { name: "기타", value: etcValue }];
+    }
+    return sorted;
+  }, [visibleTableRows]);
+
+  const pieTotal = expensePieData.reduce((s, d) => s + d.value, 0);
 
   const getFilteredCategories = (entryType: "expense" | "income") =>
     categoryList.filter(c => entryType === "income" ? (c.type === "income" || c.type === "both") : (c.type === "expense" || c.type === "both"));
@@ -295,14 +391,55 @@ export default function Ledger() {
         <button onClick={prevMonth} className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors">
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <span className="text-base font-semibold w-24 text-center">{year}년 {MONTH_NAMES[month - 1]}</span>
+        <Popover open={pickerOpen} onOpenChange={(open) => { setPickerOpen(open); if (open) setPickerYear(year); }}>
+          <PopoverTrigger asChild>
+            <button className="text-base font-semibold w-28 text-center px-2 py-1 rounded-lg hover:bg-muted transition-colors">
+              {year}년 {MONTH_NAMES[month - 1]}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3" align="center">
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => setPickerYear(y => y - 1)} className="p-1 rounded hover:bg-muted transition-colors">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm font-semibold">{pickerYear}년</span>
+              <button onClick={() => setPickerYear(y => y + 1)} className="p-1 rounded hover:bg-muted transition-colors">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => {
+                const isSelected = pickerYear === year && m === month;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => { setYear(pickerYear); setMonth(m); setPickerOpen(false); }}
+                    className={`py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"
+                    }`}
+                  >
+                    {m}월
+                  </button>
+                );
+              })}
+            </div>
+          </PopoverContent>
+        </Popover>
         <button onClick={nextMonth} className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors">
           <ChevronRight className="w-4 h-4" />
         </button>
+        {(year !== currentYear || month !== currentMonth) && (
+          <button
+            onClick={() => { setYear(currentYear); setMonth(currentMonth); }}
+            className="text-xs font-medium px-2.5 py-1 rounded-lg border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          >
+            이번 달
+          </button>
+        )}
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* 소득 */}
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground mb-1">소득</p>
@@ -318,6 +455,7 @@ export default function Ledger() {
               { label: "변동지출", value: varExp },
               { label: "사업지출", value: businessExp },
               { label: "할부결제", value: totalInstallmentCost },
+              { label: "대출상환", value: totalLoanCost },
               { label: "저축/투자", value: savings },
             ].filter(item => Math.abs(item.value) > 0).map(item => (
               <div key={item.label} className="flex justify-between text-xs text-muted-foreground">
@@ -337,48 +475,113 @@ export default function Ledger() {
         </span>
       </div>
 
+      {/* 항목별 비율 차트 */}
+      {expensePieData.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold mb-1">항목별 지출 비율</h2>
+          <p className="text-xs text-muted-foreground mb-4">가계부 · 고정지출 · 구독 · 할부 · 대출 합산</p>
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            <div className="w-full md:w-64 flex-shrink-0">
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={expensePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
+                    {expensePieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: number) => [`₩${formatAmount(v)}`, ""]}
+                    contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "12px" }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 w-full space-y-2">
+              {expensePieData.map((item, i) => {
+                const pct = pieTotal > 0 ? (item.value / pieTotal) * 100 : 0;
+                return (
+                  <div key={item.name} className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                    <span className="text-xs text-foreground flex-1 truncate">{item.name}</span>
+                    <span className="text-xs text-muted-foreground w-10 text-right">{pct.toFixed(1)}%</span>
+                    <span className="text-xs font-semibold w-24 text-right">₩{formatAmount(item.value)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold">월별 내역</h2>
+            <p className="text-xs text-muted-foreground">
+              자동항목: 고정지출 · 구독 · 할부 · 대출
+            </p>
+          </div>
+          <div className="inline-flex rounded-full border border-border bg-background p-1 self-start sm:self-auto">
+            {[
+              { key: "all", label: `전체 ${sortedTableRows.length}` },
+              { key: "manual", label: `수동 ${sortedTableRows.filter(row => row.kind === "entry").length}` },
+              { key: "auto", label: `자동 ${sortedTableRows.filter(row => row.kind !== "entry").length}` },
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setRowFilter(item.key as "all" | "manual" | "auto")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  rowFilter === item.key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-muted/50">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">날짜</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">날짜</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">구분</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">대분류</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">중분류</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">대분류</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">중분류</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">내용</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">금액</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">비고</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">금액</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">비고</th>
               <th className="px-4 py-3 w-20"></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
-            ) : sortedTableRows.length === 0 ? (
+            ) : visibleTableRows.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">이번 달 내역이 없습니다</td></tr>
             ) : (
               <>
-                {sortedTableRows.map((row) => {
+                {visibleTableRows.map((row) => {
                   if (row.kind === "entry") {
                     const entry = row.entry;
                     const d = String(entry.entryDate).split("T")[0];
                     const ledgerType = getLedgerType(entry.mainCategory, entry.amount);
                     return (
                       <tr key={`e-${entry.id}`} className="border-t border-border hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{d}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{d}</td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor[ledgerType]}`}>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${ledgerTypeColor[ledgerType]}`}>
                             {ledgerType}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 hidden sm:table-cell">
                           <span className="text-sm text-foreground">{entry.mainCategory}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm">{entry.subCategory ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm hidden md:table-cell">{entry.subCategory ?? "-"}</td>
                         <td className="px-4 py-3 text-sm">{entry.description ?? "-"}</td>
-                        <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(entry.amount)}</td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{entry.note ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium whitespace-nowrap">₩{formatAmount(entry.amount)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">{entry.note ?? "-"}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 justify-end">
                             <button onClick={() => openEdit(entry)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
@@ -395,59 +598,76 @@ export default function Ledger() {
                   if (row.kind === "fixed") {
                     return (
                       <tr key={`f-${row.fixed.id}`} className="border-t border-border bg-blue-50/40 dark:bg-blue-900/10">
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.displayDate}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{row.fixed.displayDate}</td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor["지출"]}`}>
-                            지출
-                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${ledgerTypeColor["지출"]}`}>지출</span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 hidden sm:table-cell">
                           <span className="text-sm text-foreground">{row.fixed.mainCategory}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.subCategory ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">{row.fixed.subCategory ?? "-"}</td>
                         <td className="px-4 py-3 text-sm">{row.fixed.description ?? "-"}</td>
-                        <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">-₩{formatAmount(row.fixed.amount)}</td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{row.fixed.paymentAccount ?? row.fixed.note ?? "-"}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400 whitespace-nowrap">-₩{formatAmount(row.fixed.amount)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">{row.fixed.paymentAccount ?? row.fixed.note ?? "-"}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
                       </tr>
                     );
                   }
                   if (row.kind === "sub") return (
                     <tr key={`sub-${row.sub.id}`} className="border-t border-border bg-violet-50/40 dark:bg-violet-900/10">
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.sub.displayDate}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{row.sub.displayDate}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor["지출"]}`}>
-                          지출
-                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${ledgerTypeColor["지출"]}`}>지출</span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 hidden sm:table-cell">
                         <span className="text-sm text-foreground">고정지출</span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">구독서비스</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">구독서비스</td>
                       <td className="px-4 py-3 text-sm">{row.sub.serviceName}</td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">-₩{formatAmount(row.sub.cost)}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.sub.billingCycle}{row.sub.paymentMethod ? ` · ${row.sub.paymentMethod}` : ""}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400 whitespace-nowrap">-₩{formatAmount(row.sub.cost)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">{row.sub.billingCycle}{row.sub.paymentMethod ? ` · ${row.sub.paymentMethod}` : ""}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
+                    </tr>
+                  );
+                  if (row.kind === "loan") return (
+                    <tr key={`loan-${row.loan.id}`} className="border-t border-border bg-sky-50/40 dark:bg-sky-900/10">
+                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{row.loan.displayDate}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${ledgerTypeColor["지출"]}`}>지출</span>
+                      </td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <span className="text-sm text-foreground">고정지출</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">대출상환</td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-1.5">
+                          <span>{row.loan.name}</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400 shrink-0">대출</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400 whitespace-nowrap">-₩{formatAmount(row.loan.amount)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">
+                        {[row.loan.loanType, row.loan.repaymentType, row.loan.lender].filter(Boolean).join(" · ") || "-"}
+                      </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
                     </tr>
                   );
                   return (
                     <tr key={`inst-${row.inst.id}`} className="border-t border-border bg-amber-50/40 dark:bg-amber-900/10">
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.inst.displayDate}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{row.inst.displayDate}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ledgerTypeColor["지출"]}`}>
-                          지출
-                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${ledgerTypeColor["지출"]}`}>지출</span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-foreground">{row.inst.categoryName ?? "-"}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.inst.subCategoryName ?? "-"}</td>
+                      <td className="px-4 py-3 text-sm text-foreground hidden sm:table-cell">{row.inst.categoryName ?? "-"}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">{row.inst.subCategoryName ?? "-"}</td>
                       <td className="px-4 py-3 text-sm">
                         <div className="flex items-center gap-1.5">
                           <span>{row.inst.name}</span>
                           <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 shrink-0">할부</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400">-₩{formatAmount(row.inst.amount)}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{row.inst.cardLabel || "-"}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium text-red-600 dark:text-red-400 whitespace-nowrap">-₩{formatAmount(row.inst.amount)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">{row.inst.cardLabel || "-"}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground text-center">—</td>
                     </tr>
                   );
@@ -456,6 +676,7 @@ export default function Ledger() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Dialog */}

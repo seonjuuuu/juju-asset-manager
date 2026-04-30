@@ -294,7 +294,7 @@ export default function SideIncome() {
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Card>
             <CardContent className="pt-5">
               <div className="flex items-center gap-3">
@@ -346,6 +346,11 @@ export default function SideIncome() {
                     {year}년 {month}월 부수입 내역
                   </CardTitle>
                   <div className="flex items-center gap-1">
+                    {(year !== now.getFullYear() || month !== now.getMonth() + 1) && (
+                      <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth() + 1); }}>
+                        이번 달
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
                     <span className="text-sm font-medium w-20 text-center">{year}.{String(month).padStart(2, "0")}</span>
                     <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
@@ -369,12 +374,12 @@ export default function SideIncome() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b text-muted-foreground">
-                          <th className="text-left py-2 px-3 font-medium">날짜</th>
-                          <th className="text-left py-2 px-3 font-medium">카테고리</th>
+                          <th className="text-left py-2 px-3 font-medium whitespace-nowrap">날짜</th>
+                          <th className="text-left py-2 px-3 font-medium hidden sm:table-cell">카테고리</th>
                           <th className="text-left py-2 px-3 font-medium">내용</th>
-                          <th className="text-right py-2 px-3 font-medium">금액</th>
-                          <th className="text-center py-2 px-3 font-medium">구분</th>
-                          <th className="text-left py-2 px-3 font-medium">비고</th>
+                          <th className="text-right py-2 px-3 font-medium whitespace-nowrap">금액</th>
+                          <th className="text-center py-2 px-3 font-medium hidden sm:table-cell">구분</th>
+                          <th className="text-left py-2 px-3 font-medium hidden md:table-cell">비고</th>
                           <th className="py-2 px-3" />
                         </tr>
                       </thead>
@@ -383,8 +388,8 @@ export default function SideIncome() {
                           const cat = categories.find(c => c.name === inc.categoryName);
                           return (
                             <tr key={inc.id} className="border-b hover:bg-muted/30 transition-colors">
-                              <td className="py-2.5 px-3 text-muted-foreground">{fmtDate(inc.incomeDate)}</td>
-                              <td className="py-2.5 px-3">
+                              <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">{fmtDate(inc.incomeDate)}</td>
+                              <td className="py-2.5 px-3 hidden sm:table-cell">
                                 {inc.categoryName ? (
                                   <span className="flex items-center gap-1.5">
                                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat?.color ?? "#6b7280" }} />
@@ -392,14 +397,14 @@ export default function SideIncome() {
                                   </span>
                                 ) : <span className="text-muted-foreground">-</span>}
                               </td>
-                              <td className="py-2.5 px-3">{inc.description ?? "-"}</td>
-                              <td className="py-2.5 px-3 text-right font-semibold text-emerald-600">+₩{fmt(inc.amount ?? 0)}</td>
-                              <td className="py-2.5 px-3 text-center">
+                              <td className="py-2.5 px-3 max-w-[120px] truncate">{inc.description ?? "-"}</td>
+                              <td className="py-2.5 px-3 text-right font-semibold text-emerald-600 whitespace-nowrap">+₩{fmt(inc.amount ?? 0)}</td>
+                              <td className="py-2.5 px-3 text-center hidden sm:table-cell">
                                 <Badge variant={inc.isRegular ? "default" : "secondary"} className="text-xs">
                                   {inc.isRegular ? "정기" : "비정기"}
                                 </Badge>
                               </td>
-                              <td className="py-2.5 px-3 text-muted-foreground text-xs max-w-[120px] truncate">{inc.note ?? "-"}</td>
+                              <td className="py-2.5 px-3 text-muted-foreground text-xs max-w-[120px] truncate hidden md:table-cell">{inc.note ?? "-"}</td>
                               <td className="py-2.5 px-3">
                                 <div className="flex gap-1">
                                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIncomeDialog({
@@ -440,7 +445,7 @@ export default function SideIncome() {
 
           {/* ─── 그래프 탭 ─── */}
           <TabsContent value="chart" className="mt-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* 연간 월별 바 차트 */}
               <Card>
                 <CardHeader className="pb-2">

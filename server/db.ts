@@ -19,6 +19,8 @@ import {
   InsertRealEstate,
   InsertSavingsAsset,
   InsertStockPortfolio,
+  InsertUserMemo,
+  InsertLoan,
   InsertSubscription,
   ledgerEntries,
   otherAssets,
@@ -26,6 +28,8 @@ import {
   realEstates,
   savingsAssets,
   stockPortfolio,
+  userMemos,
+  loans,
   subscriptions,
   sideIncomeCategories,
   sideIncomes,
@@ -64,6 +68,48 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+async function ensureUserMemosTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "user_memos" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "memo_key" varchar(100) NOT NULL,
+      "content" text NOT NULL DEFAULT '',
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS "user_memos_user_id_memo_key_idx"
+    ON "user_memos" ("user_id", "memo_key")
+  `);
+}
+
+async function ensureLoansTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "loans" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "name" varchar(200) NOT NULL,
+      "loan_type" varchar(50) NOT NULL DEFAULT '기타',
+      "lender" varchar(100),
+      "principal_amount" bigint NOT NULL DEFAULT 0,
+      "remaining_principal" bigint NOT NULL DEFAULT 0,
+      "interest_rate" numeric(10, 4) DEFAULT '0',
+      "repayment_type" varchar(50) NOT NULL DEFAULT '수동입력',
+      "start_date" varchar(20) NOT NULL,
+      "maturity_date" varchar(20),
+      "payment_day" integer,
+      "monthly_payment" bigint NOT NULL DEFAULT 0,
+      "grace_months" integer DEFAULT 0,
+      "note" text,
+      "is_active" boolean NOT NULL DEFAULT true,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -268,6 +314,61 @@ export async function deleteStockEntry(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(stockPortfolio).where(and(eq(stockPortfolio.id, id), eq(stockPortfolio.userId, userId)));
+}
+
+// ─── 대출 ─────────────────────────────────────────────────────────────────────
+export async function listLoans(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureLoansTable(db);
+  return db.select().from(loans)
+    .where(and(eq(loans.userId, userId), eq(loans.isActive, true)))
+    .orderBy(desc(loans.createdAt));
+}
+
+export async function createLoan(userId: number, data: InsertLoan) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureLoansTable(db);
+  await db.insert(loans).values({ ...data, userId });
+}
+
+export async function updateLoan(userId: number, id: number, data: Partial<InsertLoan>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureLoansTable(db);
+  await db.update(loans).set(data).where(and(eq(loans.id, id), eq(loans.userId, userId)));
+}
+
+export async function deleteLoan(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureLoansTable(db);
+  await db.update(loans).set({ isActive: false }).where(and(eq(loans.id, id), eq(loans.userId, userId)));
+}
+
+export async function getUserMemo(userId: number, memoKey: string) {
+  const db = await getDb();
+  if (!db) return null;
+  await ensureUserMemosTable(db);
+  const result = await db.select().from(userMemos)
+    .where(and(eq(userMemos.userId, userId), eq(userMemos.memoKey, memoKey)))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+export async function upsertUserMemo(userId: number, data: Pick<InsertUserMemo, "memoKey" | "content">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureUserMemosTable(db);
+  const existing = await getUserMemo(userId, data.memoKey);
+  if (existing) {
+    await db.update(userMemos)
+      .set({ content: data.content, updatedAt: new Date() })
+      .where(and(eq(userMemos.userId, userId), eq(userMemos.memoKey, data.memoKey)));
+    return;
+  }
+  await db.insert(userMemos).values({ userId, memoKey: data.memoKey, content: data.content });
 }
 
 // ─── 저축 및 현금성 자산 ──────────────────────────────────────────────────────
@@ -748,7 +849,7 @@ export async function deleteSubCategory(userId: number, id: number) {
 
 // 기본 카테고리 시드 데이터
 const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; subs: string[] }[] = [
-  { name: "고정지출", type: "expense", subs: ["구독서비스", "보험"] },
+  { name: "고정지출", type: "expense", subs: ["구독서비스", "보험", "모임비"] },
   { name: "사업지출", type: "expense", subs: ["광고"] },
   { name: "식비", type: "expense", subs: ["식료품", "외식", "카페/음료", "배달음식"] },
   { name: "교통/차량", type: "expense", subs: ["대중교통", "택시", "주유", "주차", "차량유지"] },
@@ -762,7 +863,7 @@ const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; s
   { name: "소득", type: "income", subs: ["급여", "사업소득", "부수입", "투자수익", "기타수입"] },
 ];
 
-const CANONICAL_SUB_NAMES = new Set(["구독서비스", "보험", "광고", "급여", "사업소득", "부수입", "투자수익", "기타수입"]);
+const CANONICAL_SUB_NAMES = new Set(["구독서비스", "보험", "모임비", "광고", "급여", "사업소득", "부수입", "투자수익", "기타수입"]);
 
 export async function seedDefaultCategories(userId: number) {
   const db = await getDb();

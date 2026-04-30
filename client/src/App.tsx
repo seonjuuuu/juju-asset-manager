@@ -8,6 +8,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Ledger from "./pages/Ledger";
+import PaymentCalendar from "./pages/PaymentCalendar";
 import FixedExpenses from "./pages/FixedExpenses";
 import StockPortfolio from "./pages/StockPortfolio";
 import Savings from "./pages/Savings";
@@ -19,6 +20,7 @@ import Cards from "./pages/Cards";
 import Subscriptions from "./pages/Subscriptions";
 import SideIncome from "./pages/SideIncome";
 import Installments from "./pages/Installments";
+import Loans from "./pages/Loans";
 import Insurance from "./pages/Insurance";
 import BusinessIncome from "./pages/BusinessIncome";
 import LaborCosts from "./pages/LaborCosts";
@@ -31,6 +33,7 @@ function Router() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/ledger" component={Ledger} />
+        <Route path="/payment-calendar" component={PaymentCalendar} />
         <Route path="/fixed-expenses" component={FixedExpenses} />
         <Route path="/stocks" component={StockPortfolio} />
         <Route path="/savings" component={Savings} />
@@ -42,6 +45,7 @@ function Router() {
         <Route path="/subscriptions" component={Subscriptions} />
         <Route path="/side-income" component={SideIncome} />
         <Route path="/installments" component={Installments} />
+        <Route path="/loans" component={Loans} />
         <Route path="/insurance" component={Insurance} />
         <Route path="/business-income" component={BusinessIncome} />
         <Route path="/labor-costs" component={LaborCosts} />

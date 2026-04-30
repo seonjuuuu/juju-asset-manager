@@ -10,6 +10,7 @@ import {
   date,
   boolean,
   bigint,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -106,6 +107,21 @@ export const stockPortfolio = pgTable("stock_portfolio", {
 
 export type StockPortfolio = typeof stockPortfolio.$inferSelect;
 export type InsertStockPortfolio = typeof stockPortfolio.$inferInsert;
+
+// ─── 사용자별 메모 ─────────────────────────────────────────────────────────────
+export const userMemos = pgTable("user_memos", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  memoKey: varchar("memo_key", { length: 100 }).notNull(),
+  content: text("content").notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => ({
+  userMemoKeyIdx: uniqueIndex("user_memos_user_id_memo_key_idx").on(table.userId, table.memoKey),
+}));
+
+export type UserMemo = typeof userMemos.$inferSelect;
+export type InsertUserMemo = typeof userMemos.$inferInsert;
 
 // ─── 저축 및 현금성 자산 ──────────────────────────────────────────────────────
 export const savingsAssets = pgTable("savings_assets", {
@@ -416,6 +432,30 @@ export const installments = pgTable("installments", {
 });
 export type Installment = typeof installments.$inferSelect;
 export type InsertInstallment = typeof installments.$inferInsert;
+
+// ─── 대출 내역 ────────────────────────────────────────────────────────────────
+export const loans = pgTable("loans", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  name: varchar("name", { length: 200 }).notNull(),
+  loanType: varchar("loan_type", { length: 50 }).notNull().default("기타"),
+  lender: varchar("lender", { length: 100 }),
+  principalAmount: bigint("principal_amount", { mode: "number" }).notNull().default(0),
+  remainingPrincipal: bigint("remaining_principal", { mode: "number" }).notNull().default(0),
+  interestRate: decimal("interest_rate", { precision: 10, scale: 4 }).default("0"),
+  repaymentType: varchar("repayment_type", { length: 50 }).notNull().default("수동입력"),
+  startDate: varchar("start_date", { length: 20 }).notNull(),
+  maturityDate: varchar("maturity_date", { length: 20 }),
+  paymentDay: integer("payment_day"),
+  monthlyPayment: bigint("monthly_payment", { mode: "number" }).notNull().default(0),
+  graceMonths: integer("grace_months").default(0),
+  note: text("note"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type Loan = typeof loans.$inferSelect;
+export type InsertLoan = typeof loans.$inferInsert;
 
 // ─── 보험 ─────────────────────────────────────────────────────────────────────
 export const insurance = pgTable("insurance", {

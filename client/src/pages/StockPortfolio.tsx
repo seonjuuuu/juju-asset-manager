@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -13,7 +14,8 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#5b7cfa", "#4ecdc4", "#45b7d1", "#f9ca24", "#f0932b", "#6c5ce7", "#fd79a8", "#00b894"];
-const SECTORS = ["IT", "금융", "헬스케어", "소비재", "에너지", "산업재", "ETF", "기타"];
+const SECTORS = ["기술", "헬스케어", "금융", "소비재", "커뮤니케이션", "필수소비재", "유틸리티", "부동산", "에너지", "원자재", "산업자재", "시장지수", "배당", "기타"];
+const STOCK_MEMO_KEY = "stock-portfolio";
 
 const EMPTY_FORM = {
   market: "국내" as "국내" | "해외",
@@ -51,8 +53,10 @@ export default function StockPortfolio() {
   const [tickerQuery, setTickerQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [portfolioMemo, setPortfolioMemo] = useState("");
   const searchRef = useRef<HTMLDivElement>(null);
   const skipDebounceRef = useRef(false);
+  const memoReadyRef = useRef(false);
 
   // 입력 변경 시 400ms 디바운스 자동 검색
   useEffect(() => {
@@ -86,10 +90,35 @@ export default function StockPortfolio() {
 
   const utils = trpc.useUtils();
   const { data: stocks = [], isLoading } = trpc.stock.list.useQuery({});
+  const { data: savedMemo, isSuccess: memoLoaded } = trpc.userMemo.get.useQuery({ key: STOCK_MEMO_KEY });
+  const saveMemoMutation = trpc.userMemo.upsert.useMutation({
+    onError: () => toast.error("투자 메모 저장에 실패했습니다"),
+  });
   const { data: searchResults = [], isFetching: isSearching } = trpc.etfPrice.search.useQuery(
     { query: debouncedQuery, market: form.market },
     { enabled: debouncedQuery.length >= 1 }
   );
+
+  useEffect(() => {
+    if (!memoLoaded || memoReadyRef.current) return;
+    const dbContent = savedMemo?.content ?? "";
+    const localContent = localStorage.getItem("stock-portfolio-memo") ?? "";
+    const initialContent = dbContent || localContent;
+    setPortfolioMemo(initialContent);
+    memoReadyRef.current = true;
+    if (!dbContent && localContent) {
+      saveMemoMutation.mutate({ key: STOCK_MEMO_KEY, content: localContent });
+      localStorage.removeItem("stock-portfolio-memo");
+    }
+  }, [memoLoaded, savedMemo?.content]);
+
+  useEffect(() => {
+    if (!memoReadyRef.current) return;
+    const timer = window.setTimeout(() => {
+      saveMemoMutation.mutate({ key: STOCK_MEMO_KEY, content: portfolioMemo });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [portfolioMemo]);
 
   const createMutation = trpc.stock.create.useMutation({
     onSuccess: () => { utils.stock.list.invalidate(); toast.success("추가되었습니다"); setDialogOpen(false); },
@@ -348,18 +377,18 @@ export default function StockPortfolio() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="space-y-5">
         {/* Table */}
-        <div className="lg:col-span-2 bg-card border border-border rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px]">
+        <div className="min-w-0 bg-card border border-border rounded-xl overflow-hidden flex flex-col">
+          <div className="overflow-x-auto flex-1">
+            <table className="w-full min-w-[840px]">
               <thead>
                 <tr className="bg-muted/50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">종목명</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">시장</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">섹터</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">현재가</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">매수원금</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[160px]">종목명</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell min-w-[72px] whitespace-nowrap">시장</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell min-w-[120px] whitespace-nowrap">섹터</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">현재가</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">매수원금</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">평가금액</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">수익률</th>
                   <th className="px-4 py-3 w-16"></th>
@@ -373,29 +402,42 @@ export default function StockPortfolio() {
                 ) : (
                   filtered.map(s => (
                     <tr key={s.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                      {/* 종목명 — 모바일에서 시장·섹터 서브텍스트로 포함 */}
                       <td className="px-4 py-3">
                         <div>
-                          <p className="text-sm font-medium flex items-center gap-1.5">
+                          <p className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
                             {s.stockName}
                             {s.ticker && (
                               <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 font-mono">{s.ticker}</Badge>
                             )}
                           </p>
                           {s.broker && <p className="text-xs text-muted-foreground">{s.broker}</p>}
+                          {/* 모바일 전용: 시장·섹터 서브텍스트 */}
+                          <div className="flex items-center gap-1.5 mt-1 sm:hidden flex-wrap">
+                            {s.market && (
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${s.market === "해외" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"}`}>
+                                {s.market}
+                              </span>
+                            )}
+                            {s.sector && (
+                              <span className="text-xs text-muted-foreground">{s.sector}</span>
+                            )}
+                          </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      {/* 데스크탑 전용 시장·섹터 */}
+                      <td className="px-4 py-3 hidden sm:table-cell whitespace-nowrap">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.market === "해외" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"}`}>
                           {s.market ?? "-"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{s.sector ?? "-"}</td>
-                      <td className="px-4 py-3 text-sm text-right text-muted-foreground">
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell whitespace-nowrap">{s.sector ?? "-"}</td>
+                      <td className="px-4 py-3 text-sm text-right text-muted-foreground hidden md:table-cell">
                         {s.currentPrice ? `₩${s.currentPrice.toLocaleString("ko-KR")}` : "-"}
                       </td>
-                      <td className="px-4 py-3 text-sm text-right">₩{formatAmount(s.buyAmount)}</td>
-                      <td className="px-4 py-3 text-sm text-right font-medium">₩{formatAmount(s.currentAmount)}</td>
-                      <td className={`px-4 py-3 text-sm text-right font-semibold ${returnRateColor(s.returnRate)}`}>
+                      <td className="px-4 py-3 text-sm text-right hidden md:table-cell">₩{formatAmount(s.buyAmount)}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium whitespace-nowrap">₩{formatAmount(s.currentAmount)}</td>
+                      <td className={`px-4 py-3 text-sm text-right font-semibold whitespace-nowrap ${returnRateColor(s.returnRate)}`}>
                         {formatReturnRate(s.returnRate)}
                       </td>
                       <td className="px-4 py-3">
@@ -416,22 +458,56 @@ export default function StockPortfolio() {
           </div>
         </div>
 
-        {/* Sector Pie */}
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4">섹터별 비중</h2>
-          {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="45%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
-                  {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={(v: number) => [`₩${formatAmount(v)}`, ""]} contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "12px" }} />
-                <Legend wrapperStyle={{ fontSize: "11px" }} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-60 flex items-center justify-center text-muted-foreground text-sm">데이터 없음</div>
-          )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Sector Pie */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold mb-1">섹터별 비중</h2>
+            <p className="text-xs text-muted-foreground mb-4">현재가 평가금액 기준</p>
+            {pieData.length > 0 ? (
+              <div className="space-y-4">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={88} paddingAngle={3} dataKey="value">
+                      {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number) => [`₩${formatAmount(v)}`, ""]}
+                      contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "12px" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2">
+                  {[...pieData].sort((a, b) => b.value - a.value).map((item, i) => {
+                    const pct = totalCurrent > 0 ? (item.value / totalCurrent) * 100 : 0;
+                    return (
+                      <div key={item.name} className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                        <span className="text-xs text-foreground flex-1 truncate">{item.name}</span>
+                        <span className="text-xs text-muted-foreground w-10 text-right">{pct.toFixed(1)}%</span>
+                        <span className="text-xs font-semibold w-24 text-right">₩{formatAmount(item.value)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="h-60 flex items-center justify-center text-muted-foreground text-sm">데이터 없음</div>
+            )}
+          </div>
+
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold mb-1">투자 메모</h2>
+            <p className="text-xs text-muted-foreground mb-4">리밸런싱 계획, 관심 종목, 매매 기준 등을 자유롭게 적어두세요</p>
+            <Textarea
+              value={portfolioMemo}
+              onChange={(e) => setPortfolioMemo(e.target.value)}
+              placeholder="예: 기술주 비중 40% 이하 유지, 다음 리밸런싱 때 배당 ETF 추가 검토"
+              className="min-h-[280px] resize-none"
+            />
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {saveMemoMutation.isPending ? "저장 중..." : "DB에 자동 저장됩니다."}
+            </p>
+          </div>
         </div>
       </div>
 
