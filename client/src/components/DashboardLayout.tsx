@@ -5,6 +5,7 @@ import {
   BookOpen,
   Building2,
   CalendarDays,
+  Calculator,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -51,6 +52,10 @@ const recordItems = [
   { href: "/business-income", icon: BriefcaseBusiness, label: "사업소득" },
 ];
 
+const realEstateSubItems = [
+  { href: "/real-estate/fund-plan", icon: Calculator, label: "가용 자금 계획서" },
+];
+
 const businessSubItems = [
   { href: "/labor-costs", icon: Users, label: "인건비" },
 ];
@@ -77,6 +82,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { signOut } = useClerk();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const realEstateExpanded = location === "/real-estate" || realEstateSubItems.some(i => location === i.href);
   const businessExpanded = location === "/business-income" || businessSubItems.some(i => location === i.href);
   const debtExpanded = location === "/installments" || debtSubItems.some(i => location === i.href);
 
@@ -86,9 +92,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const renderNavItem = (item: typeof navItems[number], opts?: { collapsed?: boolean; onClick?: () => void }) => {
     const isActive = location === item.href;
     const isCollapsed = opts?.collapsed ?? false;
+    const isRealEstate = item.href === "/real-estate";
     const isBusinessIncome = item.href === "/business-income";
     const isDebt = item.href === "/installments";
-    const itemActive = isDebt ? debtExpanded : isActive;
+    const itemActive = isDebt ? debtExpanded : isRealEstate ? realEstateExpanded : isActive;
     return (
       <div key={item.href}>
         <Link href={item.href} onClick={opts?.onClick}>
@@ -108,6 +115,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             {!isCollapsed && <span className="truncate">{item.label}</span>}
           </div>
         </Link>
+        {isRealEstate && realEstateExpanded && !isCollapsed && (
+          <div className="ml-3 pl-3 border-l border-border/60">
+            {realEstateSubItems.map(sub => {
+              const isSubActive = location === sub.href;
+              return (
+                <Link key={sub.href} href={sub.href} onClick={opts?.onClick}>
+                  <div
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 text-xs font-medium"
+                    style={{
+                      backgroundColor: isSubActive ? "var(--sidebar-accent)" : "transparent",
+                      color: isSubActive ? "var(--sidebar-primary)" : "var(--sidebar-foreground)",
+                      opacity: isSubActive ? 1 : 0.65,
+                    }}
+                  >
+                    <sub.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{sub.label}</span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
         {isBusinessIncome && businessExpanded && !isCollapsed && (
           <div className="ml-3 pl-3 border-l border-border/60">
             {businessSubItems.map(sub => {
