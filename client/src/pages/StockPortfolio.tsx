@@ -52,14 +52,26 @@ export default function StockPortfolio() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const skipDebounceRef = useRef(false);
 
-  // 검색어 디바운스 (400ms)
-  const handleTickerSearch = () => {
-    if (tickerQuery.trim().length >= 1) {
-      setDebouncedQuery(tickerQuery.trim());
-      setSearchOpen(true);
+  // 입력 변경 시 400ms 디바운스 자동 검색
+  useEffect(() => {
+    if (skipDebounceRef.current) {
+      skipDebounceRef.current = false;
+      return;
     }
-  };
+    const trimmed = tickerQuery.trim();
+    if (trimmed.length < 1) {
+      setDebouncedQuery("");
+      setSearchOpen(false);
+      return;
+    }
+    const id = setTimeout(() => {
+      setDebouncedQuery(trimmed);
+      setSearchOpen(true);
+    }, 400);
+    return () => clearTimeout(id);
+  }, [tickerQuery]);
 
   // 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
@@ -118,9 +130,10 @@ export default function StockPortfolio() {
     return { buyAmount: 0, avgBuyPrice: 0 };
   };
 
-  // 현재가 조회 함수
+  // 현재가 조회 함수 — 티커가 숫자만이면 KR, 영문 포함이면 US
   const fetchPrice = useCallback(async (ticker: string, market: "국내" | "해외") => {
-    const apiMarket = market === "해외" ? "US" : "KR";
+    const isKoreanTicker = /^\d+$/.test(ticker.trim());
+    const apiMarket = isKoreanTicker ? "KR" : "US";
     try {
       const result = await utils.etfPrice.getPrice.fetch({ ticker: ticker.trim(), market: apiMarket });
       return result;
@@ -434,7 +447,7 @@ export default function StockPortfolio() {
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setForm(f => ({ ...f, market: m }))}
+                    onClick={() => { setForm(f => ({ ...f, market: m })); setTickerQuery(""); }}
                     className={`flex-1 py-2 text-sm font-medium transition-colors ${
                       form.market === m
                         ? "bg-primary text-primary-foreground"
@@ -463,16 +476,17 @@ export default function StockPortfolio() {
             {/* 종목 검색 */}
             <div ref={searchRef} className="relative">
               <Label className="text-xs">종목 검색</Label>
-              <div className="flex gap-1.5 mt-1">
+              <div className="relative mt-1">
                 <Input
                   value={tickerQuery}
                   onChange={e => setTickerQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleTickerSearch(); } }}
-                  placeholder="종목명 또는 티커 입력 (예: 삼성전자, AAPL)"
+                  onFocus={() => { if (debouncedQuery.length >= 1) setSearchOpen(true); }}
+                  placeholder={form.market === "해외" ? "영문 종목명 또는 티커 (예: AAPL, Tesla)" : "종목명 또는 종목코드 (예: 삼성전자, 005930)"}
+                  className="pr-8"
                 />
-                <Button type="button" variant="outline" size="sm" onClick={handleTickerSearch} disabled={isSearching} className="shrink-0 px-3">
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
                   {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-                </Button>
+                </span>
               </div>
               {searchOpen && searchResults.length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
@@ -484,8 +498,33 @@ export default function StockPortfolio() {
                       onMouseDown={e => {
                         e.preventDefault();
                         setForm(f => ({ ...f, ticker: r.ticker, stockName: f.stockName || r.name }));
+                        skipDebounceRef.current = true;
                         setTickerQuery(r.ticker);
+                        setDebouncedQuery("");
                         setSearchOpen(false);
+                        // 현재가 자동 조회
+                        const isKorean = /^\d+$/.test(r.ticker);
+                        const apiMarket = isKorean ? "KR" : "US";
+                        setPriceFetching(true);
+                        fetchPrice(r.ticker, isKorean ? "국내" : "해외").then(async result => {
+                          if (!result) { setPriceFetching(false); return; }
+                          let krwPrice = result.price;
+                          if (result.currency && result.currency !== "KRW") {
+                            try {
+                              const rateResult = await utils.exchangeRate.get.fetch({ currency: result.currency });
+                              krwPrice = Math.round(result.price * rateResult.rate);
+                            } catch { setPriceFetching(false); return; }
+                          }
+                          setForm(f => {
+                            const qty = parseFloat(f.quantity);
+                            const currentAmount = qty > 0 ? Math.round(krwPrice * qty) : krwPrice;
+                            const buySide = calcBuySide(f.returnRate, currentAmount, f.quantity);
+                            return { ...f, currentPrice: krwPrice, currentAmount, stockName: f.stockName || result.name, ...(buySide.buyAmount > 0 ? buySide : {}) };
+                          });
+                          setLastUpdated(new Date().toLocaleString("ko-KR"));
+                          toast.success(`현재가: ₩${krwPrice.toLocaleString("ko-KR")}`);
+                          setPriceFetching(false);
+                        });
                       }}
                     >
                       <div>
