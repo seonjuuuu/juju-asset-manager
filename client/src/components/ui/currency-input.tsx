@@ -1,6 +1,19 @@
 import { useRef, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
+function toKorean(n: number): string {
+  if (!n || n === 0) return "";
+  const eok = Math.floor(n / 100_000_000);
+  const man = Math.floor((n % 100_000_000) / 10_000);
+  const cheon = Math.floor((n % 10_000) / 1000);
+  const parts: string[] = [];
+  if (eok > 0) parts.push(`${eok}억`);
+  if (man > 0) parts.push(`${man}만`);
+  if (cheon > 0) parts.push(`${cheon}천`);
+  if (parts.length === 0) parts.push(String(n));
+  return parts.join(" ") + "원";
+}
+
 interface CurrencyInputProps {
   value: number | string;
   onChange: (numericValue: number) => void;
@@ -71,31 +84,41 @@ export function CurrencyInput({
     }
   }
 
+  const numericValue = typeof value === "string" ? parseFloat(value.replace(/,/g, "")) || 0 : value;
+  const korean = toKorean(numericValue);
+
   return (
-    <div className="relative">
-      <input
-        ref={inputRef}
-        type="text"
-        inputMode="numeric"
-        value={display}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        onFocus={handleFocus}
-        placeholder={placeholder}
-        disabled={disabled}
-        className={cn(
-          "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors",
-          "file:border-0 file:bg-transparent file:text-sm file:font-medium",
-          "placeholder:text-muted-foreground",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          suffix && "pr-10",
-          className
+    <div>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          value={display}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          onFocus={handleFocus}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={cn(
+            "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors",
+            "file:border-0 file:bg-transparent file:text-sm file:font-medium",
+            "placeholder:text-muted-foreground",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            suffix && "pr-10",
+            className
+          )}
+        />
+        {suffix && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+            {suffix}
+          </span>
         )}
-      />
-      {suffix && (
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
-          {suffix}
+      </div>
+      {korean && (
+        <span className="block mt-0.5 text-xs text-muted-foreground">
+          {korean}
         </span>
       )}
     </div>
