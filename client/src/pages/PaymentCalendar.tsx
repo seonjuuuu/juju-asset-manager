@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, CalendarDays, Wallet, Clock3 } from "lucide-react";
 
-type PaymentType = "구독결제" | "보험" | "고정지출" | "대출/할부" | "대출";
+type PaymentType = "구독결제" | "보험" | "고정지출" | "할부" | "대출";
 
 type PaymentEvent = {
   id: string;
@@ -94,7 +94,7 @@ const TYPE_STYLE: Record<PaymentType, string> = {
   "구독결제": "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300",
   "보험": "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
   "고정지출": "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
-  "대출/할부": "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300",
+  "할부": "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300",
   "대출": "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300",
 };
 
@@ -246,7 +246,7 @@ export default function PaymentCalendar() {
         date: `${key}-${pad2(clampDay(year, month, paymentDay))}`,
         title: inst.name,
         amount,
-        type: "대출/할부",
+        type: "할부",
         method: card ? `${card.cardCompany}${card.cardName ? ` ${card.cardName}` : ""}` : null,
         detail: `${inst.months}개월`,
       });
@@ -278,7 +278,7 @@ export default function PaymentCalendar() {
       "구독결제": { amount: 0, count: 0 },
       "보험": { amount: 0, count: 0 },
       "고정지출": { amount: 0, count: 0 },
-      "대출/할부": { amount: 0, count: 0 },
+      "할부": { amount: 0, count: 0 },
       "대출": { amount: 0, count: 0 },
     };
     for (const event of events) {
@@ -308,7 +308,7 @@ export default function PaymentCalendar() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">결제 예정 캘린더</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">구독, 보험, 고정지출, 대출/할부 결제일을 한 달 달력으로 확인합니다</p>
+          <p className="text-muted-foreground text-sm mt-0.5">구독, 보험, 고정지출, 할부, 대출 결제일을 한 달 달력으로 확인합니다</p>
         </div>
       </div>
 
@@ -374,7 +374,7 @@ export default function PaymentCalendar() {
             <p className="text-xs text-muted-foreground">{selectedType ? `${selectedType} 예정액` : "이번 달 예정액"}</p>
             <p className="text-xl font-bold">₩{formatAmount(visibleTotal)}</p>
             <p className="mt-1 truncate text-[11px] text-muted-foreground">
-              구독 ₩{formatAmount(typeTotals["구독결제"].amount)} · 고정 ₩{formatAmount(typeTotals["고정지출"].amount)} · 보험 ₩{formatAmount(typeTotals["보험"].amount)} · 할부 ₩{formatAmount(typeTotals["대출/할부"].amount)}
+              구독 ₩{formatAmount(typeTotals["구독결제"].amount)} · 고정 ₩{formatAmount(typeTotals["고정지출"].amount)} · 보험 ₩{formatAmount(typeTotals["보험"].amount)} · 할부 ₩{formatAmount(typeTotals["할부"].amount)}
             </p>
           </div>
         </div>
@@ -464,7 +464,7 @@ export default function PaymentCalendar() {
                 <SelectItem value="구독결제">구독결제</SelectItem>
                 <SelectItem value="고정지출">고정지출</SelectItem>
                 <SelectItem value="보험">보험</SelectItem>
-                <SelectItem value="대출/할부">대출/할부</SelectItem>
+                <SelectItem value="할부">할부</SelectItem>
                 <SelectItem value="대출">대출</SelectItem>
               </SelectContent>
             </Select>

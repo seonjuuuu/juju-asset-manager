@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +25,29 @@ const TYPE_COLOR: Record<CategoryType, string> = {
   both: "secondary",
 };
 
+type SubCategoryItem = {
+  id: number;
+  userId: number;
+  name: string;
+  categoryId: number;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  [key: string]: unknown;
+};
+
+type CategoryItem = {
+  id: number;
+  userId: number;
+  name: string;
+  type: CategoryType;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  subCategories: SubCategoryItem[];
+  [key: string]: unknown;
+};
+
 // ─── 대분류 다이얼로그 ────────────────────────────────────────────────────────
 function MainCategoryDialog({
   open,
@@ -41,10 +64,10 @@ function MainCategoryDialog({
   const [type, setType] = useState<CategoryType>(initial?.type ?? "expense");
 
   // initial 변경 시 폼 초기화
-  useState(() => {
+  useEffect(() => {
     setName(initial?.name ?? "");
     setType(initial?.type ?? "expense");
-  });
+  }, [initial]);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -106,6 +129,10 @@ function SubCategoryDialog({
 }) {
   const [name, setName] = useState(initial ?? "");
 
+  useEffect(() => {
+    setName(initial ?? "");
+  }, [initial]);
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
@@ -147,8 +174,8 @@ export default function Categories() {
     refetchOnWindowFocus: true,
   });
 
-  const invalidateCategoryConsumers = async () => {
-    await Promise.all([
+  const invalidateCategoryConsumers = () => {
+    void Promise.all([
       utils.categories.list.invalidate(),
       utils.ledger.list.invalidate(),
       utils.ledger.monthSummary.invalidate(),
@@ -159,32 +186,187 @@ export default function Categories() {
     ]);
   };
 
+  const optimisticCategoryMutation = {
+    onError: (_error: unknown, _input: unknown, context?: { previous?: CategoryItem[] }) => {
+      if (context?.previous) utils.categories.list.setData(undefined, context.previous);
+    },
+    onSettled: () => invalidateCategoryConsumers(),
+  };
+
+  const makeOptimisticBase = (previous?: CategoryItem[]) => {
+    const now = new Date();
+    return {
+      userId: previous?.[0]?.userId ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+  };
+
   // 대분류 뮤테이션
   const addMain = trpc.categories.addMain.useMutation({
-    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("대분류가 추가되었습니다"); setMainDialog(null); },
-    onError: () => toast.error("추가 실패"),
+    onMutate: async (input) => {
+      await utils.categories.list.cancel();
+      const previous = utils.categories.list.getData() as CategoryItem[] | undefined;
+      const tempId = -Date.now();
+      const base = makeOptimisticBase(previous);
+      utils.categories.list.setData(undefined, (old = []) => [
+        ...(old as CategoryItem[]),
+        { ...base, id: tempId, name: input.name, type: input.type, sortOrder: input.sortOrder ?? old.length, subCategories: [] },
+      ]);
+      setMainDialog(null);
+      return { previous, tempId };
+    },
+    onSuccess: (result, _input, context) => {
+      if (context?.tempId && result?.id) {
+        utils.categories.list.setData(undefined, (old = []) =>
+          (old as CategoryItem[]).map((cat) => (cat.id === context.tempId ? { ...cat, id: result.id } : cat)),
+        );
+      }
+      toast.success("대분류가 추가되었습니다");
+    },
+    onError: (error, input, context) => {
+      optimisticCategoryMutation.onError(error, input, context);
+      toast.error("추가 실패");
+    },
+    onSettled: optimisticCategoryMutation.onSettled,
   });
   const updateMain = trpc.categories.updateMain.useMutation({
-    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("수정되었습니다"); setMainDialog(null); },
-    onError: () => toast.error("수정 실패"),
+    onMutate: async (input) => {
+      await utils.categories.list.cancel();
+      const previous = utils.categories.list.getData() as CategoryItem[] | undefined;
+      utils.categories.list.setData(undefined, (old = []) =>
+        (old as CategoryItem[]).map((cat) =>
+          cat.id === input.id
+          ? {
+              ...cat,
+              name: input.name ?? cat.name,
+              type: input.type ?? cat.type,
+              sortOrder: input.sortOrder ?? cat.sortOrder,
+              updatedAt: new Date(),
+            }
+            : cat,
+        ),
+      );
+      setMainDialog(null);
+      return { previous };
+    },
+    onSuccess: () => toast.success("수정되었습니다"),
+    onError: (error, input, context) => {
+      optimisticCategoryMutation.onError(error, input, context);
+      toast.error("수정 실패");
+    },
+    onSettled: optimisticCategoryMutation.onSettled,
   });
   const deleteMain = trpc.categories.deleteMain.useMutation({
-    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("삭제되었습니다"); },
-    onError: () => toast.error("삭제 실패"),
+    onMutate: async (input) => {
+      await utils.categories.list.cancel();
+      const previous = utils.categories.list.getData() as CategoryItem[] | undefined;
+      utils.categories.list.setData(undefined, (old = []) => (old as CategoryItem[]).filter((cat) => cat.id !== input.id));
+      return { previous };
+    },
+    onSuccess: () => toast.success("삭제되었습니다"),
+    onError: (error, input, context) => {
+      optimisticCategoryMutation.onError(error, input, context);
+      toast.error("삭제 실패");
+    },
+    onSettled: optimisticCategoryMutation.onSettled,
   });
 
   // 중분류 뮤테이션
   const addSub = trpc.categories.addSub.useMutation({
-    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("중분류가 추가되었습니다"); setSubDialog(null); },
-    onError: () => toast.error("추가 실패"),
+    onMutate: async (input) => {
+      await utils.categories.list.cancel();
+      const previous = utils.categories.list.getData() as CategoryItem[] | undefined;
+      const tempId = -Date.now();
+      const base = makeOptimisticBase(previous);
+      utils.categories.list.setData(undefined, (old = []) =>
+        (old as CategoryItem[]).map((cat) =>
+          cat.id === input.categoryId
+            ? {
+                ...cat,
+                subCategories: [
+                  ...cat.subCategories,
+                  {
+                    ...base,
+                    id: tempId,
+                    categoryId: input.categoryId,
+                    name: input.name,
+                    sortOrder: input.sortOrder ?? cat.subCategories.length,
+                  },
+                ],
+              }
+            : cat,
+        ),
+      );
+      setExpanded((prev) => ({ ...prev, [input.categoryId]: true }));
+      setSubDialog(null);
+      return { previous, tempId };
+    },
+    onSuccess: (result, input, context) => {
+      if (context?.tempId && result?.id) {
+        utils.categories.list.setData(undefined, (old = []) =>
+          (old as CategoryItem[]).map((cat) =>
+            cat.id === input.categoryId
+              ? {
+                  ...cat,
+                  subCategories: cat.subCategories.map((sub) =>
+                    sub.id === context.tempId ? { ...sub, id: result.id } : sub,
+                  ),
+                }
+              : cat,
+          ),
+        );
+      }
+      toast.success("중분류가 추가되었습니다");
+    },
+    onError: (error, input, context) => {
+      optimisticCategoryMutation.onError(error, input, context);
+      toast.error("추가 실패");
+    },
+    onSettled: optimisticCategoryMutation.onSettled,
   });
   const updateSub = trpc.categories.updateSub.useMutation({
-    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("수정되었습니다"); setSubDialog(null); },
-    onError: () => toast.error("수정 실패"),
+    onMutate: async (input) => {
+      await utils.categories.list.cancel();
+      const previous = utils.categories.list.getData() as CategoryItem[] | undefined;
+      utils.categories.list.setData(undefined, (old = []) =>
+        (old as CategoryItem[]).map((cat) => ({
+          ...cat,
+          subCategories: cat.subCategories.map((sub) =>
+            sub.id === input.id
+              ? { ...sub, name: input.name ?? sub.name, sortOrder: input.sortOrder ?? sub.sortOrder, updatedAt: new Date() }
+              : sub,
+          ),
+        })),
+      );
+      setSubDialog(null);
+      return { previous };
+    },
+    onSuccess: () => toast.success("수정되었습니다"),
+    onError: (error, input, context) => {
+      optimisticCategoryMutation.onError(error, input, context);
+      toast.error("수정 실패");
+    },
+    onSettled: optimisticCategoryMutation.onSettled,
   });
   const deleteSub = trpc.categories.deleteSub.useMutation({
-    onSuccess: async () => { await invalidateCategoryConsumers(); toast.success("삭제되었습니다"); },
-    onError: () => toast.error("삭제 실패"),
+    onMutate: async (input) => {
+      await utils.categories.list.cancel();
+      const previous = utils.categories.list.getData() as CategoryItem[] | undefined;
+      utils.categories.list.setData(undefined, (old = []) =>
+        (old as CategoryItem[]).map((cat) => ({
+          ...cat,
+          subCategories: cat.subCategories.filter((sub) => sub.id !== input.id),
+        })),
+      );
+      return { previous };
+    },
+    onSuccess: () => toast.success("삭제되었습니다"),
+    onError: (error, input, context) => {
+      optimisticCategoryMutation.onError(error, input, context);
+      toast.error("삭제 실패");
+    },
+    onSettled: optimisticCategoryMutation.onSettled,
   });
 
   // 다이얼로그 상태

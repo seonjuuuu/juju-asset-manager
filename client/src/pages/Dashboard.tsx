@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { formatAmount, MONTH_NAMES, currentYear } from "@/lib/utils";
-import { ledgerSubCostForMonth } from "@/lib/subscriptionLedger";
+import { ledgerSubCostForMonth, subscriptionLedgerDate } from "@/lib/subscriptionLedger";
 import {
   BarChart,
   Bar,
@@ -14,8 +14,62 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { BellRing, CalendarDays, CreditCard, Star, TrendingDown, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function monthKey(year: number, month: number) {
+  return `${year}-${pad2(month)}`;
+}
+
+function clampDay(year: number, month: number, day: number) {
+  const last = new Date(year, month, 0).getDate();
+  return Math.min(Math.max(1, day), last);
+}
+
+function isValidDate(value: string | null | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(value);
+  return !Number.isNaN(d.getTime());
+}
+
+function daysUntil(date: string, today: Date) {
+  const start = new Date(today);
+  start.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function fixedExpenseAppliesToMonth(
+  expense: { isActive?: boolean | null; startDate?: string | null; expiryDate?: string | null },
+  year: number,
+  month: number,
+) {
+  const key = monthKey(year, month);
+  if (expense.isActive === false) return false;
+  if (expense.startDate && expense.startDate.slice(0, 7) > key) return false;
+  if (expense.expiryDate && expense.expiryDate.slice(0, 7) < key) return false;
+  return true;
+}
+
+function insuranceAppliesToMonth(
+  ins: { startDate?: string | null; endDate?: string | null; paymentType: string },
+  year: number,
+  month: number,
+) {
+  const key = monthKey(year, month);
+  if (ins.startDate && ins.startDate.slice(0, 7) > key) return false;
+  if (ins.endDate && ins.endDate.slice(0, 7) < key) return false;
+  if (ins.paymentType === "annual") {
+    const annualMonth = ins.startDate ? Number(ins.startDate.slice(5, 7)) : 1;
+    return annualMonth === month;
+  }
+  return true;
+}
 
 function getInstallmentCostForMonth(
   inst: { totalAmount: number; months: number; startDate: string; endDate: string; isInterestFree?: boolean; interestRate?: string | null },
@@ -87,10 +141,13 @@ export default function Dashboard() {
 
   // 사업소득 전체 목록
   const { data: businessIncomeList = [] } = trpc.businessIncome.list.useQuery();
+  const { data: blogCampaigns = [] } = trpc.blogCampaign.list.useQuery();
 
   // 할부 목록
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
   const { data: loanList = [] } = trpc.loan.list.useQuery();
+  const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
+  const { data: cardList = [] } = trpc.card.list.useQuery();
 
   // 차트 legend 토글 state
   const [hiddenMonthly, setHiddenMonthly] = useState<Record<string, boolean>>({});
@@ -104,6 +161,156 @@ export default function Dashboard() {
 
   // 보험 목록
   const { data: insuranceList = [] } = trpc.insurance.list.useQuery();
+
+  const dashboardAlerts = useMemo(() => {
+    const today = new Date();
+    const currentYearFromToday = today.getFullYear();
+    const currentMonthFromToday = today.getMonth() + 1;
+    const key = monthKey(currentYearFromToday, currentMonthFromToday);
+    const todayKey = `${key}-${pad2(today.getDate())}`;
+    const cardMap = new Map((cardList as Array<{ id: number; cardCompany: string; cardName?: string | null; paymentDate?: string | null }>).map((card) => [card.id, card]));
+
+    const payments: Array<{ id: string; date: string; title: string; amount: number; type: string }> = [];
+
+    for (const sub of subscriptions ?? []) {
+      const s = sub as {
+        id: number;
+        serviceName: string;
+        billingCycle: string;
+        price: number;
+        sharedCount?: number;
+        billingDay?: number | null;
+        startDate?: string | null;
+        paymentMethod?: string | null;
+        isPaused?: boolean | null;
+        pausedFrom?: string | null;
+      };
+      const amount = ledgerSubCostForMonth(currentYearFromToday, currentMonthFromToday, s);
+      if (amount <= 0) continue;
+      payments.push({
+        id: `subscription-${s.id}`,
+        date: subscriptionLedgerDate(currentYearFromToday, currentMonthFromToday, s.billingCycle, s.billingDay, s.startDate),
+        title: s.serviceName,
+        amount,
+        type: "구독",
+      });
+    }
+
+    for (const expense of fixedExpenses as Array<{
+      id: number;
+      mainCategory: string;
+      subCategory?: string | null;
+      description?: string | null;
+      monthlyAmount: number;
+      startDate?: string | null;
+      expiryDate?: string | null;
+      paymentDay?: number | null;
+      isActive?: boolean | null;
+    }>) {
+      if (!fixedExpenseAppliesToMonth(expense, currentYearFromToday, currentMonthFromToday) || expense.monthlyAmount <= 0) continue;
+      const day = clampDay(currentYearFromToday, currentMonthFromToday, expense.paymentDay ?? 1);
+      payments.push({
+        id: `fixed-${expense.id}`,
+        date: `${key}-${pad2(day)}`,
+        title: expense.description || expense.subCategory || expense.mainCategory,
+        amount: expense.monthlyAmount,
+        type: "고정",
+      });
+    }
+
+    for (const ins of insuranceList as Array<{
+      id: number;
+      name: string;
+      startDate: string;
+      endDate?: string | null;
+      paymentType: string;
+      paymentDay?: number | null;
+      paymentAmount: number;
+    }>) {
+      if (!insuranceAppliesToMonth(ins, currentYearFromToday, currentMonthFromToday) || ins.paymentAmount <= 0) continue;
+      const day = clampDay(currentYearFromToday, currentMonthFromToday, ins.paymentDay ?? 1);
+      payments.push({
+        id: `insurance-${ins.id}`,
+        date: `${key}-${pad2(day)}`,
+        title: ins.name,
+        amount: ins.paymentAmount,
+        type: "보험",
+      });
+    }
+
+    for (const inst of installmentList as Array<{
+      id: number;
+      name: string;
+      cardId?: number | null;
+      totalAmount: number;
+      months: number;
+      startDate: string;
+      endDate: string;
+      isInterestFree: boolean;
+      interestRate: string | null;
+    }>) {
+      if (getInstallmentCostForMonth(inst, currentYearFromToday, currentMonthFromToday) <= 0) continue;
+      const card = inst.cardId ? cardMap.get(inst.cardId) : null;
+      const paymentDay = card?.paymentDate ? parseInt(card.paymentDate.replace(/[^0-9]/g, ""), 10) || 15 : 15;
+      payments.push({
+        id: `installment-${inst.id}`,
+        date: `${key}-${pad2(clampDay(currentYearFromToday, currentMonthFromToday, paymentDay))}`,
+        title: inst.name,
+        amount: getInstallmentCostForMonth(inst, currentYearFromToday, currentMonthFromToday),
+        type: "할부",
+      });
+    }
+
+    for (const loan of loanList as Array<{
+      id: number;
+      name: string;
+      startDate: string;
+      maturityDate?: string | null;
+      paymentDay?: number | null;
+      remainingPrincipal: number;
+      monthlyPayment: number;
+    }>) {
+      const amount = getLoanCostForMonth(loan, currentYearFromToday, currentMonthFromToday);
+      if (amount <= 0) continue;
+      payments.push({
+        id: `loan-${loan.id}`,
+        date: `${key}-${pad2(clampDay(currentYearFromToday, currentMonthFromToday, loan.paymentDay ?? 1))}`,
+        title: loan.name,
+        amount,
+        type: "대출",
+      });
+    }
+
+    const sortedPayments = payments.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
+    const upcomingPayments = sortedPayments.filter((payment) => payment.date >= todayKey);
+    const urgentCampaigns = (blogCampaigns as Array<{
+      id: number;
+      platform?: string | null;
+      businessName?: string | null;
+      endDate?: string | null;
+      completed?: boolean | null;
+    }>)
+      .filter((campaign) => {
+        if (campaign.completed || !isValidDate(campaign.endDate)) return false;
+        const diff = daysUntil(campaign.endDate, today);
+        return diff >= 0 && diff <= 7;
+      })
+      .map((campaign) => ({
+        id: campaign.id,
+        title: campaign.businessName ?? campaign.platform ?? "체험단",
+        endDate: campaign.endDate!,
+        daysLeft: daysUntil(campaign.endDate!, today),
+      }))
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+
+    return {
+      paymentCount: sortedPayments.length,
+      upcomingPaymentCount: upcomingPayments.length,
+      upcomingPaymentTotal: upcomingPayments.reduce((sum, payment) => sum + payment.amount, 0),
+      upcomingPayments: upcomingPayments.slice(0, 5),
+      urgentCampaigns: urgentCampaigns.slice(0, 4),
+    };
+  }, [blogCampaigns, cardList, fixedExpenses, installmentList, insuranceList, loanList, subscriptions]);
 
   // 부수입 월별 합계 맵 (month → total)
   const sideIncomeByMonth = useMemo(() => {
@@ -337,6 +544,8 @@ export default function Dashboard() {
         <p className="text-sm text-muted-foreground mt-0.5">{currentYear}년 자산 현황</p>
       </div>
 
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-6 min-w-0">
       {/* 이달 수입·지출 요약 */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
@@ -539,6 +748,109 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
       )}
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">알림</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">오늘 기준 확인할 일</p>
+              </div>
+              <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <BellRing className="h-4 w-4" />
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  이번 달 결제
+                </div>
+                <p className="mt-1 text-xl font-bold text-foreground">{dashboardAlerts.paymentCount}건</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  남은 결제
+                </div>
+                <p className="mt-1 text-xl font-bold text-foreground">{dashboardAlerts.upcomingPaymentCount}건</p>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">오늘 이후 결제 예정액</p>
+              <p className="mt-1 text-lg font-bold text-foreground">₩{formatAmount(dashboardAlerts.upcomingPaymentTotal)}</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">다가오는 결제</h3>
+              <span className="text-[11px] text-muted-foreground">{currentMonth}월</span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {dashboardAlerts.upcomingPayments.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+                  남은 결제가 없습니다
+                </div>
+              ) : (
+                dashboardAlerts.upcomingPayments.map((payment) => (
+                  <div key={payment.id} className="rounded-lg border border-border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-foreground">{payment.date.slice(5)}</span>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{payment.type}</span>
+                        </div>
+                        <p className="mt-1 truncate text-sm font-medium text-foreground">{payment.title}</p>
+                      </div>
+                      <p className="shrink-0 text-xs font-bold text-foreground">₩{formatAmount(payment.amount)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">체험단 마감</h3>
+              <Star className="h-4 w-4 text-amber-500" />
+            </div>
+            <div className="mt-3 space-y-2">
+              {dashboardAlerts.urgentCampaigns.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+                  7일 이내 마감이 없습니다
+                </div>
+              ) : (
+                dashboardAlerts.urgentCampaigns.map((campaign) => {
+                  const isToday = campaign.daysLeft === 0;
+                  return (
+                    <div
+                      key={campaign.id}
+                      className={`rounded-lg border p-3 ${
+                        isToday
+                          ? "border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20"
+                          : "border-orange-200 bg-orange-50 dark:border-orange-900/50 dark:bg-orange-950/20"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-medium text-foreground">{campaign.title}</p>
+                        <span className={`shrink-0 text-xs font-bold ${isToday ? "text-red-600" : "text-orange-600"}`}>
+                          {isToday ? "D-day" : `D-${campaign.daysLeft}`}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">마감 {campaign.endDate}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
