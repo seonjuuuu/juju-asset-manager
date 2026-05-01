@@ -27,6 +27,7 @@ import {
   BriefcaseBusiness,
   Users,
   X,
+  ClipboardCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
@@ -54,6 +55,7 @@ const recordItems = [
 
 const realEstateSubItems = [
   { href: "/real-estate/fund-plan", icon: Calculator, label: "가용 자금 계획서" },
+  { href: "/real-estate/final-budget", icon: ClipboardCheck, label: "최종예산확정서" },
 ];
 
 const businessSubItems = [

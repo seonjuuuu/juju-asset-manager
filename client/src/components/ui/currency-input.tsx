@@ -1,7 +1,9 @@
 import { useRef, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
-function toKorean(n: number): string {
+type KoreanUnit = "won" | "manwon";
+
+function toKoreanWon(n: number): string {
   if (!n || n === 0) return "";
   const eok = Math.floor(n / 100_000_000);
   const man = Math.floor((n % 100_000_000) / 10_000);
@@ -14,6 +16,22 @@ function toKorean(n: number): string {
   return parts.join(" ") + "원";
 }
 
+function formatSmallKorean(n: number): string {
+  if (n >= 1000 && n % 1000 === 0) return `${n / 1000}천`;
+  if (n >= 1000) return `${Math.floor(n / 1000)}천 ${n % 1000}`;
+  return n.toLocaleString("ko-KR");
+}
+
+function toKoreanManwon(n: number): string {
+  if (!n || n === 0) return "";
+  const eok = Math.floor(n / 10_000);
+  const manwon = n % 10_000;
+  const parts: string[] = [];
+  if (eok > 0) parts.push(`${eok.toLocaleString("ko-KR")}억`);
+  if (manwon > 0) parts.push(`${formatSmallKorean(manwon)}만원`);
+  return parts.join(" ");
+}
+
 interface CurrencyInputProps {
   value: number | string;
   onChange: (numericValue: number) => void;
@@ -21,6 +39,7 @@ interface CurrencyInputProps {
   className?: string;
   disabled?: boolean;
   suffix?: string; // 예: "원", "만원"
+  koreanUnit?: KoreanUnit;
 }
 
 /**
@@ -35,6 +54,7 @@ export function CurrencyInput({
   className,
   disabled,
   suffix,
+  koreanUnit = "won",
 }: CurrencyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -85,7 +105,7 @@ export function CurrencyInput({
   }
 
   const numericValue = typeof value === "string" ? parseFloat(value.replace(/,/g, "")) || 0 : value;
-  const korean = toKorean(numericValue);
+  const korean = koreanUnit === "manwon" ? toKoreanManwon(numericValue) : toKoreanWon(numericValue);
 
   return (
     <div>

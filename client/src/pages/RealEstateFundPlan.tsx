@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { formatAmount } from "@/lib/utils";
 import { Calculator } from "lucide-react";
 
+import { RE_FUND_PLAN_LS_KEY } from "@/lib/real-estate-fund-plan-total";
+
 type FundItem = { key: string; label: string; hint: string; enabled: boolean; amount: number };
 type FundSection = { id: string; title: string; items: FundItem[] };
 
@@ -59,11 +61,9 @@ const INITIAL_SECTIONS: FundSection[] = [
   },
 ];
 
-const LS_KEY = "re_fund_plan_v1";
-
 function loadSections(): FundSection[] {
   try {
-    const saved = localStorage.getItem(LS_KEY);
+    const saved = localStorage.getItem(RE_FUND_PLAN_LS_KEY);
     if (!saved) return INITIAL_SECTIONS;
     const parsed: { [key: string]: { enabled: boolean; amount: number } } = JSON.parse(saved);
     return INITIAL_SECTIONS.map(sec => ({
@@ -81,7 +81,8 @@ export default function RealEstateFundPlan() {
   useEffect(() => {
     const flat: { [key: string]: { enabled: boolean; amount: number } } = {};
     sections.forEach(sec => sec.items.forEach(item => { flat[item.key] = { enabled: item.enabled, amount: item.amount }; }));
-    localStorage.setItem(LS_KEY, JSON.stringify(flat));
+    localStorage.setItem(RE_FUND_PLAN_LS_KEY, JSON.stringify(flat));
+    window.dispatchEvent(new CustomEvent("re-fund-plan-updated"));
   }, [sections]);
 
   const toggle = (secId: string, key: string) => {
@@ -114,6 +115,27 @@ export default function RealEstateFundPlan() {
         </div>
       </div>
 
+      {/* 총합 카드 */}
+      <div className="bg-primary/10 border border-primary/20 rounded-xl px-5 py-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">총 가용 자금 합계</p>
+            <p className="text-3xl font-bold text-primary">{formatAmount(total)}<span className="text-lg ml-1">만원</span></p>
+          </div>
+          <div className="text-right space-y-1">
+            {sections.map(sec => {
+              const secTotal = sec.items.filter(i => i.enabled).reduce((s, i) => s + i.amount, 0);
+              if (secTotal === 0) return null;
+              return (
+                <p key={sec.id} className="text-xs text-muted-foreground">
+                  {sec.title}: <span className="font-semibold text-foreground">{formatAmount(secTotal)}만원</span>
+                </p>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-4">
         {sections.map(sec => (
           <div key={sec.id} className="bg-card border border-border rounded-xl p-5">
@@ -141,6 +163,7 @@ export default function RealEstateFundPlan() {
                           value={item.amount}
                           onChange={v => setAmount(sec.id, item.key, v)}
                           suffix="만원"
+                          koreanUnit="manwon"
                           placeholder="0"
                         />
                       </div>
@@ -154,27 +177,6 @@ export default function RealEstateFundPlan() {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* 총합 카드 */}
-      <div className="bg-primary/10 border border-primary/20 rounded-xl px-5 py-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">총 가용 자금 합계</p>
-            <p className="text-3xl font-bold text-primary">{formatAmount(total)}<span className="text-lg ml-1">만원</span></p>
-          </div>
-          <div className="text-right space-y-1">
-            {sections.map(sec => {
-              const secTotal = sec.items.filter(i => i.enabled).reduce((s, i) => s + i.amount, 0);
-              if (secTotal === 0) return null;
-              return (
-                <p key={sec.id} className="text-xs text-muted-foreground">
-                  {sec.title}: <span className="font-semibold text-foreground">{formatAmount(secTotal)}만원</span>
-                </p>
-              );
-            })}
-          </div>
-        </div>
       </div>
     </div>
   );

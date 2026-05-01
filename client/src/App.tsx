@@ -18,6 +18,7 @@ import Pension from "./pages/Pension";
 import OtherAssets from "./pages/OtherAssets";
 import RealEstate from "./pages/RealEstate";
 import RealEstateFundPlan from "./pages/RealEstateFundPlan";
+import RealEstateFinalBudget from "./pages/RealEstateFinalBudget";
 import BlogCampaigns from "./pages/BlogCampaigns";
 import Cards from "./pages/Cards";
 import Subscriptions from "./pages/Subscriptions";
@@ -50,6 +51,7 @@ function Router() {
             <Route path="/other-assets" component={OtherAssets} />
             <Route path="/real-estate" component={RealEstate} />
             <Route path="/real-estate/fund-plan" component={RealEstateFundPlan} />
+            <Route path="/real-estate/final-budget" component={RealEstateFinalBudget} />
             <Route path="/blog-campaigns" component={BlogCampaigns} />
             <Route path="/cards" component={Cards} />
             <Route path="/subscriptions" component={Subscriptions} />
