@@ -1,4 +1,3 @@
-import { ClerkProvider } from "@clerk/react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
@@ -6,6 +5,7 @@ import SignInPage from "@/pages/SignIn";
 import SignUpPage from "@/pages/SignUp";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { AuthSessionProvider } from "./contexts/AuthSessionContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
@@ -74,16 +74,16 @@ function Router() {
 
 function App() {
   return (
-    <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
-      <ErrorBoundary>
+    <ErrorBoundary>
+      <AuthSessionProvider>
         <ThemeProvider defaultTheme="light">
           <TooltipProvider>
             <Toaster />
             <Router />
           </TooltipProvider>
         </ThemeProvider>
-      </ErrorBoundary>
-    </ClerkProvider>
+      </AuthSessionProvider>
+    </ErrorBoundary>
   );
 }
 

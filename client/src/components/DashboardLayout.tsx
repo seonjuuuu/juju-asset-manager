@@ -1,4 +1,4 @@
-import { useAuth, useUser, useClerk } from "@clerk/react";
+import { useAuthSession } from "@/contexts/AuthSessionContext";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
@@ -79,9 +79,8 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [location, setLocation] = useLocation();
-  const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { session, user, isReady, signOut } = useAuthSession();
+  const isSignedIn = !!session;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const realEstateExpanded = location === "/real-estate" || realEstateSubItems.some(i => location === i.href);
@@ -92,13 +91,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   useEffect(() => { setMobileOpen(false); }, [location]);
 
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
+    if (isReady && !isSignedIn) {
       setLocation("/sign-in", { replace: true });
     }
-  }, [isLoaded, isSignedIn, setLocation]);
+  }, [isReady, isSignedIn, setLocation]);
 
   const handleSignOut = async () => {
-    await signOut({ redirectUrl: "/sign-in" });
+    await signOut();
     setLocation("/sign-in", { replace: true });
   };
 
@@ -218,12 +217,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
           style={{ backgroundColor: "var(--sidebar-primary)", color: "var(--sidebar-primary-foreground)" }}
         >
-          {user?.firstName?.[0] ?? user?.emailAddresses?.[0]?.emailAddress?.[0] ?? "U"}
+          {(user?.user_metadata?.full_name as string | undefined)?.[0] ?? user?.email?.[0] ?? "U"}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium truncate">{user?.firstName ?? "사용자"}</p>
+          <p className="text-xs font-medium truncate">
+            {(user?.user_metadata?.full_name as string | undefined)?.trim() || user?.email?.split("@")[0] || "사용자"}
+          </p>
           <p className="text-xs truncate" style={{ opacity: 0.5 }}>
-            {user?.emailAddresses?.[0]?.emailAddress ?? ""}
+            {user?.email ?? ""}
           </p>
         </div>
       </div>
@@ -238,7 +239,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 
-  if (!isLoaded || !isSignedIn) {
+  if (!isReady || !isSignedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">

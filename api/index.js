@@ -1,7 +1,6 @@
 // server/vercel-handler.ts
 import "dotenv/config";
 import express from "express";
-import { clerkMiddleware } from "@clerk/express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // server/_core/env.ts
@@ -2353,11 +2352,125 @@ var appRouter = router({
   })
 });
 
+// server/_core/supabaseAuth.ts
+import { createClient } from "@supabase/supabase-js";
+import { createRemoteJWKSet, jwtVerify } from "jose";
+function stripBearer(authorizationHeader) {
+  if (!authorizationHeader?.startsWith("Bearer ")) return "";
+  return authorizationHeader.slice(7).trim();
+}
+function getSupabaseUrl() {
+  const u = process.env.SUPABASE_URL?.trim() || process.env.VITE_SUPABASE_URL?.trim();
+  return u || void 0;
+}
+var _serviceClient = null;
+var _serviceTried = false;
+function getServiceRoleClient() {
+  if (_serviceTried) return _serviceClient;
+  _serviceTried = true;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const url = getSupabaseUrl();
+  if (!key || !url) return null;
+  _serviceClient = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  return _serviceClient;
+}
+async function verifyWithJwtSecret(bearer) {
+  const secret = process.env.SUPABASE_JWT_SECRET?.trim();
+  if (!secret) return null;
+  try {
+    const { payload } = await jwtVerify(bearer, new TextEncoder().encode(secret), {
+      algorithms: ["HS256"]
+    });
+    const sub = typeof payload.sub === "string" ? payload.sub : null;
+    if (!sub) return null;
+    const email = typeof payload.email === "string" ? payload.email : void 0;
+    return { openId: sub, email };
+  } catch {
+    return null;
+  }
+}
+async function verifyWithProjectJwks(bearer) {
+  const base = getSupabaseUrl()?.replace(/\/$/, "");
+  if (!base) return null;
+  const issuer = `${base}/auth/v1`;
+  const jwksUrl = new URL(`${issuer}/.well-known/jwks.json`);
+  const JWKS = createRemoteJWKSet(jwksUrl);
+  try {
+    const { payload } = await jwtVerify(bearer, JWKS, {
+      issuer,
+      audience: "authenticated"
+    });
+    const sub = typeof payload.sub === "string" ? payload.sub : null;
+    if (!sub) return null;
+    const email = typeof payload.email === "string" ? payload.email : void 0;
+    return { openId: sub, email };
+  } catch {
+    try {
+      const { payload } = await jwtVerify(bearer, JWKS, { issuer });
+      const sub = typeof payload.sub === "string" ? payload.sub : null;
+      if (!sub) return null;
+      const email = typeof payload.email === "string" ? payload.email : void 0;
+      return { openId: sub, email };
+    } catch {
+      return null;
+    }
+  }
+}
+async function verifySupabaseAccessToken(authorizationHeader) {
+  const bearer = stripBearer(authorizationHeader);
+  if (!bearer) return null;
+  const svc = getServiceRoleClient();
+  if (svc) {
+    const { data, error } = await svc.auth.getUser(bearer);
+    if (!error && data.user) {
+      const u = data.user;
+      return { openId: u.id, email: u.email ?? void 0 };
+    }
+    console.warn("[auth] service getUser \uC2E4\uD328, JWKS/\uB808\uAC70\uC2DC \uC2DC\uD06C\uB9BF\uC73C\uB85C \uC7AC\uC2DC\uB3C4:", error?.message ?? "no user");
+  }
+  const fromSecret = await verifyWithJwtSecret(bearer);
+  if (fromSecret) return fromSecret;
+  const fromJwks = await verifyWithProjectJwks(bearer);
+  if (fromJwks) return fromJwks;
+  console.warn(
+    "[auth] \uD1A0\uD070 \uAC80\uC99D \uC2E4\uD328. \uB85C\uCEEC: .env\uC5D0 SUPABASE_SERVICE_ROLE_KEY \uB610\uB294 SUPABASE_URL+VITE \uB3D9\uC77C \uD504\uB85C\uC81D\uD2B8, \uB610\uB294 SUPABASE_JWT_SECRET \uB97C \uD655\uC778\uD558\uC138\uC694."
+  );
+  return null;
+}
+
 // server/_core/context.ts
-import { getAuth } from "@clerk/express";
 var DEV_USER_ID = 1;
+function hasBearerAttempt(authorization) {
+  if (!authorization?.startsWith("Bearer ")) return false;
+  return authorization.slice(7).trim().length > 0;
+}
+async function resolveUserFromBearer(authorization) {
+  const jwtUser = await verifySupabaseAccessToken(authorization);
+  if (!jwtUser) return null;
+  let user = await getUserByOpenId(jwtUser.openId) ?? null;
+  if (!user) {
+    await upsertUser({
+      openId: jwtUser.openId,
+      email: jwtUser.email,
+      loginMethod: "supabase",
+      lastSignedIn: /* @__PURE__ */ new Date()
+    });
+    user = await getUserByOpenId(jwtUser.openId) ?? null;
+  }
+  return user;
+}
 async function createContext(opts) {
+  const authHeader = opts.req.headers.authorization;
   if (process.env.NODE_ENV === "development") {
+    const fromJwt = await resolveUserFromBearer(authHeader);
+    if (fromJwt) {
+      return { req: opts.req, res: opts.res, user: fromJwt };
+    }
+    if (hasBearerAttempt(authHeader)) {
+      return { req: opts.req, res: opts.res, user: null };
+    }
     const dbUser = await getUserById(DEV_USER_ID);
     const user2 = dbUser ?? {
       id: DEV_USER_ID,
@@ -2375,18 +2488,9 @@ async function createContext(opts) {
   }
   let user = null;
   try {
-    const auth = getAuth(opts.req);
-    const openId = auth?.userId;
-    if (openId) {
-      user = await getUserByOpenId(openId) ?? null;
-      if (!user) {
-        await upsertUser({ openId, lastSignedIn: /* @__PURE__ */ new Date() });
-        user = await getUserByOpenId(openId) ?? null;
-      }
-    }
+    user = await resolveUserFromBearer(authHeader);
   } catch (err) {
     console.error("[Context] auth error:", err);
-    user = null;
   }
   return { req: opts.req, res: opts.res, user };
 }
@@ -2395,13 +2499,6 @@ async function createContext(opts) {
 var app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-var fallbackClerkPublishableKey = "pk_test_YmFsYW5jZWQtb3N0cmljaC0yNi5jbGVyay5hY2NvdW50cy5kZXYk";
-var clerkPublishableKeyFromEnv = process.env.CLERK_PUBLISHABLE_KEY ?? process.env.VITE_CLERK_PUBLISHABLE_KEY ?? "";
-var clerkPublishableKey = process.env.NODE_ENV === "production" ? clerkPublishableKeyFromEnv : clerkPublishableKeyFromEnv || fallbackClerkPublishableKey;
-app.use(clerkMiddleware({
-  publishableKey: clerkPublishableKey,
-  secretKey: process.env.CLERK_SECRET_KEY
-}));
 registerStorageProxy(app);
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });

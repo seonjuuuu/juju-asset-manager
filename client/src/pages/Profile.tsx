@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
-import { useUser } from "@clerk/react";
+import { useAuthSession } from "@/contexts/AuthSessionContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,22 +26,24 @@ function calcAge(birthDate: string): number {
 }
 
 export default function Profile() {
-  const { user } = useUser();
+  const { user: authUser } = useAuthSession();
   const utils = trpc.useUtils();
 
   const dbUser = trpc.auth.me.useQuery().data as { name?: string | null; birthDate?: string | null } | null;
-  const [name, setName] = useState(dbUser?.name ?? user?.fullName ?? "");
+  const displayNameFallback =
+    (authUser?.user_metadata?.full_name as string | undefined)?.trim() || authUser?.email?.split("@")[0] || "";
+  const [name, setName] = useState(dbUser?.name ?? displayNameFallback);
   const [birthDate, setBirthDate] = useState(dbUser?.birthDate ?? "");
   const [calOpen, setCalOpen] = useState(false);
 
   const initialized = useRef(false);
   useEffect(() => {
     if (dbUser && !initialized.current) {
-      setName(dbUser.name ?? user?.fullName ?? "");
+      setName(dbUser.name ?? displayNameFallback);
       setBirthDate(dbUser.birthDate ?? "");
       initialized.current = true;
     }
-  }, [dbUser, user]);
+  }, [dbUser, displayNameFallback]);
 
   const updateMutation = trpc.auth.updateProfile.useMutation({
     onSuccess: () => {
@@ -85,7 +87,7 @@ export default function Profile() {
           {/* 이메일 (읽기 전용) */}
           <div className="space-y-1">
             <Label>이메일</Label>
-            <Input value={user?.primaryEmailAddress?.emailAddress ?? ""} disabled className="bg-muted" />
+            <Input value={authUser?.email ?? ""} disabled className="bg-muted" />
           </div>
 
           {/* 생년월일 */}

@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { getAuth } from "@clerk/express";
+import { verifySupabaseAccessToken } from "./supabaseAuth";
 import { getUserById, getUserByOpenId, upsertUser } from "../db";
 
 export type TrpcContext = {
@@ -11,10 +11,41 @@ export type TrpcContext = {
 
 const DEV_USER_ID = 1;
 
+function hasBearerAttempt(authorization: string | undefined): boolean {
+  if (!authorization?.startsWith("Bearer ")) return false;
+  return authorization.slice(7).trim().length > 0;
+}
+
+async function resolveUserFromBearer(authorization: string | undefined): Promise<User | null> {
+  const jwtUser = await verifySupabaseAccessToken(authorization);
+  if (!jwtUser) return null;
+  let user = await getUserByOpenId(jwtUser.openId) ?? null;
+  if (!user) {
+    await upsertUser({
+      openId: jwtUser.openId,
+      email: jwtUser.email,
+      loginMethod: "supabase",
+      lastSignedIn: new Date(),
+    });
+    user = await getUserByOpenId(jwtUser.openId) ?? null;
+  }
+  return user;
+}
+
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
+  const authHeader = opts.req.headers.authorization;
+
   if (process.env.NODE_ENV === "development") {
+    const fromJwt = await resolveUserFromBearer(authHeader);
+    if (fromJwt) {
+      return { req: opts.req, res: opts.res, user: fromJwt };
+    }
+    /** 로그인 토큰을 보냈는데 검증 실패 → 예전처럼 DEV_USER 로 뭉개면 모든 계정이 데이터 공유됨 */
+    if (hasBearerAttempt(authHeader)) {
+      return { req: opts.req, res: opts.res, user: null };
+    }
     const dbUser = await getUserById(DEV_USER_ID);
     const user: User = dbUser ?? {
       id: DEV_USER_ID,
@@ -33,20 +64,9 @@ export async function createContext(
 
   let user: User | null = null;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const auth = getAuth(opts.req as any);
-    const openId = auth?.userId;
-    if (openId) {
-      user = await getUserByOpenId(openId) ?? null;
-      if (!user) {
-        // Auto-create user on first login via Clerk
-        await upsertUser({ openId, lastSignedIn: new Date() });
-        user = await getUserByOpenId(openId) ?? null;
-      }
-    }
+    user = await resolveUserFromBearer(authHeader);
   } catch (err) {
     console.error("[Context] auth error:", err);
-    user = null;
   }
   return { req: opts.req, res: opts.res, user };
 }
