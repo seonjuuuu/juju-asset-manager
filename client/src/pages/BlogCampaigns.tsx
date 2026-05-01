@@ -16,7 +16,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
 import {
   Plus, Pencil, Trash2, CheckCircle2, CalendarIcon,
-  ChevronDown, ChevronLeft, ChevronRight, BellRing, X, TrendingUp, ListChecks, Star,
+  ChevronDown, ChevronLeft, ChevronRight, BellRing, Settings2, X, TrendingUp, ListChecks, Star,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -26,7 +26,7 @@ import {
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 const CAMPAIGN_TYPES = ["방문형", "배송형", "원고형", "기타"];
-const CATEGORIES = ["카페", "맛집", "숙소", "뷰티", "생활용품", "식품", "기타"];
+const CATEGORIES = ["카페", "맛집", "숙소", "뷰티", "생활용품", "식품", "여가", "기타"];
 const PLATFORM_OPTIONS = ["디너의여왕", "레뷰", "리뷰노트", "와이리"];
 
 const TYPE_COLORS: Record<string, string> = {
@@ -191,11 +191,26 @@ export default function BlogCampaigns() {
   const [visitDatePickerOpenKey, setVisitDatePickerOpenKey] = useState(0);
   const [platformPickerOpen, setPlatformPickerOpen] = useState(false);
   const [platformActiveIndex, setPlatformActiveIndex] = useState(0);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
+  const addCustomCategory = () => {
+    const value = newCategory.trim();
+    if (!value) return;
+    setCustomCategories((prev) => (prev.includes(value) || CATEGORIES.includes(value) ? prev : [...prev, value]));
+    setForm(f => ({ ...f, category: value }));
+    setNewCategory("");
+  };
+  const deleteCustomCategory = (category: string) => {
+    setCustomCategories((prev) => prev.filter((item) => item !== category));
+    setForm((f) => ({ ...f, category: f.category === category ? "카페" : f.category }));
+  };
   const platformSuggestions = useMemo(() => {
     const query = form.platform.trim();
     if (!query) return PLATFORM_OPTIONS;
     return PLATFORM_OPTIONS.filter((platform) => platform.includes(query));
   }, [form.platform]);
+  const categoryOptions = useMemo(() => Array.from(new Set([...CATEGORIES, ...customCategories])), [customCategories]);
 
   useEffect(() => {
     setPlatformActiveIndex(0);
@@ -317,12 +332,16 @@ export default function BlogCampaigns() {
     setDialogOpen(false);
     setVisitDatePickerOpenKey(0);
     setPlatformPickerOpen(false);
+    setAddingCategory(false);
+    setNewCategory("");
   };
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
     setVisitDatePickerOpenKey(0);
     setPlatformPickerOpen(false);
+    setAddingCategory(false);
+    setNewCategory("");
     setDialogOpen(true);
   };
   const openEdit = (c: Campaign) => {
@@ -334,6 +353,8 @@ export default function BlogCampaigns() {
       reviewDone: c.reviewDone ?? false, completed: c.completed ?? false, note: c.note ?? "",
     });
     setPlatformPickerOpen(false);
+    setAddingCategory(false);
+    setNewCategory("");
     setDialogOpen(true);
   };
 
@@ -907,10 +928,52 @@ export default function BlogCampaigns() {
               </div>
               <div>
                 <Label className="text-xs">카테고리</Label>
-                <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
+                <div className="mt-1 flex gap-1">
+                  <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
+                    <SelectTrigger className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>{categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setAddingCategory((open) => !open)}>
+                    {addingCategory ? <Settings2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  </Button>
+                </div>
+                {addingCategory && (
+                  <div className="mt-2 rounded-md border border-border p-2">
+                    <div className="flex gap-1">
+                      <Input
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          addCustomCategory();
+                        }}
+                        placeholder="새 카테고리"
+                        className="h-9"
+                        autoFocus
+                      />
+                      <Button type="button" size="sm" className="h-9 shrink-0" onClick={addCustomCategory}>
+                        추가
+                      </Button>
+                    </div>
+                    {customCategories.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {customCategories.map((category) => (
+                          <span key={category} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/30 px-2 py-1 text-xs">
+                            {category}
+                            <button
+                              type="button"
+                              className="rounded-full text-muted-foreground hover:text-destructive"
+                              onClick={() => deleteCustomCategory(category)}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div>
