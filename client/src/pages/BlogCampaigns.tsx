@@ -205,11 +205,11 @@ export default function BlogCampaigns() {
   const { data: campaigns = [], isLoading } = trpc.blogCampaign.list.useQuery();
 
   const createMutation = trpc.blogCampaign.create.useMutation({
-    onSuccess: () => { utils.blogCampaign.list.invalidate(); toast.success("추가되었습니다"); setDialogOpen(false); },
+    onSuccess: () => { utils.blogCampaign.list.invalidate(); toast.success("추가되었습니다"); closeDialog(); },
     onError: () => toast.error("추가 실패"),
   });
   const updateMutation = trpc.blogCampaign.update.useMutation({
-    onSuccess: () => { utils.blogCampaign.list.invalidate(); toast.success("수정되었습니다"); setDialogOpen(false); },
+    onSuccess: () => { utils.blogCampaign.list.invalidate(); toast.success("수정되었습니다"); closeDialog(); },
     onError: () => toast.error("수정 실패"),
   });
   const deleteMutation = trpc.blogCampaign.delete.useMutation({
@@ -313,7 +313,18 @@ export default function BlogCampaigns() {
   const [hiddenCategory, setHiddenCategory] = useState<Record<string, boolean>>({});
 
   // ─── 폼 핸들러 ───────────────────────────────────────────────────────────
-  const openCreate = () => { setEditing(null); setForm({ ...EMPTY_FORM }); setDialogOpen(true); };
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setVisitDatePickerOpenKey(0);
+    setPlatformPickerOpen(false);
+  };
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...EMPTY_FORM });
+    setVisitDatePickerOpenKey(0);
+    setPlatformPickerOpen(false);
+    setDialogOpen(true);
+  };
   const openEdit = (c: Campaign) => {
     setEditing(c);
     setForm({
@@ -322,6 +333,7 @@ export default function BlogCampaigns() {
       amount: c.amount ?? 0, endDate: c.endDate ?? "", visitDate: c.visitDate ?? "",
       reviewDone: c.reviewDone ?? false, completed: c.completed ?? false, note: c.note ?? "",
     });
+    setPlatformPickerOpen(false);
     setDialogOpen(true);
   };
 
@@ -815,7 +827,7 @@ export default function BlogCampaigns() {
       </Tabs>
 
       {/* 추가/수정 다이얼로그 */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (open) setDialogOpen(true); else closeDialog(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editing ? "체험단 수정" : "체험단 추가"}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
@@ -971,7 +983,7 @@ export default function BlogCampaigns() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>취소</Button>
+            <Button variant="outline" onClick={closeDialog}>취소</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
               {editing ? "수정" : "추가"}
             </Button>
