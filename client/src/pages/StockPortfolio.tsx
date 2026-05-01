@@ -145,6 +145,16 @@ export default function StockPortfolio() {
     sectorMap[key] = (sectorMap[key] ?? 0) + (s.currentAmount ?? 0);
   });
   const pieData = Object.entries(sectorMap).map(([name, value]) => ({ name, value })).filter(d => d.value > 0);
+  const stockWeightData = filtered
+    .map((s) => ({
+      id: s.id,
+      name: s.stockName,
+      ticker: s.ticker,
+      value: s.currentAmount ?? 0,
+      weight: totalCurrent > 0 ? ((s.currentAmount ?? 0) / totalCurrent) * 100 : 0,
+    }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.weight - a.weight);
 
   // 현재가 변경 시 평가금액·수익률 자동 계산
   // 수익률 + 현재금액 + 수량으로 매수원금·평균매수가 계산
@@ -381,7 +391,7 @@ export default function StockPortfolio() {
         {/* Table */}
         <div className="min-w-0 bg-card border border-border rounded-xl overflow-hidden flex flex-col">
           <div className="overflow-x-auto flex-1">
-            <table className="w-full min-w-[840px]">
+            <table className="w-full min-w-[940px]">
               <thead>
                 <tr className="bg-muted/50">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[160px]">종목명</th>
@@ -390,17 +400,20 @@ export default function StockPortfolio() {
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">현재가</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">매수원금</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">평가금액</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">보유비중</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">수익률</th>
                   <th className="px-4 py-3 w-16"></th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
+                  <tr><td colSpan={9} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-10 text-muted-foreground text-sm">등록된 종목이 없습니다</td></tr>
+                  <tr><td colSpan={9} className="text-center py-10 text-muted-foreground text-sm">등록된 종목이 없습니다</td></tr>
                 ) : (
-                  filtered.map(s => (
+                  filtered.map(s => {
+                    const holdingWeight = totalCurrent > 0 ? ((s.currentAmount ?? 0) / totalCurrent) * 100 : 0;
+                    return (
                     <tr key={s.id} className="border-t border-border hover:bg-muted/30 transition-colors">
                       {/* 종목명 — 모바일에서 시장·섹터 서브텍스트로 포함 */}
                       <td className="px-4 py-3">
@@ -437,6 +450,14 @@ export default function StockPortfolio() {
                       </td>
                       <td className="px-4 py-3 text-sm text-right hidden md:table-cell">₩{formatAmount(s.buyAmount)}</td>
                       <td className="px-4 py-3 text-sm text-right font-medium whitespace-nowrap">₩{formatAmount(s.currentAmount)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="ml-auto w-20">
+                          <p className="text-sm font-semibold text-foreground">{holdingWeight.toFixed(1)}%</p>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, holdingWeight)}%` }} />
+                          </div>
+                        </div>
+                      </td>
                       <td className={`px-4 py-3 text-sm text-right font-semibold whitespace-nowrap ${returnRateColor(s.returnRate)}`}>
                         {formatReturnRate(s.returnRate)}
                       </td>
@@ -451,14 +472,15 @@ export default function StockPortfolio() {
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
           {/* Sector Pie */}
           <div className="bg-card border border-border rounded-xl p-5">
             <h2 className="text-sm font-semibold mb-1">섹터별 비중</h2>
@@ -489,6 +511,60 @@ export default function StockPortfolio() {
                     );
                   })}
                 </div>
+              </div>
+            ) : (
+              <div className="h-60 flex items-center justify-center text-muted-foreground text-sm">데이터 없음</div>
+            )}
+          </div>
+
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold mb-1">종목별 보유비중</h2>
+            <p className="text-xs text-muted-foreground mb-4">평가금액 기준 개별 종목 비중</p>
+            {stockWeightData.length > 0 ? (
+              <div className="space-y-4">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={stockWeightData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={88}
+                      paddingAngle={3}
+                      dataKey="value"
+                      nameKey="name"
+                    >
+                      {stockWeightData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number, _name, item) => {
+                        const payload = item.payload as { weight?: number };
+                        return [`₩${formatAmount(v)} (${(payload.weight ?? 0).toFixed(1)}%)`, ""];
+                      }}
+                      contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "12px" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                {stockWeightData.map((item, i) => (
+                  <div key={item.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-foreground">
+                          {item.name}
+                          {item.ticker && <span className="ml-1 font-mono text-[10px] text-muted-foreground">{item.ticker}</span>}
+                        </p>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, item.weight)}%`, backgroundColor: COLORS[i % COLORS.length] }} />
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-xs font-semibold text-foreground">{item.weight.toFixed(1)}%</p>
+                        <p className="text-[11px] text-muted-foreground">₩{formatAmount(item.value)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="h-60 flex items-center justify-center text-muted-foreground text-sm">데이터 없음</div>

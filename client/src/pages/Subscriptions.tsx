@@ -247,7 +247,7 @@ function calcYearlyCost(
 type SubscriptionRow = {
   id: number;
   serviceName: string;
-  category: "비즈니스" | "미디어" | "자기계발" | "기타";
+  category: "비즈니스" | "미디어" | "자기계발" | "쇼핑" | "기타";
   billingCycle: "매달" | "매주" | "매일" | "매년";
   price: number;
   sharedCount: number;
@@ -268,7 +268,7 @@ type CardRow = {
 
 const emptySubscription = {
   serviceName: "",
-  category: "기타" as "비즈니스" | "미디어" | "자기계발" | "기타",
+  category: "기타" as "비즈니스" | "미디어" | "자기계발" | "쇼핑" | "기타",
   billingCycle: "매달" as "매달" | "매주" | "매일" | "매년",
   price: 0,
   sharedCount: 1,
@@ -284,6 +284,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   비즈니스: "var(--primary)",
   미디어: "oklch(0.58 0.16 30)",
   자기계발: "oklch(0.50 0.14 150)",
+  쇼핑: "oklch(0.62 0.16 70)",
   기타: "oklch(0.55 0.10 260)",
 };
 
@@ -434,7 +435,7 @@ function SubscriptionDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {["비즈니스", "미디어", "자기계발", "기타"].map((c) => (
+                  {["비즈니스", "미디어", "자기계발", "쇼핑", "기타"].map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>
@@ -883,7 +884,7 @@ export default function Subscriptions() {
         </div>
       ) : (
         <div className="space-y-6">
-          {(["비즈니스", "미디어", "자기계발", "기타"] as const).map((cat) => {
+          {(["비즈니스", "미디어", "자기계발", "쇼핑", "기타"] as const).map((cat) => {
             const items = (subList as SubscriptionRow[]).filter(
               (s) => s.category === cat
             );

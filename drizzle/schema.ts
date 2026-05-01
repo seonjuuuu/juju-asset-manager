@@ -16,7 +16,7 @@ import {
 // ─── Enums ────────────────────────────────────────────────────────────────────
 export const roleEnum = pgEnum("role", ["user", "admin"]);
 export const cardTypeEnum = pgEnum("card_type", ["신용카드", "체크카드"]);
-export const subscriptionCategoryEnum = pgEnum("subscription_category", ["비즈니스", "미디어", "자기계발", "기타"]);
+export const subscriptionCategoryEnum = pgEnum("subscription_category", ["비즈니스", "미디어", "자기계발", "쇼핑", "기타"]);
 export const billingCycleEnum = pgEnum("billing_cycle", ["매달", "매주", "매일", "매년"]);
 export const accountTypeEnum = pgEnum("account_type", ["입출금", "저축", "CMA", "파킹통장", "청약", "기타"]);
 export const insuranceTypeEnum = pgEnum("insurance_type", ["보장형", "저축형"]);
