@@ -2396,7 +2396,8 @@ var app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 var fallbackClerkPublishableKey = "pk_test_YmFsYW5jZWQtb3N0cmljaC0yNi5jbGVyay5hY2NvdW50cy5kZXYk";
-var clerkPublishableKey = process.env.CLERK_PUBLISHABLE_KEY ?? process.env.VITE_CLERK_PUBLISHABLE_KEY ?? fallbackClerkPublishableKey;
+var clerkPublishableKeyFromEnv = process.env.CLERK_PUBLISHABLE_KEY ?? process.env.VITE_CLERK_PUBLISHABLE_KEY ?? "";
+var clerkPublishableKey = process.env.NODE_ENV === "production" ? clerkPublishableKeyFromEnv : clerkPublishableKeyFromEnv || fallbackClerkPublishableKey;
 app.use(clerkMiddleware({
   publishableKey: clerkPublishableKey,
   secretKey: process.env.CLERK_SECRET_KEY
