@@ -44,6 +44,10 @@ function daysUntil(date: string, today: Date) {
   return Math.round((target.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+function isPastDate(date: string, today: Date) {
+  return daysUntil(date, today) < 0;
+}
+
 function fixedExpenseAppliesToMonth(
   expense: { isActive?: boolean | null; startDate?: string | null; expiryDate?: string | null },
   year: number,
@@ -291,7 +295,7 @@ export default function Dashboard() {
       completed?: boolean | null;
     }>)
       .filter((campaign) => {
-        if (campaign.completed || !isValidDate(campaign.endDate)) return false;
+        if (!isValidDate(campaign.endDate) || isPastDate(campaign.endDate, today)) return false;
         const diff = daysUntil(campaign.endDate, today);
         return diff >= 0 && diff <= 7;
       })

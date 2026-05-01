@@ -1,5 +1,5 @@
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatAmount } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
 import {
   Plus, Pencil, Trash2, CheckCircle2, CalendarIcon,
-  ChevronLeft, ChevronRight, BellRing, X, TrendingUp, ListChecks, Star,
+  ChevronDown, ChevronLeft, ChevronRight, BellRing, X, TrendingUp, ListChecks, Star,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -27,6 +27,7 @@ import {
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 const CAMPAIGN_TYPES = ["방문형", "배송형", "원고형", "기타"];
 const CATEGORIES = ["카페", "맛집", "숙소", "뷰티", "생활용품", "식품", "기타"];
+const PLATFORM_OPTIONS = ["디너의여왕", "레뷰", "리뷰노트", "와이리"];
 
 const TYPE_COLORS: Record<string, string> = {
   "방문형": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
@@ -100,14 +101,43 @@ function getDday(endDate: string | null): { label: string; className: string; is
   return { label: `D-${diff}`, className: "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400", isExpired: false };
 }
 
+function todayString(): string {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
+function isPastDeadline(endDate: string | null): boolean {
+  if (!endDate || !isValidDate(endDate)) return false;
+  return getDday(endDate)?.isExpired ?? false;
+}
+
+function isCampaignCompleted(campaign: Pick<Campaign, "endDate">): boolean {
+  return isPastDeadline(campaign.endDate);
+}
+
+function isVisitDueOrPassed(visitDate: string | null): boolean {
+  if (!visitDate || !isValidDate(visitDate)) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const visit = new Date(normalizeDateInput(visitDate));
+  visit.setHours(0, 0, 0, 0);
+  return visit.getTime() <= today.getTime();
+}
+
+function isVisitCompleted(campaign: Pick<Campaign, "completed" | "visitDate">): boolean {
+  return !!campaign.completed || isVisitDueOrPassed(campaign.visitDate);
+}
+
 // ─── 날짜 선택기 ──────────────────────────────────────────────────────────────
-function DatePickerField({ value, onChange, placeholder = "YYYY-MM-DD" }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
+function DatePickerField({ value, onChange, placeholder = "YYYY-MM-DD", autoOpenKey = 0 }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; autoOpenKey?: number;
 }) {
   const [open, setOpen] = useState(false);
   const normalizedValue = normalizeDateInput(value);
   const invalid = value.length > 0 && !isValidDate(value);
   const selected = !invalid && normalizedValue ? new Date(normalizedValue) : undefined;
+  useEffect(() => {
+    if (autoOpenKey > 0) setOpen(true);
+  }, [autoOpenKey]);
   return (
     <div className="space-y-1">
       <div className="flex gap-1">
@@ -158,6 +188,18 @@ export default function BlogCampaigns() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([]);
+  const [visitDatePickerOpenKey, setVisitDatePickerOpenKey] = useState(0);
+  const [platformPickerOpen, setPlatformPickerOpen] = useState(false);
+  const [platformActiveIndex, setPlatformActiveIndex] = useState(0);
+  const platformSuggestions = useMemo(() => {
+    const query = form.platform.trim();
+    if (!query) return PLATFORM_OPTIONS;
+    return PLATFORM_OPTIONS.filter((platform) => platform.includes(query));
+  }, [form.platform]);
+
+  useEffect(() => {
+    setPlatformActiveIndex(0);
+  }, [form.platform]);
 
   const utils = trpc.useUtils();
   const { data: campaigns = [], isLoading } = trpc.blogCampaign.list.useQuery();
@@ -184,10 +226,10 @@ export default function BlogCampaigns() {
     today.setHours(0, 0, 0, 0);
     return campaigns
       .filter((c) => {
-        if (c.completed) return false;
+        if (isCampaignCompleted(c)) return false;
         if (!c.endDate || !isValidDate(c.endDate)) return false;
         if (dismissedAlerts.includes(c.id)) return false;
-        const end = new Date(c.endDate);
+        const end = new Date(normalizeDateInput(c.endDate));
         end.setHours(0, 0, 0, 0);
         const diff = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         return diff >= 0 && diff <= 7;
@@ -207,7 +249,7 @@ export default function BlogCampaigns() {
 
   // ─── 요약 ─────────────────────────────────────────────────────────────────
   const monthAmount = useMemo(() => monthlyRecords.reduce((s, c) => s + (c.amount ?? 0), 0), [monthlyRecords]);
-  const monthCompleted = useMemo(() => monthlyRecords.filter(c => c.completed).length, [monthlyRecords]);
+  const monthCompleted = useMemo(() => monthlyRecords.filter(c => isCampaignCompleted(c)).length, [monthlyRecords]);
   const monthReviewDone = useMemo(() => monthlyRecords.filter(c => c.reviewDone).length, [monthlyRecords]);
 
   const yearAmount = useMemo(() =>
@@ -298,8 +340,10 @@ export default function BlogCampaigns() {
       platform: form.platform || undefined, campaignType: form.campaignType || undefined,
       category: form.category || undefined, businessName: form.businessName || undefined,
       amount: form.amount || undefined, endDate: normalizedEndDate || undefined,
-      visitDate: normalizedVisitDate || undefined, reviewDone: form.reviewDone,
-      completed: form.completed, note: form.note || undefined,
+      visitDate: normalizedVisitDate || undefined,
+      reviewDone: normalizedVisitDate && (form.completed || isVisitDueOrPassed(normalizedVisitDate)) ? form.reviewDone : false,
+      completed: !!normalizedVisitDate && (form.completed || isVisitDueOrPassed(normalizedVisitDate)),
+      note: form.note || undefined,
     };
     if (editing) updateMutation.mutate({ id: editing.id, data });
     else createMutation.mutate(data);
@@ -313,25 +357,28 @@ export default function BlogCampaigns() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-muted-foreground">
-              <th className="text-left py-2 px-3 font-medium">방문/수령일</th>
+              <th className="text-left py-2 px-3 font-medium">방문/수령 예정일</th>
               <th className="text-left py-2 px-3 font-medium">업체명</th>
               <th className="text-center py-2 px-3 font-medium">타입</th>
               <th className="text-right py-2 px-3 font-medium">혜택금액</th>
               <th className="text-left py-2 px-3 font-medium">마감일</th>
               <th className="text-center py-2 px-3 font-medium">D-day</th>
+              <th className="text-center py-2 px-3 font-medium">방문</th>
               <th className="text-center py-2 px-3 font-medium">리뷰</th>
-              <th className="text-center py-2 px-3 font-medium">완료</th>
+              <th className="text-center py-2 px-3 font-medium">상태</th>
               <th className="py-2 px-3" />
             </tr>
           </thead>
           <tbody>
             {records.map(c => {
               const dday = getDday(c.endDate);
+              const completed = isCampaignCompleted(c);
+              const visited = isVisitCompleted(c);
               return (
-                <tr key={c.id} className={`border-b hover:bg-muted/30 transition-colors ${c.completed ? "opacity-60" : ""}`}>
+                <tr key={c.id} className={`border-b hover:bg-muted/30 transition-colors ${completed ? "opacity-60" : ""}`}>
                   <td className="py-2.5 px-3 text-muted-foreground">{c.visitDate ?? "—"}</td>
                   <td className="py-2.5 px-3">
-                    <p className={`font-medium ${c.completed ? "line-through text-muted-foreground" : ""}`}>
+                    <p className={`font-medium ${completed ? "line-through text-muted-foreground" : ""}`}>
                       {c.businessName ?? "—"}
                     </p>
                     {(c.category || c.platform) && (
@@ -356,15 +403,37 @@ export default function BlogCampaigns() {
                   </td>
                   <td className="py-2.5 px-3 text-center">
                     <Switch
-                      checked={c.reviewDone ?? false}
-                      onCheckedChange={() => updateMutation.mutate({ id: c.id, data: { reviewDone: !c.reviewDone } })}
+                      checked={visited}
+                      onCheckedChange={(checked) => {
+                        if (!checked) {
+                          openEdit(c);
+                          setVisitDatePickerOpenKey((key) => key + 1);
+                          return;
+                        }
+                        updateMutation.mutate({
+                          id: c.id,
+                          data: {
+                            completed: checked,
+                            visitDate: checked && !c.visitDate ? todayString() : c.visitDate,
+                            reviewDone: checked ? c.reviewDone ?? false : false,
+                          },
+                        });
+                      }}
                     />
                   </td>
                   <td className="py-2.5 px-3 text-center">
                     <Switch
-                      checked={c.completed ?? false}
-                      onCheckedChange={() => updateMutation.mutate({ id: c.id, data: { completed: !c.completed } })}
+                      checked={c.reviewDone ?? false}
+                      disabled={!visited}
+                      onCheckedChange={() => updateMutation.mutate({ id: c.id, data: { reviewDone: !c.reviewDone } })}
                     />
+                  </td>
+                  <td className="py-2.5 px-3 text-center">
+                    {completed ? (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">체험단 완료</span>
+                    ) : (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">진행중</span>
+                    )}
                   </td>
                   <td className="py-2.5 px-3">
                     <div className="flex gap-1">
@@ -753,7 +822,63 @@ export default function BlogCampaigns() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">플랫폼</Label>
-                <Input value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} placeholder="예: 디너의여왕" className="mt-1" />
+                <div className="relative mt-1">
+                  <div className="flex h-10 overflow-hidden rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                    <input
+                      value={form.platform}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setForm(f => ({ ...f, platform: value }));
+                        setPlatformPickerOpen(value.trim().length > 0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!platformPickerOpen || platformSuggestions.length === 0) return;
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          setPlatformActiveIndex((idx) => (idx + 1) % platformSuggestions.length);
+                        } else if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setPlatformActiveIndex((idx) => (idx - 1 + platformSuggestions.length) % platformSuggestions.length);
+                        } else if (e.key === "Enter") {
+                          e.preventDefault();
+                          setForm(f => ({ ...f, platform: platformSuggestions[platformActiveIndex] }));
+                          setPlatformPickerOpen(false);
+                        } else if (e.key === "Escape") {
+                          setPlatformPickerOpen(false);
+                        }
+                      }}
+                      onBlur={() => window.setTimeout(() => setPlatformPickerOpen(false), 120)}
+                      placeholder="예: 디너의여왕"
+                      className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                    />
+                    <button
+                      type="button"
+                      className="flex w-9 shrink-0 items-center justify-center border-l border-input text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setPlatformPickerOpen((open) => !open)}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {platformPickerOpen && platformSuggestions.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover p-1 shadow-md">
+                      {platformSuggestions.map((platform, index) => (
+                        <button
+                          key={platform}
+                          type="button"
+                          className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${index === platformActiveIndex ? "bg-muted" : "hover:bg-muted"}`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setForm(f => ({ ...f, platform }));
+                            setPlatformPickerOpen(false);
+                          }}
+                        >
+                          {platform}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <Label className="text-xs">타입</Label>
@@ -792,20 +917,52 @@ export default function BlogCampaigns() {
                 ) : null;
               })()}
             </div>
-            <div>
-              <Label className="text-xs">방문/수령일</Label>
-              <div className="mt-1">
-                <DatePickerField value={form.visitDate} onChange={(v) => setForm(f => ({ ...f, visitDate: v }))} placeholder="방문/수령일 선택" />
+            <div className="space-y-2">
+              <div>
+                <Label className="text-xs">방문/수령 예정일</Label>
+                <div className="mt-1">
+                  <DatePickerField
+                    value={form.visitDate}
+                    onChange={(v) => {
+                      const normalized = normalizeDateInput(v);
+                      setForm(f => ({
+                        ...f,
+                        visitDate: v,
+                        completed: isVisitDueOrPassed(normalized),
+                        reviewDone: isVisitDueOrPassed(normalized) ? f.reviewDone : false,
+                      }));
+                    }}
+                    placeholder="방문/수령 예정일 선택"
+                    autoOpenKey={visitDatePickerOpenKey}
+                  />
+                </div>
               </div>
-            </div>
-            <div className="flex gap-4">
               <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={form.reviewDone} onChange={e => setForm(f => ({ ...f, reviewDone: e.target.checked }))} className="rounded" />
-                리뷰 완료
+                <input
+                  type="checkbox"
+                  checked={form.completed || isVisitDueOrPassed(form.visitDate)}
+                  onChange={e => {
+                    if (e.target.checked) setVisitDatePickerOpenKey((key) => key + 1);
+                    setForm(f => ({
+                      ...f,
+                      completed: e.target.checked,
+                      visitDate: e.target.checked ? f.visitDate || todayString() : f.visitDate,
+                      reviewDone: e.target.checked ? f.reviewDone : false,
+                    }));
+                  }}
+                  className="rounded"
+                />
+                방문완료
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={form.completed} onChange={e => setForm(f => ({ ...f, completed: e.target.checked }))} className="rounded" />
-                체험단 완료
+                <input
+                  type="checkbox"
+                  checked={form.reviewDone}
+                  disabled={!(form.completed || isVisitDueOrPassed(form.visitDate))}
+                  onChange={e => setForm(f => ({ ...f, reviewDone: e.target.checked }))}
+                  className="rounded disabled:opacity-50"
+                />
+                리뷰 완료
               </label>
             </div>
             <div>
