@@ -381,7 +381,7 @@ function SubscriptionDialog({
       (c) => `${c.cardCompany} ${c.cardName || c.cardType}`
     ),
     ...accountList.map(
-      (a) => `${a.bankName} ${a.accountType}${a.accountNumber ? ` (${a.accountNumber.slice(-4)})` : ""}`
+      (a) => `${a.bankName} ${a.accountNumber || a.accountType}`
     ),
     "현금",
   ];

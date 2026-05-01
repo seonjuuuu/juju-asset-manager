@@ -105,7 +105,7 @@ function LaborCostDialog({
   const { withholdingAmount, netAmount, incomeTax, localTax } = calcWithholding(form.grossAmount, form.withholdingRateStr);
 
   const accountOptions = accountList.map(a =>
-    `${a.bankName} ${a.accountType}${a.accountNumber ? ` (${a.accountNumber.slice(-4)})` : ""}`
+    `${a.bankName} ${a.accountNumber || a.accountType}`
   );
 
   function handleTaxPaymentDateChange(val: string) {

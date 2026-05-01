@@ -163,10 +163,10 @@ function AccountDialog({
             </Select>
           </div>
           <div>
-            <Label>계좌번호 (선택)</Label>
+            <Label>계좌 이름 (선택)</Label>
             <Input
               className="mt-1"
-              placeholder="예: 3333-01-1234567"
+              placeholder="예: 생활비 계좌, 비상금 통장"
               value={form.accountNumber}
               onChange={(e) => set("accountNumber", e.target.value)}
             />
@@ -1155,8 +1155,8 @@ export default function Cards() {
                   </div>
                   {acc.accountNumber && (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">계좌번호</span>
-                      <span className="text-xs font-mono">{acc.accountNumber}</span>
+                      <span className="text-xs text-muted-foreground">계좌 이름</span>
+                      <span className="text-xs font-medium">{acc.accountNumber}</span>
                     </div>
                   )}
                   {acc.interestRate && (

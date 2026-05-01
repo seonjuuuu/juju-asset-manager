@@ -328,7 +328,7 @@ function BusinessExpenseDialog({
   const set = <K extends keyof ExpenseFormState>(k: K, v: ExpenseFormState[K]) => setForm(f => ({ ...f, [k]: v }));
   const paymentOptions = [
     ...cardList.map(c => `${c.cardCompany} ${c.cardName || c.cardType}`),
-    ...accountList.map(a => `${a.bankName} ${a.accountType}${a.accountNumber ? ` (${a.accountNumber.slice(-4)})` : ""}`),
+    ...accountList.map(a => `${a.bankName} ${a.accountNumber || a.accountType}`),
     "현금",
   ];
 

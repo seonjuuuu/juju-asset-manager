@@ -65,17 +65,33 @@ type Campaign = {
 const fmt = (n: number) => `₩${formatAmount(n)}`;
 
 // ─── D-day 계산 ───────────────────────────────────────────────────────────────
+function normalizeDateInput(value: string): string {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  return trimmed;
+}
+
 function isValidDate(value: string): boolean {
-  if (!value) return false;
-  const d = new Date(value);
-  return !isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const normalized = normalizeDateInput(value);
+  if (!normalized) return false;
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return false;
+  return (
+    d.getFullYear() === Number(match[1]) &&
+    d.getMonth() + 1 === Number(match[2]) &&
+    d.getDate() === Number(match[3])
+  );
 }
 
 function getDday(endDate: string | null): { label: string; className: string; isExpired: boolean } | null {
   if (!endDate || !isValidDate(endDate)) return null;
+  const normalizedEndDate = normalizeDateInput(endDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
+  const end = new Date(normalizedEndDate);
   end.setHours(0, 0, 0, 0);
   const diff = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   if (diff < 0) return { label: "마감", className: "bg-muted text-muted-foreground", isExpired: true };
@@ -89,14 +105,22 @@ function DatePickerField({ value, onChange, placeholder = "YYYY-MM-DD" }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const normalizedValue = normalizeDateInput(value);
   const invalid = value.length > 0 && !isValidDate(value);
-  const selected = !invalid && value ? new Date(value) : undefined;
+  const selected = !invalid && normalizedValue ? new Date(normalizedValue) : undefined;
   return (
     <div className="space-y-1">
       <div className="flex gap-1">
         <Input
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            const digits = next.replace(/\D/g, "");
+            onChange(digits.length === 8 ? normalizeDateInput(next) : next);
+          }}
+          onBlur={() => {
+            if (value) onChange(normalizeDateInput(value));
+          }}
           placeholder={placeholder}
           className={`flex-1 ${invalid ? "border-red-400 focus-visible:ring-red-400" : ""}`}
         />
@@ -260,11 +284,21 @@ export default function BlogCampaigns() {
   };
 
   const handleSubmit = () => {
+    const normalizedEndDate = form.endDate ? normalizeDateInput(form.endDate) : "";
+    const normalizedVisitDate = form.visitDate ? normalizeDateInput(form.visitDate) : "";
+    if (normalizedEndDate && !isValidDate(normalizedEndDate)) {
+      toast.error("마감일을 올바르게 입력해주세요");
+      return;
+    }
+    if (normalizedVisitDate && !isValidDate(normalizedVisitDate)) {
+      toast.error("방문/수령일을 올바르게 입력해주세요");
+      return;
+    }
     const data = {
       platform: form.platform || undefined, campaignType: form.campaignType || undefined,
       category: form.category || undefined, businessName: form.businessName || undefined,
-      amount: form.amount || undefined, endDate: form.endDate || undefined,
-      visitDate: form.visitDate || undefined, reviewDone: form.reviewDone,
+      amount: form.amount || undefined, endDate: normalizedEndDate || undefined,
+      visitDate: normalizedVisitDate || undefined, reviewDone: form.reviewDone,
       completed: form.completed, note: form.note || undefined,
     };
     if (editing) updateMutation.mutate({ id: editing.id, data });
