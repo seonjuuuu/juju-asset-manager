@@ -76,8 +76,8 @@ interface DashboardLayoutProps {
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const [location] = useLocation();
-  const { isLoaded } = useAuth();
+  const [location, setLocation] = useLocation();
+  const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const { signOut } = useClerk();
   const [collapsed, setCollapsed] = useState(false);
@@ -88,6 +88,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   // 페이지 이동 시 모바일 메뉴 닫기
   useEffect(() => { setMobileOpen(false); }, [location]);
+
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      setLocation("/sign-in", { replace: true });
+    }
+  }, [isLoaded, isSignedIn, setLocation]);
+
+  const handleSignOut = async () => {
+    await signOut({ redirectUrl: "/sign-in" });
+    setLocation("/sign-in", { replace: true });
+  };
 
   const renderNavItem = (item: typeof navItems[number], opts?: { collapsed?: boolean; onClick?: () => void }) => {
     const isActive = location === item.href;
@@ -215,7 +226,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
       </div>
       <button
-        onClick={() => signOut()}
+        onClick={handleSignOut}
         className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-xs"
         style={{ color: "var(--sidebar-foreground)", opacity: 0.6 }}
       >
@@ -225,7 +236,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     </div>
   );
 
-  if (!isLoaded) {
+  if (!isLoaded || !isSignedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -303,13 +314,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
         <div className="p-2 space-y-1 flex-shrink-0" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
           {collapsed ? (
-            <button
-              onClick={() => setCollapsed(false)}
-              className="w-full flex items-center justify-center p-2 rounded-lg transition-colors"
-              style={{ color: "var(--sidebar-foreground)", opacity: 0.6 }}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <>
+              <button
+                onClick={() => setCollapsed(false)}
+                className="w-full flex items-center justify-center p-2 rounded-lg transition-colors"
+                style={{ color: "var(--sidebar-foreground)", opacity: 0.6 }}
+                title="사이드바 펼치기"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center p-2 rounded-lg transition-colors"
+                style={{ color: "var(--sidebar-foreground)", opacity: 0.6 }}
+                title="로그아웃"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </>
           ) : renderBottom()}
         </div>
       </aside>
