@@ -155,6 +155,10 @@ async function ensureWeddingBudgetTables(db: NonNullable<Awaited<ReturnType<type
   `);
 }
 
+async function ensureSubscriptionCategoryValues(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`ALTER TYPE "subscription_category" ADD VALUE IF NOT EXISTS '쇼핑'`);
+}
+
 async function ensureFeatureRequestsTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "feature_requests" (
@@ -780,6 +784,7 @@ export async function deleteCardPoint(userId: number, id: number) {
 export async function getSubscriptions(userId: number) {
   const db = await getDb();
   if (!db) return [];
+  await ensureSubscriptionCategoryValues(db);
   return db.select().from(subscriptions)
     .where(eq(subscriptions.userId, userId))
     .orderBy(desc(subscriptions.createdAt));
@@ -788,12 +793,14 @@ export async function getSubscriptions(userId: number) {
 export async function createSubscription(userId: number, data: InsertSubscription) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  await ensureSubscriptionCategoryValues(db);
   await db.insert(subscriptions).values({ ...data, userId });
 }
 
 export async function updateSubscription(userId: number, id: number, data: Partial<InsertSubscription>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  await ensureSubscriptionCategoryValues(db);
   await db.update(subscriptions).set(data).where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)));
 }
 
