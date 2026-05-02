@@ -204,7 +204,10 @@ export async function getUserById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function updateUserProfile(userId: number, data: { birthDate?: string | null; name?: string | null }) {
+export async function updateUserProfile(
+  userId: number,
+  data: { birthDate?: string | null; name?: string | null; navPreferences?: string | null },
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(users).set(data).where(eq(users.id, userId));

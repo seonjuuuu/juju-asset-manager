@@ -293,7 +293,13 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     updateProfile: protectedProcedure
-      .input(z.object({ birthDate: z.string().nullable().optional(), name: z.string().nullable().optional() }))
+      .input(
+        z.object({
+          birthDate: z.string().nullable().optional(),
+          name: z.string().nullable().optional(),
+          navPreferences: z.string().nullable().optional(),
+        }),
+      )
       .mutation(({ input, ctx }) => db.updateUserProfile(ctx.user.id, input)),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);

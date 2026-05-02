@@ -169,6 +169,13 @@
       "when": 1777536800000,
       "tag": "0023_wedding_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1777537400000,
+      "tag": "0024_user_nav_preferences",
+      "breakpoints": true
     }
   ]
 }

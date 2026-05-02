@@ -55,6 +55,7 @@ export async function createContext(
       loginMethod: null,
       role: "admin",
       birthDate: null,
+      navPreferences: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),

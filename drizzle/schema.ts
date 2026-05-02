@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: roleEnum("role").default("user").notNull(),
   birthDate: varchar("birth_date", { length: 20 }),
+  /** JSON: { realEstate, blogCampaigns, weddingBudget, businessIncome } — false면 사이드바 기록 메뉴에서 숨김 */
+  navPreferences: text("nav_preferences"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

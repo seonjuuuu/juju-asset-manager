@@ -264,6 +264,7 @@ var users = pgTable("users", {
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: roleEnum("role").default("user").notNull(),
   birthDate: varchar("birth_date", { length: 20 }),
+  navPreferences: text("nav_preferences"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
@@ -1741,7 +1742,7 @@ var appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    updateProfile: protectedProcedure.input(z2.object({ birthDate: z2.string().nullable().optional(), name: z2.string().nullable().optional() })).mutation(({ input, ctx }) => updateUserProfile(ctx.user.id, input)),
+    updateProfile: protectedProcedure.input(z2.object({ birthDate: z2.string().nullable().optional(), name: z2.string().nullable().optional(), navPreferences: z2.string().nullable().optional() })).mutation(({ input, ctx }) => updateUserProfile(ctx.user.id, input)),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

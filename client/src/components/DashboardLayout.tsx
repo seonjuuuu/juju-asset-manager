@@ -1,7 +1,13 @@
 import { useAuthSession } from "@/contexts/AuthSessionContext";
-import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
 import {
-  BarChart3,
+  DEFAULT_NAV_PREFERENCES,
+  parseNavPreferencesJson,
+  type RecordNavKey,
+} from "@/lib/navPreferences";
+import { cn } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
+import {
   BookOpen,
   Building2,
   CalendarDays,
@@ -30,10 +36,12 @@ import {
   X,
   ClipboardCheck,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 
-const navItems = [
+type SidebarNavLink = { href: string; icon: LucideIcon; label: string };
+
+const navItems: SidebarNavLink[] = [
   { href: "/", icon: Home, label: "대시보드" },
   { href: "/ledger", icon: BookOpen, label: "월별 가계부" },
   { href: "/payment-calendar", icon: CalendarDays, label: "결제 예정" },
@@ -48,11 +56,11 @@ const navItems = [
   { href: "/insurance", icon: ShieldCheck, label: "보험" },
 ];
 
-const recordItems = [
-  { href: "/real-estate", icon: Building2, label: "부동산" },
-  { href: "/blog-campaigns", icon: Star, label: "블로그 체험단" },
-  { href: "/wedding-budget", icon: HeartHandshake, label: "결혼예산" },
-  { href: "/business-income", icon: BriefcaseBusiness, label: "사업소득" },
+const recordItems: (SidebarNavLink & { navKey: RecordNavKey })[] = [
+  { href: "/real-estate", icon: Building2, label: "부동산", navKey: "realEstate" },
+  { href: "/blog-campaigns", icon: Star, label: "블로그 체험단", navKey: "blogCampaigns" },
+  { href: "/wedding-budget", icon: HeartHandshake, label: "결혼예산", navKey: "weddingBudget" },
+  { href: "/business-income", icon: BriefcaseBusiness, label: "사업소득", navKey: "businessIncome" },
 ];
 
 const realEstateSubItems = [
@@ -82,6 +90,15 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [location, setLocation] = useLocation();
   const { session, user, isReady, signOut } = useAuthSession();
+  const { data: meUser } = trpc.auth.me.useQuery(undefined, { enabled: !!session, staleTime: 60_000 });
+  const navPrefs = useMemo(() => {
+    if (!meUser) return DEFAULT_NAV_PREFERENCES;
+    return parseNavPreferencesJson(meUser.navPreferences ?? null);
+  }, [meUser]);
+  const visibleRecordItems = useMemo(
+    () => recordItems.filter((item) => navPrefs[item.navKey]),
+    [navPrefs],
+  );
   const isSignedIn = !!session;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -103,7 +120,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     setLocation("/sign-in", { replace: true });
   };
 
-  const renderNavItem = (item: typeof navItems[number], opts?: { collapsed?: boolean; onClick?: () => void }) => {
+  const renderNavItem = (item: SidebarNavLink, opts?: { collapsed?: boolean; onClick?: () => void }) => {
     const isActive = location === item.href;
     const isCollapsed = opts?.collapsed ?? false;
     const isRealEstate = item.href === "/real-estate";
@@ -199,7 +216,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     );
   };
 
-  const renderSection = (label: string, items: typeof navItems, opts?: { collapsed?: boolean; onClick?: () => void }) => (
+  const renderSection = (
+    label: string,
+    items: SidebarNavLink[],
+    opts?: { collapsed?: boolean; onClick?: () => void },
+  ) => (
     <div className="pt-2">
       <div className="px-2.5 pb-1" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
         {!opts?.collapsed && (
@@ -274,7 +295,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
             <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
               {navItems.map(item => renderNavItem(item, { onClick: () => setMobileOpen(false) }))}
-              {renderSection("기록", recordItems, { onClick: () => setMobileOpen(false) })}
+              {visibleRecordItems.length > 0 &&
+                renderSection("기록", visibleRecordItems, { onClick: () => setMobileOpen(false) })}
               {renderSection("설정", settingItems, { onClick: () => setMobileOpen(false) })}
             </nav>
             {renderBottom()}
@@ -313,7 +335,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
           {navItems.map(item => renderNavItem(item, { collapsed }))}
-          {renderSection("기록", recordItems, { collapsed })}
+          {visibleRecordItems.length > 0 && renderSection("기록", visibleRecordItems, { collapsed })}
           {renderSection("설정", settingItems, { collapsed })}
         </nav>
 
