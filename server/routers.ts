@@ -255,6 +255,26 @@ const blogCampaignInput = z.object({
   note: z.string().optional(),
 });
 
+const weddingBudgetSettingInput = z.object({
+  weddingDate: z.string().nullable().optional(),
+  venueName: z.string().nullable().optional(),
+  totalBudget: z.number().default(0),
+  note: z.string().nullable().optional(),
+});
+
+const weddingBudgetItemInput = z.object({
+  category: z.string().min(1),
+  itemName: z.string().min(1),
+  vendorName: z.string().nullable().optional(),
+  estimatedAmount: z.number().default(0),
+  contractAmount: z.number().default(0),
+  paidAmount: z.number().default(0),
+  dueDate: z.string().nullable().optional(),
+  paymentMethod: z.string().nullable().optional(),
+  status: z.enum(["견적", "계약", "결제중", "완료"]).default("견적"),
+  note: z.string().nullable().optional(),
+});
+
 const debtInput = z.object({
   category: z.string(),
   description: z.string().optional(),
@@ -422,6 +442,24 @@ export const appRouter = router({
       .mutation(({ input, ctx }) => db.updateBlogCampaign(ctx.user.id, input.id, input.data as Parameters<typeof db.updateBlogCampaign>[2])),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
       db.deleteBlogCampaign(ctx.user.id, input.id)
+    ),
+  }),
+
+  // ─── 결혼예산 ───────────────────────────────────────────────────────────────
+  weddingBudget: router({
+    setting: protectedProcedure.query(({ ctx }) => db.getWeddingBudgetSetting(ctx.user.id)),
+    upsertSetting: protectedProcedure.input(weddingBudgetSettingInput).mutation(({ input, ctx }) =>
+      db.upsertWeddingBudgetSetting(ctx.user.id, input as Parameters<typeof db.upsertWeddingBudgetSetting>[1])
+    ),
+    listItems: protectedProcedure.query(({ ctx }) => db.listWeddingBudgetItems(ctx.user.id)),
+    createItem: protectedProcedure.input(weddingBudgetItemInput).mutation(({ input, ctx }) =>
+      db.createWeddingBudgetItem(ctx.user.id, input as Parameters<typeof db.createWeddingBudgetItem>[1])
+    ),
+    updateItem: protectedProcedure
+      .input(z.object({ id: z.number(), data: weddingBudgetItemInput.partial() }))
+      .mutation(({ input, ctx }) => db.updateWeddingBudgetItem(ctx.user.id, input.id, input.data as Parameters<typeof db.updateWeddingBudgetItem>[2])),
+    deleteItem: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input, ctx }) =>
+      db.deleteWeddingBudgetItem(ctx.user.id, input.id)
     ),
   }),
 

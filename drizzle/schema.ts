@@ -235,6 +235,43 @@ export const blogCampaigns = pgTable("blog_campaigns", {
 export type BlogCampaign = typeof blogCampaigns.$inferSelect;
 export type InsertBlogCampaign = typeof blogCampaigns.$inferInsert;
 
+// ─── 결혼예산 ────────────────────────────────────────────────────────────────
+export const weddingBudgetSettings = pgTable("wedding_budget_settings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  weddingDate: varchar("wedding_date", { length: 20 }),
+  venueName: varchar("venue_name", { length: 200 }),
+  totalBudget: bigint("total_budget", { mode: "number" }).notNull().default(0),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => ({
+  weddingBudgetUserIdx: uniqueIndex("wedding_budget_settings_user_id_idx").on(table.userId),
+}));
+
+export type WeddingBudgetSetting = typeof weddingBudgetSettings.$inferSelect;
+export type InsertWeddingBudgetSetting = typeof weddingBudgetSettings.$inferInsert;
+
+export const weddingBudgetItems = pgTable("wedding_budget_items", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  category: varchar("category", { length: 100 }).notNull(),
+  itemName: varchar("item_name", { length: 200 }).notNull(),
+  vendorName: varchar("vendor_name", { length: 200 }),
+  estimatedAmount: bigint("estimated_amount", { mode: "number" }).notNull().default(0),
+  contractAmount: bigint("contract_amount", { mode: "number" }).notNull().default(0),
+  paidAmount: bigint("paid_amount", { mode: "number" }).notNull().default(0),
+  dueDate: varchar("due_date", { length: 20 }),
+  paymentMethod: varchar("payment_method", { length: 200 }),
+  status: varchar("status", { length: 50 }).notNull().default("견적"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type WeddingBudgetItem = typeof weddingBudgetItems.$inferSelect;
+export type InsertWeddingBudgetItem = typeof weddingBudgetItems.$inferInsert;
+
 // ─── 부채 ─────────────────────────────────────────────────────────────────────
 export const debts = pgTable("debts", {
   id: serial("id").primaryKey(),

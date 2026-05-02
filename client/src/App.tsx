@@ -20,6 +20,7 @@ import RealEstate from "./pages/RealEstate";
 import RealEstateFundPlan from "./pages/RealEstateFundPlan";
 import RealEstateFinalBudget from "./pages/RealEstateFinalBudget";
 import BlogCampaigns from "./pages/BlogCampaigns";
+import WeddingBudget from "./pages/WeddingBudget";
 import Cards from "./pages/Cards";
 import Subscriptions from "./pages/Subscriptions";
 import SideIncome from "./pages/SideIncome";
@@ -53,6 +54,7 @@ function Router() {
             <Route path="/real-estate/fund-plan" component={RealEstateFundPlan} />
             <Route path="/real-estate/final-budget" component={RealEstateFinalBudget} />
             <Route path="/blog-campaigns" component={BlogCampaigns} />
+            <Route path="/wedding-budget" component={WeddingBudget} />
             <Route path="/cards" component={Cards} />
             <Route path="/subscriptions" component={Subscriptions} />
             <Route path="/side-income" component={SideIncome} />

@@ -9,6 +9,8 @@ import {
   debts,
   fixedExpenses,
   InsertBlogCampaign,
+  InsertWeddingBudgetItem,
+  InsertWeddingBudgetSetting,
   InsertCard,
   InsertCardPoint,
   InsertDebt,
@@ -50,6 +52,8 @@ import {
   InsertCategory,
   InsertSubCategory,
   users,
+  weddingBudgetItems,
+  weddingBudgetSettings,
   laborCosts,
   InsertLaborCost,
 } from "../drizzle/schema";
@@ -106,6 +110,43 @@ async function ensureLoansTable(db: NonNullable<Awaited<ReturnType<typeof getDb>
       "grace_months" integer DEFAULT 0,
       "note" text,
       "is_active" boolean NOT NULL DEFAULT true,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function ensureWeddingBudgetTables(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "wedding_budget_settings" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "wedding_date" varchar(20),
+      "venue_name" varchar(200),
+      "total_budget" bigint NOT NULL DEFAULT 0,
+      "note" text,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS "wedding_budget_settings_user_id_idx"
+    ON "wedding_budget_settings" ("user_id")
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "wedding_budget_items" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "category" varchar(100) NOT NULL,
+      "item_name" varchar(200) NOT NULL,
+      "vendor_name" varchar(200),
+      "estimated_amount" bigint NOT NULL DEFAULT 0,
+      "contract_amount" bigint NOT NULL DEFAULT 0,
+      "paid_amount" bigint NOT NULL DEFAULT 0,
+      "due_date" varchar(20),
+      "payment_method" varchar(200),
+      "status" varchar(50) NOT NULL DEFAULT '견적',
+      "note" text,
       "createdAt" timestamp NOT NULL DEFAULT now(),
       "updatedAt" timestamp NOT NULL DEFAULT now()
     )
@@ -502,6 +543,66 @@ export async function deleteBlogCampaign(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(blogCampaigns).where(and(eq(blogCampaigns.id, id), eq(blogCampaigns.userId, userId)));
+}
+
+// ─── 결혼예산 ────────────────────────────────────────────────────────────────
+export async function getWeddingBudgetSetting(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await ensureWeddingBudgetTables(db);
+  const result = await db.select().from(weddingBudgetSettings)
+    .where(eq(weddingBudgetSettings.userId, userId))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+export async function upsertWeddingBudgetSetting(
+  userId: number,
+  data: Pick<InsertWeddingBudgetSetting, "weddingDate" | "venueName" | "totalBudget" | "note">,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureWeddingBudgetTables(db);
+  const current = await getWeddingBudgetSetting(userId);
+  if (current) {
+    await db.update(weddingBudgetSettings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(weddingBudgetSettings.id, current.id), eq(weddingBudgetSettings.userId, userId)));
+    return;
+  }
+  await db.insert(weddingBudgetSettings).values({ ...data, userId });
+}
+
+export async function listWeddingBudgetItems(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureWeddingBudgetTables(db);
+  return db.select().from(weddingBudgetItems)
+    .where(eq(weddingBudgetItems.userId, userId))
+    .orderBy(desc(weddingBudgetItems.createdAt));
+}
+
+export async function createWeddingBudgetItem(userId: number, data: InsertWeddingBudgetItem) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureWeddingBudgetTables(db);
+  await db.insert(weddingBudgetItems).values({ ...data, userId });
+}
+
+export async function updateWeddingBudgetItem(userId: number, id: number, data: Partial<InsertWeddingBudgetItem>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureWeddingBudgetTables(db);
+  await db.update(weddingBudgetItems)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(weddingBudgetItems.id, id), eq(weddingBudgetItems.userId, userId)));
+}
+
+export async function deleteWeddingBudgetItem(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureWeddingBudgetTables(db);
+  await db.delete(weddingBudgetItems).where(and(eq(weddingBudgetItems.id, id), eq(weddingBudgetItems.userId, userId)));
 }
 
 // ─── 부채 ─────────────────────────────────────────────────────────────────────
