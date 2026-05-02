@@ -564,3 +564,20 @@ export const laborCosts = pgTable("labor_costs", {
 });
 export type LaborCost = typeof laborCosts.$inferSelect;
 export type InsertLaborCost = typeof laborCosts.$inferInsert;
+
+// ─── 기능 요청 게시판 ───────────────────────────────────────────────────────
+export const featureRequests = pgTable("feature_requests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  authorName: varchar("author_name", { length: 120 }),
+  title: varchar("title", { length: 200 }).notNull(),
+  content: text("content").notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("요청"),
+  isDone: boolean("is_done").notNull().default(false),
+  checkedByUserId: integer("checked_by_user_id"),
+  checkedAt: timestamp("checked_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type FeatureRequest = typeof featureRequests.$inferSelect;
+export type InsertFeatureRequest = typeof featureRequests.$inferInsert;

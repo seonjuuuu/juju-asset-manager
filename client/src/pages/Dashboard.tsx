@@ -48,6 +48,12 @@ function isPastDate(date: string, today: Date) {
   return daysUntil(date, today) < 0;
 }
 
+const INCOME_MAIN_CATEGORIES = new Set(["소득", "근로소득", "사업소득", "투자소득", "기타소득"]);
+
+function sumIncomeRows(rows: { mainCategory: string; total: number }[]) {
+  return rows.reduce((sum, row) => sum + (INCOME_MAIN_CATEGORIES.has(row.mainCategory) ? row.total : 0), 0);
+}
+
 function fixedExpenseAppliesToMonth(
   expense: { isActive?: boolean | null; startDate?: string | null; expiryDate?: string | null },
   year: number,
@@ -332,7 +338,7 @@ export default function Dashboard() {
     return MONTH_NAMES.map((name, idx) => {
       const month = idx + 1;
       const rows = (yearly ?? []).filter((r) => r.month === month);
-      const ledgerIncome = rows.find((r) => r.mainCategory === "소득")?.total ?? 0;
+      const ledgerIncome = sumIncomeRows(rows);
       const fixedExp = rows.find((r) => r.mainCategory === "고정지출")?.total ?? 0;
       const varExp = rows.find((r) => r.mainCategory === "변동지출")?.total ?? 0;
       const businessExp = rows.find((r) => r.mainCategory === "사업지출")?.total ?? 0;
@@ -470,8 +476,7 @@ export default function Dashboard() {
   }, [businessIncomeList]);
 
   // 이달 수입·지출 요약 (monthlyData 기준)
-  const currentMonthIncome = (yearly ?? []).filter(r => r.month === currentMonth)
-    .find(r => r.mainCategory === "소득")?.total ?? 0;
+  const currentMonthIncome = sumIncomeRows((yearly ?? []).filter(r => r.month === currentMonth));
   const currentMonthExpense = (() => {
     const rows = (yearly ?? []).filter(r => r.month === currentMonth);
     const fixedExp = rows.find(r => r.mainCategory === "고정지출")?.total ?? 0;
@@ -507,7 +512,7 @@ export default function Dashboard() {
       const bizIncome = businessIncomeByMonth[month] ?? 0;
       const sideIncome = sideIncomeByMonth[month] ?? 0;
       const rows = (yearly ?? []).filter(r => r.month === month);
-      const ledgerIncome = rows.find(r => r.mainCategory === "소득")?.total ?? 0;
+      const ledgerIncome = sumIncomeRows(rows);
       const otherIncome = Math.max(0, ledgerIncome - bizIncome - sideIncome);
       return { name, 사업소득: bizIncome, 부수입: sideIncome, 기타수입: otherIncome };
     });

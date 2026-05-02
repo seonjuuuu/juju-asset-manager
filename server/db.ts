@@ -8,7 +8,9 @@ import {
   cardPoints,
   debts,
   fixedExpenses,
+  featureRequests,
   InsertBlogCampaign,
+  InsertFeatureRequest,
   InsertWeddingBudgetItem,
   InsertWeddingBudgetSetting,
   InsertCard,
@@ -147,6 +149,24 @@ async function ensureWeddingBudgetTables(db: NonNullable<Awaited<ReturnType<type
       "payment_method" varchar(200),
       "status" varchar(50) NOT NULL DEFAULT '견적',
       "note" text,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function ensureFeatureRequestsTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "feature_requests" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "author_name" varchar(120),
+      "title" varchar(200) NOT NULL,
+      "content" text NOT NULL,
+      "status" varchar(30) NOT NULL DEFAULT '요청',
+      "is_done" boolean NOT NULL DEFAULT false,
+      "checked_by_user_id" integer,
+      "checked_at" timestamp,
       "createdAt" timestamp NOT NULL DEFAULT now(),
       "updatedAt" timestamp NOT NULL DEFAULT now()
     )
@@ -608,6 +628,46 @@ export async function deleteWeddingBudgetItem(userId: number, id: number) {
   await db.delete(weddingBudgetItems).where(and(eq(weddingBudgetItems.id, id), eq(weddingBudgetItems.userId, userId)));
 }
 
+// ─── 기능 요청 게시판 ───────────────────────────────────────────────────────
+export async function listFeatureRequests() {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureFeatureRequestsTable(db);
+  return db.select().from(featureRequests).orderBy(desc(featureRequests.createdAt));
+}
+
+export async function createFeatureRequest(
+  userId: number,
+  data: Pick<InsertFeatureRequest, "title" | "content" | "authorName">,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureFeatureRequestsTable(db);
+  await db.insert(featureRequests).values({ ...data, userId });
+}
+
+export async function updateFeatureRequestStatus(userId: number, id: number, isDone: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureFeatureRequestsTable(db);
+  await db.update(featureRequests)
+    .set({
+      isDone,
+      status: isDone ? "처리완료" : "요청",
+      checkedByUserId: isDone ? userId : null,
+      checkedAt: isDone ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(featureRequests.id, id));
+}
+
+export async function deleteFeatureRequest(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureFeatureRequestsTable(db);
+  await db.delete(featureRequests).where(eq(featureRequests.id, id));
+}
+
 // ─── 부채 ─────────────────────────────────────────────────────────────────────
 export async function getDebts(userId: number) {
   const db = await getDb();
@@ -952,6 +1012,17 @@ export async function deleteSubCategory(userId: number, id: number) {
 }
 
 // 기본 카테고리 시드 데이터
+const DEFAULT_WORK_INCOME_SUB_CATEGORIES = ["월급", "상여", "성과급", "퇴직금"];
+const DEFAULT_BUSINESS_INCOME_SUB_CATEGORIES = ["사업소득", "프리랜서", "외주", "정산금"];
+const DEFAULT_INVESTMENT_INCOME_SUB_CATEGORIES = ["이자수익", "배당금", "투자수익", "환차익"];
+const DEFAULT_OTHER_INCOME_SUB_CATEGORIES = ["부수입", "환급금", "지원금", "중고거래", "기타수입"];
+const DEFAULT_INCOME_SUB_CATEGORIES = [
+  ...DEFAULT_WORK_INCOME_SUB_CATEGORIES,
+  ...DEFAULT_BUSINESS_INCOME_SUB_CATEGORIES,
+  ...DEFAULT_INVESTMENT_INCOME_SUB_CATEGORIES,
+  ...DEFAULT_OTHER_INCOME_SUB_CATEGORIES,
+];
+
 const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; subs: string[] }[] = [
   { name: "고정지출", type: "expense", subs: ["구독서비스", "보험", "모임비"] },
   { name: "사업지출", type: "expense", subs: ["광고"] },
@@ -964,10 +1035,20 @@ const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; s
   { name: "교육", type: "expense", subs: ["학원/강의", "도서", "온라인강의"] },
   { name: "금융", type: "expense", subs: ["이체/송금", "수수료", "세금"] },
   { name: "기타지출", type: "expense", subs: ["경조사", "기부", "기타"] },
-  { name: "소득", type: "income", subs: ["급여", "사업소득", "부수입", "투자수익", "기타수입"] },
+  { name: "근로소득", type: "income", subs: DEFAULT_WORK_INCOME_SUB_CATEGORIES },
+  { name: "사업소득", type: "income", subs: DEFAULT_BUSINESS_INCOME_SUB_CATEGORIES },
+  { name: "투자소득", type: "income", subs: DEFAULT_INVESTMENT_INCOME_SUB_CATEGORIES },
+  { name: "기타소득", type: "income", subs: DEFAULT_OTHER_INCOME_SUB_CATEGORIES },
 ];
 
-const CANONICAL_SUB_NAMES = new Set(["구독서비스", "보험", "모임비", "광고", "급여", "사업소득", "부수입", "투자수익", "기타수입"]);
+const CANONICAL_SUB_NAMES = new Set([
+  "구독서비스",
+  "보험",
+  "모임비",
+  "광고",
+  "급여",
+  ...DEFAULT_INCOME_SUB_CATEGORIES,
+]);
 
 export async function seedDefaultCategories(userId: number) {
   const db = await getDb();
@@ -980,23 +1061,33 @@ export async function ensureDefaultCategorySet(userId: number) {
   const db = await getDb();
   if (!db) return;
 
-  const [legacyIncome] = await db.select().from(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.name, "수입")))
-    .limit(1);
-  const [incomeCategory] = await db.select().from(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.name, "소득")))
+  const [workIncomeCategory] = await db.select().from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.name, "근로소득")))
     .limit(1);
 
-  if (legacyIncome && !incomeCategory) {
-    await db.update(categories)
-      .set({ name: "소득", type: "income" })
-      .where(and(eq(categories.id, legacyIncome.id), eq(categories.userId, userId)));
-  } else if (legacyIncome && incomeCategory) {
-    await db.update(subCategories)
-      .set({ categoryId: incomeCategory.id })
-      .where(and(eq(subCategories.categoryId, legacyIncome.id), eq(subCategories.userId, userId)));
-    await db.delete(categories)
-      .where(and(eq(categories.id, legacyIncome.id), eq(categories.userId, userId)));
+  for (const legacyName of ["수입", "소득"]) {
+    const [legacyIncome] = await db.select().from(categories)
+      .where(and(eq(categories.userId, userId), eq(categories.name, legacyName)))
+      .limit(1);
+    if (!legacyIncome) continue;
+
+    const [targetIncome] = workIncomeCategory
+      ? [workIncomeCategory]
+      : await db.select().from(categories)
+        .where(and(eq(categories.userId, userId), eq(categories.name, "근로소득")))
+        .limit(1);
+
+    if (!targetIncome) {
+      await db.update(categories)
+        .set({ name: "근로소득", type: "income" })
+        .where(and(eq(categories.id, legacyIncome.id), eq(categories.userId, userId)));
+    } else {
+      await db.update(subCategories)
+        .set({ categoryId: targetIncome.id })
+        .where(and(eq(subCategories.categoryId, legacyIncome.id), eq(subCategories.userId, userId)));
+      await db.delete(categories)
+        .where(and(eq(categories.id, legacyIncome.id), eq(categories.userId, userId)));
+    }
   }
 
   for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
@@ -1105,34 +1196,7 @@ export async function ensureBusinessExpenseCategory(userId: number) {
 }
 
 export async function ensureIncomeCategory(userId: number) {
-  const db = await getDb();
-  if (!db) return;
-
-  const [income] = await db.select().from(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.name, "소득")))
-    .limit(1);
-
-  let incomeId = income?.id;
-  if (!incomeId) {
-    const [result] = await db.insert(categories).values({ name: "소득", type: "income", sortOrder: 0, userId }).returning({ id: categories.id });
-    incomeId = result.id;
-  }
-
-  const incomeSubNames = ["급여", "사업소득", "부수입", "투자수익", "기타수입"];
-  for (let sortOrder = 0; sortOrder < incomeSubNames.length; sortOrder++) {
-    const name = incomeSubNames[sortOrder];
-    const existing = await db.select().from(subCategories)
-      .where(and(eq(subCategories.userId, userId), eq(subCategories.name, name)))
-      .limit(1);
-
-    if (existing.length > 0) {
-      await db.update(subCategories)
-        .set({ categoryId: incomeId, sortOrder })
-        .where(and(eq(subCategories.userId, userId), eq(subCategories.name, name)));
-    } else {
-      await db.insert(subCategories).values({ categoryId: incomeId, name, sortOrder, userId });
-    }
-  }
+  await ensureDefaultCategorySet(userId);
 }
 
 // ─── 보험 ─────────────────────────────────────────────────────────────────────

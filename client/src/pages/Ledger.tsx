@@ -52,6 +52,10 @@ type LoanRow = {
   note: string | null;
 };
 
+const INCOME_MAIN_CATEGORIES = new Set(["소득", "근로소득", "사업소득", "투자소득", "기타소득"]);
+
+const isIncomeCategory = (mainCategory: string) => INCOME_MAIN_CATEGORIES.has(mainCategory);
+
 function instIsActiveInMonth(inst: { startDate: string; endDate: string }, y: number, m: number): boolean {
   if (!inst.startDate || !inst.endDate) return false;
   const [py, pm] = inst.startDate.split("-").map(Number);
@@ -138,7 +142,7 @@ export default function Ledger() {
     return m;
   }, [summary]);
 
-  const income = summaryMap["소득"] ?? 0;
+  const income = Array.from(INCOME_MAIN_CATEGORIES).reduce((sum, name) => sum + (summaryMap[name] ?? 0), 0);
   const fixedExp = summaryMap["고정지출"] ?? 0;
   const varExp = summaryMap["변동지출"] ?? 0;
   const businessExp = summaryMap["사업지출"] ?? 0;
@@ -270,7 +274,7 @@ export default function Ledger() {
     for (const row of visibleTableRows) {
       if (row.kind === "entry") {
         const e = row.entry;
-        if (e.mainCategory === "소득") continue;
+        if (isIncomeCategory(e.mainCategory)) continue;
         const key = e.subCategory?.trim() || e.mainCategory;
         map[key] = (map[key] ?? 0) + Math.abs(e.amount);
       } else if (row.kind === "fixed") {
@@ -369,7 +373,7 @@ export default function Ledger() {
 
   const getLedgerType = (mainCategory: string, amount: number) => {
     if (mainCategory === "저축/투자") return "저축";
-    if (mainCategory === "소득" || amount > 0) return "수입";
+    if (isIncomeCategory(mainCategory) || amount > 0) return "수입";
     return "지출";
   };
 

@@ -31,6 +31,7 @@ import BusinessIncome from "./pages/BusinessIncome";
 import LaborCosts from "./pages/LaborCosts";
 import Categories from "./pages/Categories";
 import Profile from "./pages/Profile";
+import FeatureRequests from "./pages/FeatureRequests";
 
 function Router() {
   return (
@@ -64,6 +65,7 @@ function Router() {
             <Route path="/business-income" component={BusinessIncome} />
             <Route path="/labor-costs" component={LaborCosts} />
             <Route path="/categories" component={Categories} />
+            <Route path="/feature-requests" component={FeatureRequests} />
             <Route path="/profile" component={Profile} />
             <Route path="/404" component={NotFound} />
             <Route component={NotFound} />

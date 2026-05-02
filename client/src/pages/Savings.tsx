@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
-const CATEGORIES = ["예적금", "입출금통장", "기타(달러/주식통장)"];
+const CATEGORIES = ["예적금", "현금성통장", "투자", "연금저축", "주택청약", "기타저축"];
 
 const EMPTY_FORM = {
   category: "예적금", description: "", bank: "", accountNumber: "",
@@ -102,6 +102,11 @@ export default function Savings() {
 
   const catColors: Record<string, string> = {
     "예적금": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+    "현금성통장": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    "투자": "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
+    "연금저축": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
+    "주택청약": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    "기타저축": "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
     "입출금통장": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
     "기타(달러/주식통장)": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
   };

@@ -35,6 +35,7 @@ import {
   Users,
   X,
   ClipboardCheck,
+  MessageSquarePlus,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
@@ -80,6 +81,7 @@ const debtSubItems = [
 const settingItems = [
   { href: "/cards", icon: CreditCard, label: "보유카드/계좌" },
   { href: "/categories", icon: Tags, label: "카테고리 관리" },
+  { href: "/feature-requests", icon: MessageSquarePlus, label: "기능 요청" },
   { href: "/profile", icon: UserCircle, label: "내 정보" },
 ];
 

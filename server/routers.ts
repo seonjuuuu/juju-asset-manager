@@ -647,7 +647,7 @@ export const appRouter = router({
           entryDate: input.incomeDate,
           year: input.year,
           month: input.month,
-          mainCategory: "소득",
+          mainCategory: "기타소득",
           subCategory: input.categoryName ?? "부수입",
           description: input.description ?? "",
           amount: input.amount,
@@ -809,7 +809,7 @@ export const appRouter = router({
           const r = await db.createLedgerEntry(ctx.user.id, {
             entryDate: input.workStartDate,
             year: y, month: m,
-            mainCategory: "소득", subCategory: "사업소득",
+            mainCategory: "사업소득", subCategory: "사업소득",
             description: `${input.clientName} 계약금`,
             amount: deposit,
             note: "[사업소득 자동연동]",
@@ -821,7 +821,7 @@ export const appRouter = router({
           const r = await db.createLedgerEntry(ctx.user.id, {
             entryDate: input.settlementDate,
             year: y, month: m,
-            mainCategory: "소득", subCategory: "사업소득",
+            mainCategory: "사업소득", subCategory: "사업소득",
             description: `${input.clientName} 잔금`,
             amount: balance,
             note: "[사업소득 자동연동]",
@@ -867,7 +867,7 @@ export const appRouter = router({
             await db.updateLedgerEntry(ctx.user.id, depositLedgerEntryId, {
               entryDate: merged.workStartDate!,
               year: y, month: m,
-              mainCategory: "소득",
+              mainCategory: "사업소득",
               subCategory: "사업소득",
               description: `${merged.clientName} 계약금`,
               amount: deposit,
@@ -876,7 +876,7 @@ export const appRouter = router({
             const r = await db.createLedgerEntry(ctx.user.id, {
               entryDate: merged.workStartDate!,
               year: y, month: m,
-              mainCategory: "소득", subCategory: "사업소득",
+              mainCategory: "사업소득", subCategory: "사업소득",
               description: `${merged.clientName} 계약금`,
               amount: deposit,
               note: "[사업소득 자동연동]",
@@ -896,7 +896,7 @@ export const appRouter = router({
             await db.updateLedgerEntry(ctx.user.id, balanceLedgerEntryId, {
               entryDate: merged.settlementDate!,
               year: y, month: m,
-              mainCategory: "소득",
+              mainCategory: "사업소득",
               subCategory: "사업소득",
               description: `${merged.clientName} 잔금`,
               amount: balance,
@@ -905,7 +905,7 @@ export const appRouter = router({
             const r = await db.createLedgerEntry(ctx.user.id, {
               entryDate: merged.settlementDate!,
               year: y, month: m,
-              mainCategory: "소득", subCategory: "사업소득",
+              mainCategory: "사업소득", subCategory: "사업소득",
               description: `${merged.clientName} 잔금`,
               amount: balance,
               note: "[사업소득 자동연동]",
@@ -1041,6 +1041,24 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .mutation(({ input, ctx }) => db.deleteLaborCost(ctx.user.id, input.id)),
+  }),
+  featureRequest: router({
+    list: protectedProcedure.query(() => db.listFeatureRequests()),
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string().min(1).max(200),
+        content: z.string().min(1).max(5000),
+      }))
+      .mutation(({ input, ctx }) => db.createFeatureRequest(ctx.user.id, {
+        ...input,
+        authorName: ctx.user.name ?? ctx.user.email ?? "사용자",
+      })),
+    setDone: protectedProcedure
+      .input(z.object({ id: z.number().int(), isDone: z.boolean() }))
+      .mutation(({ input, ctx }) => db.updateFeatureRequestStatus(ctx.user.id, input.id, input.isDone)),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(({ input }) => db.deleteFeatureRequest(input.id)),
   }),
   exchangeRate: router({
     get: protectedProcedure
