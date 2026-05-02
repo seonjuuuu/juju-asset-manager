@@ -56,6 +56,14 @@ const INCOME_MAIN_CATEGORIES = new Set(["소득", "근로소득", "사업소득"
 
 const isIncomeCategory = (mainCategory: string) => INCOME_MAIN_CATEGORIES.has(mainCategory);
 
+const formatSignedWon = (amount: number) => `${amount < 0 ? "-" : ""}₩${formatAmount(Math.abs(amount))}`;
+
+const ledgerAmountColor: Record<string, string> = {
+  "수입": "text-blue-600 dark:text-blue-400",
+  "지출": "text-red-600 dark:text-red-400",
+  "저축": "text-purple-600 dark:text-purple-400",
+};
+
 function instIsActiveInMonth(inst: { startDate: string; endDate: string }, y: number, m: number): boolean {
   if (!inst.startDate || !inst.endDate) return false;
   const [py, pm] = inst.startDate.split("-").map(Number);
@@ -332,7 +340,7 @@ export default function Ledger() {
       mainCategory: entry.mainCategory,
       subCategory: entry.subCategory ?? "",
       description: entry.description ?? "",
-      amount: entry.amount ?? 0,
+      amount: Math.abs(entry.amount ?? 0),
       note: entry.note ?? "",
     });
     setDialogOpen(true);
@@ -346,7 +354,7 @@ export default function Ledger() {
       mainCategory: form.mainCategory,
       subCategory: form.subCategory || undefined,
       description: form.description || undefined,
-      amount: form.amount,
+      amount: form.entryType === "income" ? Math.abs(form.amount) : -Math.abs(form.amount),
       note: form.note || undefined,
     };
     if (editing) {
@@ -584,7 +592,9 @@ export default function Ledger() {
                         </td>
                         <td className="px-4 py-3 text-sm hidden md:table-cell">{entry.subCategory ?? "-"}</td>
                         <td className="px-4 py-3 text-sm">{entry.description ?? "-"}</td>
-                        <td className="px-4 py-3 text-sm text-right font-medium whitespace-nowrap">₩{formatAmount(entry.amount)}</td>
+                        <td className={`px-4 py-3 text-sm text-right font-medium whitespace-nowrap ${ledgerAmountColor[ledgerType]}`}>
+                          {formatSignedWon(entry.amount)}
+                        </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">{entry.note ?? "-"}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 justify-end">
