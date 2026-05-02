@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, TrendingUp, Repeat, Zap } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, TrendingUp, Repeat, Zap, CalendarDays } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -126,6 +127,7 @@ function SideIncomeDialog({
   const invalidate = () => {
     utils.sideIncome.list.invalidate({ year, month });
     utils.sideIncome.yearlySummary.invalidate({ year });
+    utils.sideIncome.total.invalidate();
   };
 
   const create = trpc.sideIncome.create.useMutation({
@@ -219,18 +221,22 @@ export default function SideIncome() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(now.getFullYear());
   const [catDialog, setCatDialog] = useState<{ open: boolean; item?: { id: number; name: string; color: string } | null }>({ open: false });
   const [incomeDialog, setIncomeDialog] = useState<{ open: boolean; item?: ({ id: number } & SideIncomeForm) | null }>({ open: false });
 
   const { data: categories = [] } = trpc.sideIncomeCategory.list.useQuery();
   const { data: incomes = [], isLoading } = trpc.sideIncome.list.useQuery({ year, month });
   const { data: yearlySummary = [] } = trpc.sideIncome.yearlySummary.useQuery({ year });
+  const { data: allTimeTotal = 0 } = trpc.sideIncome.total.useQuery();
 
   const utils = trpc.useUtils();
   const deleteIncome = trpc.sideIncome.delete.useMutation({
     onSuccess: () => {
       utils.sideIncome.list.invalidate({ year, month });
       utils.sideIncome.yearlySummary.invalidate({ year });
+      utils.sideIncome.total.invalidate();
       toast.success("삭제 완료");
     },
     onError: (e) => toast.error(e.message),
@@ -294,7 +300,18 @@ export default function SideIncome() {
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Card>
+            <CardContent className="pt-5">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10"><TrendingUp className="w-5 h-5 text-emerald-500" /></div>
+                <div>
+                  <p className="text-xs text-muted-foreground">누적 총 부수입</p>
+                  <p className="text-xl font-bold text-emerald-600">₩{fmt(allTimeTotal)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
           <Card>
             <CardContent className="pt-5">
               <div className="flex items-center gap-3">
@@ -352,7 +369,45 @@ export default function SideIncome() {
                       </Button>
                     )}
                     <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
-                    <span className="text-sm font-medium w-20 text-center">{year}.{String(month).padStart(2, "0")}</span>
+                    <Popover open={pickerOpen} onOpenChange={(open) => { setPickerOpen(open); if (open) setPickerYear(year); }}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 w-28 gap-1.5 px-2">
+                          <CalendarDays className="w-3.5 h-3.5" />
+                          {year}.{String(month).padStart(2, "0")}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-3" align="center">
+                        <div className="flex items-center justify-between mb-3">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y - 1)}>
+                            <ChevronLeft className="w-4 h-4" />
+                          </Button>
+                          <span className="text-sm font-semibold">{pickerYear}년</span>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y + 1)}>
+                            <ChevronRight className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1">
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+                            const isSelected = pickerYear === year && m === month;
+                            return (
+                              <Button
+                                key={m}
+                                variant={isSelected ? "default" : "ghost"}
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => {
+                                  setYear(pickerYear);
+                                  setMonth(m);
+                                  setPickerOpen(false);
+                                }}
+                              >
+                                {m}월
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                     <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
                   </div>
                 </div>

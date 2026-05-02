@@ -850,6 +850,16 @@ export async function getSideIncomes(userId: number, year: number, month: number
     .where(and(eq(sideIncomes.userId, userId), eq(sideIncomes.year, year), eq(sideIncomes.month, month)))
     .orderBy(desc(sideIncomes.incomeDate));
 }
+
+export async function getSideIncomeTotal(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ total: sql<number>`COALESCE(SUM(${sideIncomes.amount}), 0)` })
+    .from(sideIncomes)
+    .where(eq(sideIncomes.userId, userId));
+  return Number(result[0]?.total ?? 0);
+}
+
 export async function createSideIncome(userId: number, data: InsertSideIncome) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

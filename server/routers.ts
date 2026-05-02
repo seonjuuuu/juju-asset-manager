@@ -629,6 +629,7 @@ export const appRouter = router({
     yearlySummary: protectedProcedure
       .input(z.object({ year: z.number() }))
       .query(({ input, ctx }) => db.getSideIncomeMonthlySummary(ctx.user.id, input.year)),
+    total: protectedProcedure.query(({ ctx }) => db.getSideIncomeTotal(ctx.user.id)),
     create: protectedProcedure
       .input(z.object({
         incomeDate: z.string(),
