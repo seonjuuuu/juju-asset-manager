@@ -26,6 +26,7 @@ import Subscriptions from "./pages/Subscriptions";
 import SideIncome from "./pages/SideIncome";
 import Installments from "./pages/Installments";
 import Loans from "./pages/Loans";
+import BorrowedMoney from "./pages/BorrowedMoney";
 import Insurance from "./pages/Insurance";
 import BusinessIncome from "./pages/BusinessIncome";
 import LaborCosts from "./pages/LaborCosts";
@@ -61,6 +62,7 @@ function Router() {
             <Route path="/side-income" component={SideIncome} />
             <Route path="/installments" component={Installments} />
             <Route path="/loans" component={Loans} />
+            <Route path="/borrowed-money" component={BorrowedMoney} />
             <Route path="/insurance" component={Insurance} />
             <Route path="/business-income" component={BusinessIncome} />
             <Route path="/labor-costs" component={LaborCosts} />

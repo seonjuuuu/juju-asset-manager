@@ -16,6 +16,7 @@ import {
   ChevronRight,
   CreditCard,
   Coins,
+  HandCoins,
   LogOut,
   Menu,
   PiggyBank,
@@ -76,6 +77,7 @@ const businessSubItems = [
 const debtSubItems = [
   { href: "/installments", icon: CreditCard, label: "할부" },
   { href: "/loans", icon: Landmark, label: "대출" },
+  { href: "/borrowed-money", icon: HandCoins, label: "빌린돈" },
 ];
 
 const settingItems = [

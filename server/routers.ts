@@ -83,6 +83,29 @@ const loanInput = z.object({
   note: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
 });
+const borrowedMoneyInput = z.object({
+  lenderName: z.string().min(1),
+  principalAmount: z.number().int().min(0).default(0),
+  repaidAmount: z.number().int().min(0).default(0),
+  borrowedDate: z.string().nullable().optional(),
+  repaymentType: z.enum(["일시상환", "할부상환", "자유상환"]).default("자유상환"),
+  repaymentStartDate: z.string().nullable().optional(),
+  repaymentDueDate: z.string().nullable().optional(),
+  paymentDay: z.number().int().min(1).max(31).nullable().optional(),
+  monthlyPayment: z.number().int().min(0).default(0),
+  totalInstallments: z.number().int().min(1).nullable().optional(),
+  installmentMode: z.enum(["equal", "custom"]).default("equal"),
+  repaymentSchedule: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+const borrowedMoneyPaymentInput = z.object({
+  borrowedMoneyId: z.number().int(),
+  paymentDate: z.string(),
+  amount: z.number().int().min(1),
+  installmentNo: z.number().int().min(1).nullable().optional(),
+  note: z.string().nullable().optional(),
+});
 const subscriptionInput = z.object({
   serviceName: z.string(),
   category: z.enum(["비즈니스", "미디어", "자기계발", "쇼핑", "기타"]).default("기타"),
@@ -738,6 +761,47 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteLoan(ctx.user.id, input.id)),
+  }),
+  borrowedMoney: router({
+    list: protectedProcedure.query(({ ctx }) => db.listBorrowedMoney(ctx.user.id)),
+    create: protectedProcedure.input(borrowedMoneyInput).mutation(({ input, ctx }) => db.createBorrowedMoney(ctx.user.id, {
+      ...input,
+      borrowedDate: input.borrowedDate ?? null,
+      repaymentStartDate: input.repaymentStartDate ?? null,
+      repaymentDueDate: input.repaymentDueDate ?? null,
+      paymentDay: input.paymentDay ?? null,
+      totalInstallments: input.totalInstallments ?? null,
+      installmentMode: input.installmentMode ?? "equal",
+      repaymentSchedule: input.repaymentSchedule ?? null,
+      isActive: input.isActive ?? true,
+    })),
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), data: borrowedMoneyInput.partial() }))
+      .mutation(({ input, ctx }) => db.updateBorrowedMoney(ctx.user.id, input.id, {
+        ...input.data,
+        borrowedDate: input.data.borrowedDate ?? undefined,
+        repaymentStartDate: input.data.repaymentStartDate ?? undefined,
+        repaymentDueDate: input.data.repaymentDueDate ?? undefined,
+        paymentDay: input.data.paymentDay ?? undefined,
+        totalInstallments: input.data.totalInstallments ?? undefined,
+        repaymentSchedule: input.data.repaymentSchedule ?? undefined,
+      })),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(({ input, ctx }) => db.deleteBorrowedMoney(ctx.user.id, input.id)),
+    listPayments: protectedProcedure
+      .input(z.object({ borrowedMoneyId: z.number().int().optional() }).optional())
+      .query(({ input, ctx }) => db.listBorrowedMoneyPayments(ctx.user.id, input?.borrowedMoneyId)),
+    addPayment: protectedProcedure
+      .input(borrowedMoneyPaymentInput)
+      .mutation(({ input, ctx }) => db.createBorrowedMoneyPayment(ctx.user.id, {
+        ...input,
+        installmentNo: input.installmentNo ?? null,
+        note: input.note ?? null,
+      })),
+    deletePayment: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(({ input, ctx }) => db.deleteBorrowedMoneyPayment(ctx.user.id, input.id)),
   }),
   categories: router({
     list: protectedProcedure

@@ -4,12 +4,16 @@ import { neon } from "@neondatabase/serverless";
 import {
   InsertUser,
   blogCampaigns,
+  borrowedMoney,
+  borrowedMoneyPayments,
   cards,
   cardPoints,
   debts,
   fixedExpenses,
   featureRequests,
   InsertBlogCampaign,
+  InsertBorrowedMoney,
+  InsertBorrowedMoneyPayment,
   InsertFeatureRequest,
   InsertWeddingBudgetItem,
   InsertWeddingBudgetSetting,
@@ -112,6 +116,47 @@ async function ensureLoansTable(db: NonNullable<Awaited<ReturnType<typeof getDb>
       "grace_months" integer DEFAULT 0,
       "note" text,
       "is_active" boolean NOT NULL DEFAULT true,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function ensureBorrowedMoneyTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "borrowed_money" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "lender_name" varchar(200) NOT NULL,
+      "principal_amount" bigint NOT NULL DEFAULT 0,
+      "repaid_amount" bigint NOT NULL DEFAULT 0,
+      "borrowed_date" varchar(20),
+      "repayment_type" varchar(30) NOT NULL DEFAULT '자유상환',
+      "repayment_start_date" varchar(20),
+      "repayment_due_date" varchar(20),
+      "payment_day" integer,
+      "monthly_payment" bigint NOT NULL DEFAULT 0,
+      "total_installments" integer,
+      "installment_mode" varchar(20) NOT NULL DEFAULT 'equal',
+      "repayment_schedule" text,
+      "note" text,
+      "is_active" boolean NOT NULL DEFAULT true,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`ALTER TABLE "borrowed_money" ADD COLUMN IF NOT EXISTS "installment_mode" varchar(20) NOT NULL DEFAULT 'equal'`);
+  await db.execute(sql`ALTER TABLE "borrowed_money" ADD COLUMN IF NOT EXISTS "repayment_schedule" text`);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "borrowed_money_payments" (
+      "id" serial PRIMARY KEY,
+      "borrowed_money_id" integer NOT NULL,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "payment_date" varchar(20) NOT NULL,
+      "amount" bigint NOT NULL DEFAULT 0,
+      "installment_no" integer,
+      "note" text,
+      "ledger_entry_id" integer,
       "createdAt" timestamp NOT NULL DEFAULT now(),
       "updatedAt" timestamp NOT NULL DEFAULT now()
     )
@@ -413,6 +458,116 @@ export async function deleteLoan(userId: number, id: number) {
   if (!db) throw new Error("DB not available");
   await ensureLoansTable(db);
   await db.update(loans).set({ isActive: false }).where(and(eq(loans.id, id), eq(loans.userId, userId)));
+}
+
+// ─── 빌린돈 ───────────────────────────────────────────────────────────────────
+export async function listBorrowedMoney(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureBorrowedMoneyTable(db);
+  return db.select().from(borrowedMoney)
+    .where(and(eq(borrowedMoney.userId, userId), eq(borrowedMoney.isActive, true)))
+    .orderBy(desc(borrowedMoney.createdAt));
+}
+
+export async function createBorrowedMoney(userId: number, data: InsertBorrowedMoney) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBorrowedMoneyTable(db);
+  await db.insert(borrowedMoney).values({ ...data, userId });
+}
+
+export async function updateBorrowedMoney(userId: number, id: number, data: Partial<InsertBorrowedMoney>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBorrowedMoneyTable(db);
+  await db.update(borrowedMoney)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(borrowedMoney.id, id), eq(borrowedMoney.userId, userId)));
+}
+
+export async function deleteBorrowedMoney(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBorrowedMoneyTable(db);
+  await db.update(borrowedMoney)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(and(eq(borrowedMoney.id, id), eq(borrowedMoney.userId, userId)));
+}
+
+export async function listBorrowedMoneyPayments(userId: number, borrowedMoneyId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureBorrowedMoneyTable(db);
+  const where = borrowedMoneyId
+    ? and(eq(borrowedMoneyPayments.userId, userId), eq(borrowedMoneyPayments.borrowedMoneyId, borrowedMoneyId))
+    : eq(borrowedMoneyPayments.userId, userId);
+  return db.select().from(borrowedMoneyPayments)
+    .where(where)
+    .orderBy(desc(borrowedMoneyPayments.paymentDate), desc(borrowedMoneyPayments.createdAt));
+}
+
+export async function createBorrowedMoneyPayment(
+  userId: number,
+  data: {
+    borrowedMoneyId: number;
+    paymentDate: string;
+    amount: number;
+    installmentNo?: number | null;
+    note?: string | null;
+  },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBorrowedMoneyTable(db);
+  const [target] = await db.select().from(borrowedMoney)
+    .where(and(eq(borrowedMoney.id, data.borrowedMoneyId), eq(borrowedMoney.userId, userId), eq(borrowedMoney.isActive, true)))
+    .limit(1);
+  if (!target) throw new Error("빌린돈 내역을 찾을 수 없습니다");
+  const remaining = Math.max(0, target.principalAmount - target.repaidAmount);
+  const amount = Math.min(Math.max(0, data.amount), remaining);
+  if (amount <= 0) throw new Error("상환할 금액이 없습니다");
+
+  const [y, m] = data.paymentDate.split("-").map(Number);
+  if (!y || !m) throw new Error("상환일 형식이 올바르지 않습니다");
+  const ledgerResult = await db.insert(ledgerEntries).values({
+    userId,
+    entryDate: data.paymentDate,
+    year: y,
+    month: m,
+    mainCategory: "변동지출",
+    subCategory: "빌린돈상환",
+    description: `${target.lenderName} 상환`,
+    amount: -Math.abs(amount),
+    note: `[빌린돈 자동연동]${data.note ? ` ${data.note}` : ""}`,
+  }).returning({ id: ledgerEntries.id });
+  const ledgerEntryId = ledgerResult[0]?.id ?? null;
+
+  await db.insert(borrowedMoneyPayments).values({ ...data, amount, ledgerEntryId, userId });
+  await db.update(borrowedMoney)
+    .set({ repaidAmount: Math.min(target.principalAmount, target.repaidAmount + amount), updatedAt: new Date() })
+    .where(and(eq(borrowedMoney.id, data.borrowedMoneyId), eq(borrowedMoney.userId, userId)));
+}
+
+export async function deleteBorrowedMoneyPayment(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBorrowedMoneyTable(db);
+  const [payment] = await db.select().from(borrowedMoneyPayments)
+    .where(and(eq(borrowedMoneyPayments.id, id), eq(borrowedMoneyPayments.userId, userId)))
+    .limit(1);
+  if (!payment) throw new Error("상환 기록을 찾을 수 없습니다");
+  const [target] = await db.select().from(borrowedMoney)
+    .where(and(eq(borrowedMoney.id, payment.borrowedMoneyId), eq(borrowedMoney.userId, userId)))
+    .limit(1);
+  if (payment.ledgerEntryId) await deleteLedgerEntry(userId, payment.ledgerEntryId);
+  await db.delete(borrowedMoneyPayments)
+    .where(and(eq(borrowedMoneyPayments.id, id), eq(borrowedMoneyPayments.userId, userId)));
+  if (target) {
+    await db.update(borrowedMoney)
+      .set({ repaidAmount: Math.max(0, target.repaidAmount - payment.amount), updatedAt: new Date() })
+      .where(and(eq(borrowedMoney.id, payment.borrowedMoneyId), eq(borrowedMoney.userId, userId)));
+  }
 }
 
 export async function getUserMemo(userId: number, memoKey: string) {
@@ -1044,13 +1199,13 @@ const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; s
   { name: "고정지출", type: "expense", subs: ["구독서비스", "보험", "모임비"] },
   { name: "사업지출", type: "expense", subs: ["광고"] },
   { name: "식비", type: "expense", subs: ["식료품", "외식", "카페/음료", "배달음식"] },
-  { name: "교통/차량", type: "expense", subs: ["대중교통", "택시", "주유", "주차", "차량유지"] },
+  { name: "교통/차량", type: "expense", subs: ["대중교통", "택시", "주유", "주차", "톨비", "차량유지"] },
   { name: "주거/통신", type: "expense", subs: ["월세/관리비", "전기/가스/수도", "인터넷/통신"] },
   { name: "의료/건강", type: "expense", subs: ["병원", "약국", "헬스/운동", "건강식품"] },
   { name: "쇼핑/의류", type: "expense", subs: ["의류/잡화", "전자제품", "생활용품", "온라인쇼핑"] },
   { name: "문화/여가", type: "expense", subs: ["영화/공연", "여행", "취미"] },
   { name: "교육", type: "expense", subs: ["학원/강의", "도서", "온라인강의"] },
-  { name: "금융", type: "expense", subs: ["이체/송금", "수수료", "세금"] },
+  { name: "금융", type: "expense", subs: ["이체/송금", "수수료", "세금", "빌린돈상환"] },
   { name: "기타지출", type: "expense", subs: ["경조사", "기부", "기타"] },
   { name: "근로소득", type: "income", subs: DEFAULT_WORK_INCOME_SUB_CATEGORIES },
   { name: "사업소득", type: "income", subs: DEFAULT_BUSINESS_INCOME_SUB_CATEGORIES },

@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, CalendarDays, Wallet, Clock3 } from "lucide-react";
 
-type PaymentType = "구독결제" | "보험" | "고정지출" | "할부" | "대출";
+type PaymentType = "구독결제" | "보험" | "고정지출" | "할부" | "대출" | "빌린돈";
 
 type PaymentEvent = {
   id: string;
@@ -83,6 +83,21 @@ type LoanRow = {
   repaymentType: string;
 };
 
+type BorrowedMoneyRow = {
+  id: number;
+  lenderName: string;
+  principalAmount: number;
+  repaidAmount: number;
+  repaymentType: string;
+  repaymentStartDate: string | null;
+  repaymentDueDate: string | null;
+  paymentDay: number | null;
+  monthlyPayment: number;
+  totalInstallments: number | null;
+  installmentMode: "equal" | "custom";
+  repaymentSchedule: string | null;
+};
+
 type CardRow = {
   id: number;
   cardCompany: string;
@@ -96,6 +111,7 @@ const TYPE_STYLE: Record<PaymentType, string> = {
   "고정지출": "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
   "할부": "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300",
   "대출": "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300",
+  "빌린돈": "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300",
 };
 
 function pad2(n: number) {
@@ -156,6 +172,36 @@ function loanAppliesToMonth(loan: LoanRow, year: number, month: number) {
   return true;
 }
 
+function borrowedRemaining(item: BorrowedMoneyRow) {
+  return Math.max(0, item.principalAmount - item.repaidAmount);
+}
+
+function borrowedInstallmentNo(item: BorrowedMoneyRow, year: number, month: number) {
+  if (!item.repaymentStartDate || item.repaymentType !== "할부상환") return null;
+  const [sy, sm] = item.repaymentStartDate.split("-").map(Number);
+  const diff = year * 12 + month - (sy * 12 + sm) + 1;
+  if (diff < 1) return null;
+  if (item.totalInstallments && diff > item.totalInstallments) return null;
+  return diff;
+}
+
+function parseBorrowedSchedule(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((amount) => Number(amount) || 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+function borrowedInstallmentAmount(item: BorrowedMoneyRow, no: number) {
+  if (item.installmentMode === "custom") {
+    return parseBorrowedSchedule(item.repaymentSchedule)[no - 1] ?? 0;
+  }
+  return item.monthlyPayment;
+}
+
 function buildCalendarDays(year: number, month: number) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
@@ -188,6 +234,7 @@ export default function PaymentCalendar() {
   const { data: insuranceList = [] } = trpc.insurance.list.useQuery();
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
   const { data: loanList = [] } = trpc.loan.list.useQuery();
+  const { data: borrowedMoneyList = [] } = trpc.borrowedMoney.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
 
   const events = useMemo(() => {
@@ -265,8 +312,38 @@ export default function PaymentCalendar() {
       });
     }
 
+    for (const borrowed of borrowedMoneyList as BorrowedMoneyRow[]) {
+      const remain = borrowedRemaining(borrowed);
+      if (remain <= 0) continue;
+      if (borrowed.repaymentType === "할부상환") {
+        const no = borrowedInstallmentNo(borrowed, year, month);
+        if (!no) continue;
+        const installmentAmount = borrowedInstallmentAmount(borrowed, no);
+        if (installmentAmount <= 0) continue;
+        const fallbackDay = Number(borrowed.repaymentStartDate?.slice(8, 10)) || 1;
+        const day = clampDay(year, month, borrowed.paymentDay ?? fallbackDay);
+        rows.push({
+          id: `borrowed-${borrowed.id}`,
+          date: `${key}-${pad2(day)}`,
+          title: `${borrowed.lenderName} 상환`,
+          amount: Math.min(remain, installmentAmount),
+          type: "빌린돈",
+          detail: borrowed.totalInstallments ? `${no}/${borrowed.totalInstallments}회` : `${no}회차`,
+        });
+      } else if (borrowed.repaymentDueDate?.slice(0, 7) === key) {
+        rows.push({
+          id: `borrowed-${borrowed.id}`,
+          date: borrowed.repaymentDueDate,
+          title: `${borrowed.lenderName} 상환`,
+          amount: remain,
+          type: "빌린돈",
+          detail: borrowed.repaymentType,
+        });
+      }
+    }
+
     return rows.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
-  }, [cardList, fixedExpenses, installmentList, insuranceList, key, loanList, month, subscriptions, year]);
+  }, [borrowedMoneyList, cardList, fixedExpenses, installmentList, insuranceList, key, loanList, month, subscriptions, year]);
 
   const visibleEvents = useMemo(
     () => selectedType ? events.filter((event) => event.type === selectedType) : events,
@@ -280,6 +357,7 @@ export default function PaymentCalendar() {
       "고정지출": { amount: 0, count: 0 },
       "할부": { amount: 0, count: 0 },
       "대출": { amount: 0, count: 0 },
+      "빌린돈": { amount: 0, count: 0 },
     };
     for (const event of events) {
       totals[event.type].amount += event.amount;
@@ -308,7 +386,7 @@ export default function PaymentCalendar() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">결제 예정 캘린더</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">구독, 보험, 고정지출, 할부, 대출 결제일을 한 달 달력으로 확인합니다</p>
+          <p className="text-muted-foreground text-sm mt-0.5">구독, 보험, 고정지출, 할부, 대출, 빌린돈 상환일을 한 달 달력으로 확인합니다</p>
         </div>
       </div>
 
@@ -374,7 +452,7 @@ export default function PaymentCalendar() {
             <p className="text-xs text-muted-foreground">{selectedType ? `${selectedType} 예정액` : "이번 달 예정액"}</p>
             <p className="text-xl font-bold">₩{formatAmount(visibleTotal)}</p>
             <p className="mt-1 truncate text-[11px] text-muted-foreground">
-              구독 ₩{formatAmount(typeTotals["구독결제"].amount)} · 고정 ₩{formatAmount(typeTotals["고정지출"].amount)} · 보험 ₩{formatAmount(typeTotals["보험"].amount)} · 할부 ₩{formatAmount(typeTotals["할부"].amount)}
+              구독 ₩{formatAmount(typeTotals["구독결제"].amount)} · 고정 ₩{formatAmount(typeTotals["고정지출"].amount)} · 보험 ₩{formatAmount(typeTotals["보험"].amount)} · 할부 ₩{formatAmount(typeTotals["할부"].amount)} · 대출 ₩{formatAmount(typeTotals["대출"].amount)} · 빌린돈 ₩{formatAmount(typeTotals["빌린돈"].amount)}
             </p>
           </div>
         </div>
@@ -466,6 +544,7 @@ export default function PaymentCalendar() {
                 <SelectItem value="보험">보험</SelectItem>
                 <SelectItem value="할부">할부</SelectItem>
                 <SelectItem value="대출">대출</SelectItem>
+                <SelectItem value="빌린돈">빌린돈</SelectItem>
               </SelectContent>
             </Select>
           </div>

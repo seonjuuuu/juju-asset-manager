@@ -496,6 +496,45 @@ export const loans = pgTable("loans", {
 export type Loan = typeof loans.$inferSelect;
 export type InsertLoan = typeof loans.$inferInsert;
 
+// ─── 빌린돈 ───────────────────────────────────────────────────────────────────
+export const borrowedMoney = pgTable("borrowed_money", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  lenderName: varchar("lender_name", { length: 200 }).notNull(),
+  principalAmount: bigint("principal_amount", { mode: "number" }).notNull().default(0),
+  repaidAmount: bigint("repaid_amount", { mode: "number" }).notNull().default(0),
+  borrowedDate: varchar("borrowed_date", { length: 20 }),
+  repaymentType: varchar("repayment_type", { length: 30 }).notNull().default("자유상환"),
+  repaymentStartDate: varchar("repayment_start_date", { length: 20 }),
+  repaymentDueDate: varchar("repayment_due_date", { length: 20 }),
+  paymentDay: integer("payment_day"),
+  monthlyPayment: bigint("monthly_payment", { mode: "number" }).notNull().default(0),
+  totalInstallments: integer("total_installments"),
+  installmentMode: varchar("installment_mode", { length: 20 }).notNull().default("equal"),
+  repaymentSchedule: text("repayment_schedule"),
+  note: text("note"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type BorrowedMoney = typeof borrowedMoney.$inferSelect;
+export type InsertBorrowedMoney = typeof borrowedMoney.$inferInsert;
+
+export const borrowedMoneyPayments = pgTable("borrowed_money_payments", {
+  id: serial("id").primaryKey(),
+  borrowedMoneyId: integer("borrowed_money_id").notNull(),
+  userId: integer("user_id").notNull().default(0),
+  paymentDate: varchar("payment_date", { length: 20 }).notNull(),
+  amount: bigint("amount", { mode: "number" }).notNull().default(0),
+  installmentNo: integer("installment_no"),
+  note: text("note"),
+  ledgerEntryId: integer("ledger_entry_id"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type BorrowedMoneyPayment = typeof borrowedMoneyPayments.$inferSelect;
+export type InsertBorrowedMoneyPayment = typeof borrowedMoneyPayments.$inferInsert;
+
 // ─── 보험 ─────────────────────────────────────────────────────────────────────
 export const insurance = pgTable("insurance", {
   id: serial("id").primaryKey(),
