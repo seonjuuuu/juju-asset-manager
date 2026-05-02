@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, CalendarDays, Wallet, Clock3 } from "lucide-react";
 
-type PaymentType = "구독결제" | "보험" | "고정지출" | "할부" | "대출" | "빌린돈";
+type PaymentType = "구독결제" | "보험" | "고정지출" | "할부" | "대출" | "빌린돈" | "가계부";
 
 type PaymentEvent = {
   id: string;
@@ -105,6 +105,16 @@ type CardRow = {
   paymentDate: string | null;
 };
 
+type LedgerEntryRow = {
+  id: number;
+  entryDate: string | Date;
+  mainCategory: string;
+  subCategory: string | null;
+  description: string | null;
+  amount: number;
+  note: string | null;
+};
+
 const TYPE_STYLE: Record<PaymentType, string> = {
   "구독결제": "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300",
   "보험": "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -112,6 +122,7 @@ const TYPE_STYLE: Record<PaymentType, string> = {
   "할부": "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300",
   "대출": "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300",
   "빌린돈": "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300",
+  "가계부": "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/60 dark:text-slate-300",
 };
 
 function pad2(n: number) {
@@ -202,6 +213,23 @@ function borrowedInstallmentAmount(item: BorrowedMoneyRow, no: number) {
   return item.monthlyPayment;
 }
 
+const LEDGER_EXCLUDED_MAIN_CATEGORIES = new Set(["고정지출", "저축/투자"]);
+const LEDGER_EXCLUDED_SUB_CATEGORIES = new Set(["구독서비스", "보험", "할부결제", "대출상환", "빌린돈상환"]);
+const LEDGER_EXCLUDED_NOTE_PREFIXES = ["[빌린돈 자동연동]"];
+
+function ledgerDateKey(value: string | Date) {
+  if (value instanceof Date) return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+  return String(value).split("T")[0];
+}
+
+function shouldIncludeLedgerEntry(entry: LedgerEntryRow) {
+  if ((entry.amount ?? 0) >= 0) return false;
+  if (LEDGER_EXCLUDED_MAIN_CATEGORIES.has(entry.mainCategory)) return false;
+  if (entry.subCategory && LEDGER_EXCLUDED_SUB_CATEGORIES.has(entry.subCategory)) return false;
+  if (entry.note && LEDGER_EXCLUDED_NOTE_PREFIXES.some((prefix) => entry.note?.startsWith(prefix))) return false;
+  return true;
+}
+
 function buildCalendarDays(year: number, month: number) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
@@ -236,6 +264,7 @@ export default function PaymentCalendar() {
   const { data: loanList = [] } = trpc.loan.list.useQuery();
   const { data: borrowedMoneyList = [] } = trpc.borrowedMoney.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
+  const { data: ledgerEntries = [] } = trpc.ledger.list.useQuery({ year, month });
 
   const events = useMemo(() => {
     const cardMap = new Map((cardList as CardRow[]).map((card) => [card.id, card]));
@@ -342,8 +371,29 @@ export default function PaymentCalendar() {
       }
     }
 
+    const ledgerByDate = new Map<string, { amount: number; count: number }>();
+    for (const entry of ledgerEntries as LedgerEntryRow[]) {
+      if (!shouldIncludeLedgerEntry(entry)) continue;
+      const date = ledgerDateKey(entry.entryDate);
+      const current = ledgerByDate.get(date) ?? { amount: 0, count: 0 };
+      current.amount += Math.abs(entry.amount);
+      current.count += 1;
+      ledgerByDate.set(date, current);
+    }
+    for (const [date, value] of Array.from(ledgerByDate.entries())) {
+      if (value.amount <= 0) continue;
+      rows.push({
+        id: `ledger-${date}`,
+        date,
+        title: `가계부 지출 ${value.count}건`,
+        amount: value.amount,
+        type: "가계부",
+        detail: "월별가계부 직접 지출",
+      });
+    }
+
     return rows.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
-  }, [borrowedMoneyList, cardList, fixedExpenses, installmentList, insuranceList, key, loanList, month, subscriptions, year]);
+  }, [borrowedMoneyList, cardList, fixedExpenses, installmentList, insuranceList, key, ledgerEntries, loanList, month, subscriptions, year]);
 
   const visibleEvents = useMemo(
     () => selectedType ? events.filter((event) => event.type === selectedType) : events,
@@ -358,6 +408,7 @@ export default function PaymentCalendar() {
       "할부": { amount: 0, count: 0 },
       "대출": { amount: 0, count: 0 },
       "빌린돈": { amount: 0, count: 0 },
+      "가계부": { amount: 0, count: 0 },
     };
     for (const event of events) {
       totals[event.type].amount += event.amount;
@@ -386,7 +437,7 @@ export default function PaymentCalendar() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">결제 예정 캘린더</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">구독, 보험, 고정지출, 할부, 대출, 빌린돈 상환일을 한 달 달력으로 확인합니다</p>
+          <p className="text-muted-foreground text-sm mt-0.5">예정 결제와 월별가계부의 기타 지출을 한 달 달력으로 확인합니다</p>
         </div>
       </div>
 
@@ -452,7 +503,7 @@ export default function PaymentCalendar() {
             <p className="text-xs text-muted-foreground">{selectedType ? `${selectedType} 예정액` : "이번 달 예정액"}</p>
             <p className="text-xl font-bold">₩{formatAmount(visibleTotal)}</p>
             <p className="mt-1 truncate text-[11px] text-muted-foreground">
-              구독 ₩{formatAmount(typeTotals["구독결제"].amount)} · 고정 ₩{formatAmount(typeTotals["고정지출"].amount)} · 보험 ₩{formatAmount(typeTotals["보험"].amount)} · 할부 ₩{formatAmount(typeTotals["할부"].amount)} · 대출 ₩{formatAmount(typeTotals["대출"].amount)} · 빌린돈 ₩{formatAmount(typeTotals["빌린돈"].amount)}
+              구독 ₩{formatAmount(typeTotals["구독결제"].amount)} · 고정 ₩{formatAmount(typeTotals["고정지출"].amount)} · 보험 ₩{formatAmount(typeTotals["보험"].amount)} · 할부 ₩{formatAmount(typeTotals["할부"].amount)} · 대출 ₩{formatAmount(typeTotals["대출"].amount)} · 빌린돈 ₩{formatAmount(typeTotals["빌린돈"].amount)} · 가계부 ₩{formatAmount(typeTotals["가계부"].amount)}
             </p>
           </div>
         </div>
@@ -545,6 +596,7 @@ export default function PaymentCalendar() {
                 <SelectItem value="할부">할부</SelectItem>
                 <SelectItem value="대출">대출</SelectItem>
                 <SelectItem value="빌린돈">빌린돈</SelectItem>
+                <SelectItem value="가계부">가계부</SelectItem>
               </SelectContent>
             </Select>
           </div>
