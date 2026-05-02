@@ -4,6 +4,15 @@ import { trpc } from "@/lib/trpc";
 import { formatAmount } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,6 +105,14 @@ function comparableDateKey(value: string, boundary: "start" | "end") {
   return value;
 }
 
+function normalizePaymentAccount(value: string | null | undefined) {
+  const normalized = (value ?? "")
+    .replace(/^\[(카드|계좌)\]\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized || "미지정";
+}
+
 function DateInputWithCalendar({
   label,
   value,
@@ -173,8 +190,10 @@ export default function FixedExpenses() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [specialCategoryAlert, setSpecialCategoryAlert] = useState<"" | "구독서비스" | "보험">("");
   const [editing, setEditing] = useState<FixedExpense | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [selectedPaymentAccount, setSelectedPaymentAccount] = useState("전체");
 
   const utils = trpc.useUtils();
   const { data: expenses = [], isLoading } = trpc.fixedExpense.list.useQuery();
@@ -229,6 +248,49 @@ export default function FixedExpenses() {
     .filter(ins => ins.monthAmount > 0);
   const insuranceTotalMonthly = selectedInsuranceRows.reduce((s, e) => s + e.monthAmount, 0);
   const totalMonthly = directTotalMonthly + subscriptionTotalMonthly + insuranceTotalMonthly;
+  const paymentAccountRows = [
+    ...activeExpenses.map((expense) => ({
+      paymentAccount: normalizePaymentAccount(expense.paymentAccount),
+      amount: expense.monthlyAmount ?? 0,
+      source: "직접",
+    })),
+    ...subscriptionRows.map((subscription) => ({
+      paymentAccount: normalizePaymentAccount(subscription.paymentMethod),
+      amount: subscription.monthlyAmount,
+      source: "구독",
+    })),
+    ...selectedInsuranceRows.map((insurance) => ({
+      paymentAccount: normalizePaymentAccount(insurance.paymentMethod),
+      amount: insurance.monthAmount,
+      source: "보험",
+    })),
+  ].filter((row) => row.amount > 0);
+  const paymentAccountSummary = Object.values(
+    paymentAccountRows.reduce<Record<string, { name: string; amount: number; count: number; direct: number; subscription: number; insurance: number }>>((acc, row) => {
+      const name = row.paymentAccount;
+      if (!acc[name]) acc[name] = { name, amount: 0, count: 0, direct: 0, subscription: 0, insurance: 0 };
+      acc[name].amount += row.amount;
+      acc[name].count += 1;
+      if (row.source === "직접") acc[name].direct += row.amount;
+      if (row.source === "구독") acc[name].subscription += row.amount;
+      if (row.source === "보험") acc[name].insurance += row.amount;
+      return acc;
+    }, {})
+  ).sort((a, b) => b.amount - a.amount);
+  const filteredActiveExpenses = selectedPaymentAccount === "전체"
+    ? activeExpenses
+    : activeExpenses.filter((expense) => normalizePaymentAccount(expense.paymentAccount) === selectedPaymentAccount);
+  const filteredDirectTotalMonthly = filteredActiveExpenses.reduce((sum, expense) => sum + (expense.monthlyAmount ?? 0), 0);
+  const filteredSubscriptionRows = selectedPaymentAccount === "전체"
+    ? subscriptionRows
+    : subscriptionRows.filter((subscription) => normalizePaymentAccount(subscription.paymentMethod) === selectedPaymentAccount);
+  const filteredInsuranceRows = selectedPaymentAccount === "전체"
+    ? selectedInsuranceRows
+    : selectedInsuranceRows.filter((insurance) => normalizePaymentAccount(insurance.paymentMethod) === selectedPaymentAccount);
+  const filteredPaymentTotal = paymentAccountRows
+    .filter((row) => selectedPaymentAccount === "전체" || row.paymentAccount === selectedPaymentAccount)
+    .reduce((sum, row) => sum + row.amount, 0);
+  const paymentAccountFilterOptions = ["전체", ...paymentAccountSummary.map((item) => item.name)];
 
   const pieData = activeExpenses
     .filter(e => (e.monthlyAmount ?? 0) > 0)
@@ -310,12 +372,20 @@ export default function FixedExpenses() {
     }
   };
 
+  const handleSubCategoryChange = (value: string) => {
+    if (value === "구독서비스" || value === "보험") {
+      setForm(f => ({ ...f, subCategory: "" }));
+      setSpecialCategoryAlert(value);
+      return;
+    }
+    setForm(f => ({ ...f, subCategory: value }));
+  };
+
   function renderFixedExpenseTable(rows: FixedExpense[], emptyText: string) {
     return (
       <table className="w-full">
         <thead>
           <tr className="bg-muted/50">
-            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">대분류</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">중분류</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">내용</th>
             <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">결제 계좌</th>
@@ -326,13 +396,12 @@ export default function FixedExpenses() {
         </thead>
         <tbody>
           {isLoading ? (
-            <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
+            <tr><td colSpan={6} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
           ) : rows.length === 0 ? (
-            <tr><td colSpan={7} className="text-center py-10 text-muted-foreground text-sm">{emptyText}</td></tr>
+            <tr><td colSpan={6} className="text-center py-10 text-muted-foreground text-sm">{emptyText}</td></tr>
           ) : (
             rows.map((e) => (
               <tr key={e.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 text-sm font-medium">{e.mainCategory}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{e.subCategory ?? "-"}</td>
                 <td className="px-4 py-3 text-sm">{e.description ?? "-"}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{e.paymentAccount ?? "-"}</td>
@@ -395,11 +464,68 @@ export default function FixedExpenses() {
         <div className="text-sm text-muted-foreground">{activeExpenses.length + subscriptionRows.length + selectedInsuranceRows.length}개 항목</div>
       </div>
 
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+          <div>
+            <h2 className="text-sm font-semibold">결제수단별 고정지출</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">직접 고정지출 · 구독서비스 · 보험 포함 · 선택 필터 합계 ₩{formatAmount(filteredPaymentTotal)}</p>
+          </div>
+          <Select value={selectedPaymentAccount} onValueChange={setSelectedPaymentAccount}>
+            <SelectTrigger className="w-full sm:w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {paymentAccountFilterOptions.map((option) => (
+                <SelectItem key={option} value={option}>{option}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {paymentAccountSummary.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
+            결제수단이 등록된 고정지출이 없습니다
+          </div>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {paymentAccountSummary.map((item) => (
+              <button
+                key={item.name}
+                type="button"
+                onClick={() => setSelectedPaymentAccount(item.name)}
+                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  selectedPaymentAccount === item.name
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:bg-muted/40"
+                }`}
+              >
+                <p className="truncate text-xs text-muted-foreground">{item.name}</p>
+                <p className="mt-1 text-base font-bold">₩{formatAmount(item.amount)}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{item.count}개 항목</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  직접 ₩{formatAmount(item.direct)} · 구독 ₩{formatAmount(item.subscription)} · 보험 ₩{formatAmount(item.insurance)}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Table */}
         <div className="lg:col-span-2 bg-card border border-border rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">직접 등록 고정지출</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {selectedPaymentAccount === "전체" ? "전체 결제수단" : selectedPaymentAccount} · 직접 ₩{formatAmount(filteredDirectTotalMonthly)}
+              </p>
+            </div>
+            {selectedPaymentAccount !== "전체" && (
+              <Button variant="outline" size="sm" onClick={() => setSelectedPaymentAccount("전체")}>필터 해제</Button>
+            )}
+          </div>
           <div className="overflow-x-auto">
-          {renderFixedExpenseTable(activeExpenses, "등록된 고정지출이 없습니다")}
+          {renderFixedExpenseTable(filteredActiveExpenses, "조건에 맞는 고정지출이 없습니다")}
           </div>
         </div>
 
@@ -450,7 +576,6 @@ export default function FixedExpenses() {
           <table className="w-full">
             <thead>
               <tr className="bg-muted/50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">대분류</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">중분류</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">서비스</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">결제수단</th>
@@ -459,13 +584,12 @@ export default function FixedExpenses() {
             </thead>
             <tbody>
               {subscriptionsLoading ? (
-                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">불러오는 중...</td></tr>
-              ) : subscriptionRows.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">이번 달 구독 고정지출이 없습니다</td></tr>
+                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">불러오는 중...</td></tr>
+              ) : filteredSubscriptionRows.length === 0 ? (
+                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">이번 달 구독 고정지출이 없습니다</td></tr>
               ) : (
-                subscriptionRows.map(sub => (
+                filteredSubscriptionRows.map(sub => (
                   <tr key={sub.id} className="border-t border-border">
-                    <td className="px-4 py-3 text-sm font-medium">고정지출</td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">구독서비스</td>
                     <td className="px-4 py-3 text-sm">{sub.serviceName}</td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">{sub.paymentMethod ?? "-"}</td>
@@ -487,7 +611,6 @@ export default function FixedExpenses() {
           <table className="w-full">
             <thead>
               <tr className="bg-muted/50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">대분류</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">중분류</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">보험명</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">결제수단</th>
@@ -496,13 +619,12 @@ export default function FixedExpenses() {
             </thead>
             <tbody>
               {insuranceLoading ? (
-                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">불러오는 중...</td></tr>
-              ) : selectedInsuranceRows.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">등록된 보험이 없습니다</td></tr>
+                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">불러오는 중...</td></tr>
+              ) : filteredInsuranceRows.length === 0 ? (
+                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">등록된 보험이 없습니다</td></tr>
               ) : (
-                selectedInsuranceRows.map(ins => (
+                filteredInsuranceRows.map(ins => (
                   <tr key={ins.id} className="border-t border-border">
-                    <td className="px-4 py-3 text-sm font-medium">고정지출</td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">보험</td>
                     <td className="px-4 py-3 text-sm">{ins.name}</td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">{ins.paymentMethod ?? "-"}</td>
@@ -533,7 +655,7 @@ export default function FixedExpenses() {
               </div>
               <div>
                 <Label className="text-xs">중분류</Label>
-                <Select value={form.subCategory} onValueChange={v => setForm(f => ({ ...f, subCategory: v }))}>
+                <Select value={form.subCategory} onValueChange={handleSubCategoryChange}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="선택" /></SelectTrigger>
                   <SelectContent>
                     {getSubCategories(form.mainCategory).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -598,6 +720,22 @@ export default function FixedExpenses() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!specialCategoryAlert} onOpenChange={(open) => !open && setSpecialCategoryAlert("")}>
+        <AlertDialogContent className="max-w-xs sm:max-w-xs gap-3 p-4">
+          <AlertDialogHeader className="gap-1.5">
+            <AlertDialogTitle className="text-base">{specialCategoryAlert}는 별도 메뉴에서 입력해주세요</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs leading-5">
+              {specialCategoryAlert === "구독서비스"
+                ? "구독서비스는 구독결제 메뉴에서 등록하면 고정지출과 결제 예정 캘린더에 함께 반영됩니다."
+                : "보험은 보험 메뉴에서 등록하면 고정지출과 결제 예정 캘린더에 함께 반영됩니다."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction className="h-8 px-3 text-xs" onClick={() => setSpecialCategoryAlert("")}>확인</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
