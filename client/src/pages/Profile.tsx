@@ -40,6 +40,7 @@ export default function Profile() {
     name?: string | null;
     birthDate?: string | null;
     navPreferences?: string | null;
+    role?: "user" | "admin";
   } | null;
   const displayNameFallback =
     (authUser?.user_metadata?.full_name as string | undefined)?.trim() || authUser?.email?.split("@")[0] || "";
@@ -73,6 +74,7 @@ export default function Profile() {
 
   const invalid = birthDate !== "" && !isValidDate(birthDate);
   const currentAge = birthDate && isValidDate(birthDate) ? calcAge(birthDate) : null;
+  const roleLabel = dbUser?.role === "admin" ? "관리자" : "일반 사용자";
 
   function handleSave() {
     if (birthDate && !isValidDate(birthDate)) {
@@ -117,6 +119,16 @@ export default function Profile() {
           <div className="space-y-1">
             <Label>이메일</Label>
             <Input value={authUser?.email ?? ""} disabled className="bg-muted" />
+          </div>
+
+          {/* 권한 (읽기 전용) */}
+          <div className="space-y-1">
+            <Label>권한</Label>
+            <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm">
+              <span className={dbUser?.role === "admin" ? "font-semibold text-primary" : "text-muted-foreground"}>
+                {roleLabel}
+              </span>
+            </div>
           </div>
 
           {/* 생년월일 */}

@@ -156,8 +156,10 @@ export default function Dashboard() {
   // 할부 목록
   const { data: installmentList = [] } = trpc.installment.list.useQuery();
   const { data: loanList = [] } = trpc.loan.list.useQuery();
+  const { data: borrowedMoneyList = [] } = trpc.borrowedMoney.list.useQuery();
   const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
+  const { data: me } = trpc.auth.me.useQuery();
 
   // 차트 legend 토글 state
   const [hiddenMonthly, setHiddenMonthly] = useState<Record<string, boolean>>({});
@@ -178,6 +180,7 @@ export default function Dashboard() {
     const currentMonthFromToday = today.getMonth() + 1;
     const key = monthKey(currentYearFromToday, currentMonthFromToday);
     const todayKey = `${key}-${pad2(today.getDate())}`;
+    const currentUserId = typeof (me as { id?: unknown } | null | undefined)?.id === "number" ? (me as { id: number }).id : null;
     const cardMap = new Map((cardList as Array<{ id: number; cardCompany: string; cardName?: string | null; paymentDate?: string | null }>).map((card) => [card.id, card]));
 
     const payments: Array<{ id: string; date: string; title: string; amount: number; type: string }> = [];
@@ -291,6 +294,60 @@ export default function Dashboard() {
       });
     }
 
+    for (const item of borrowedMoneyList as Array<{
+      id: number;
+      lenderUserId?: number | null;
+      shareStatus?: string | null;
+      lenderName: string;
+      principalAmount: number;
+      repaidAmount: number;
+      repaymentType: string;
+      repaymentStartDate?: string | null;
+      repaymentDueDate?: string | null;
+      paymentDay?: number | null;
+      monthlyPayment: number;
+      totalInstallments?: number | null;
+      installmentMode?: "equal" | "custom";
+      repaymentSchedule?: string | null;
+    }>) {
+      if (item.shareStatus && item.shareStatus !== "private" && item.shareStatus !== "accepted" && item.shareStatus !== "shared") continue;
+      const remain = Math.max(0, item.principalAmount - item.repaidAmount);
+      if (remain <= 0) continue;
+      const isReceiving = currentUserId !== null && item.shareStatus !== "private" && item.lenderUserId === currentUserId;
+      let date = "";
+      let amount = 0;
+      let detail = item.repaymentType;
+      if (item.repaymentType === "할부상환" && item.repaymentStartDate) {
+        const [sy, sm] = item.repaymentStartDate.split("-").map(Number);
+        const no = currentYearFromToday * 12 + currentMonthFromToday - (sy * 12 + sm) + 1;
+        if (no < 1 || (item.totalInstallments && no > item.totalInstallments)) continue;
+        const schedule = (() => {
+          try {
+            const parsed = JSON.parse(item.repaymentSchedule ?? "[]");
+            return Array.isArray(parsed) ? parsed.map((v) => Number(v) || 0) : [];
+          } catch {
+            return [];
+          }
+        })();
+        amount = item.installmentMode === "custom" ? schedule[no - 1] ?? 0 : item.monthlyPayment;
+        if (amount <= 0) continue;
+        const fallbackDay = Number(item.repaymentStartDate.slice(8, 10)) || 1;
+        date = `${key}-${pad2(clampDay(currentYearFromToday, currentMonthFromToday, item.paymentDay ?? fallbackDay))}`;
+        detail = item.totalInstallments ? `${no}/${item.totalInstallments}회` : `${no}회차`;
+      } else if (item.repaymentDueDate?.slice(0, 7) === key) {
+        date = item.repaymentDueDate;
+        amount = remain;
+      }
+      if (!date || amount <= 0) continue;
+      payments.push({
+        id: `borrowed-${item.id}`,
+        date,
+        title: isReceiving ? `${item.lenderName} 입금 예정` : `${item.lenderName} 상환`,
+        amount: Math.min(remain, amount),
+        type: isReceiving ? "받을돈" : "빌린돈",
+      });
+    }
+
     const sortedPayments = payments.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
     const upcomingPayments = sortedPayments.filter((payment) => payment.date >= todayKey);
     const urgentCampaigns = (blogCampaigns as Array<{
@@ -320,7 +377,7 @@ export default function Dashboard() {
       upcomingPayments: upcomingPayments.slice(0, 5),
       urgentCampaigns: urgentCampaigns.slice(0, 4),
     };
-  }, [blogCampaigns, cardList, fixedExpenses, installmentList, insuranceList, loanList, subscriptions]);
+  }, [blogCampaigns, borrowedMoneyList, cardList, fixedExpenses, installmentList, insuranceList, loanList, me, subscriptions]);
 
   // 부수입 월별 합계 맵 (month → total)
   const sideIncomeByMonth = useMemo(() => {

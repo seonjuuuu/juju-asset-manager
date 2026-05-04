@@ -23,6 +23,8 @@ export default function FeatureRequests() {
   const [content, setContent] = useState("");
 
   const { data: requests = [], isLoading } = trpc.featureRequest.list.useQuery();
+  const { data: me } = trpc.auth.me.useQuery();
+  const isAdmin = me?.role === "admin";
 
   const counts = useMemo(() => {
     const done = requests.filter((item) => item.isDone).length;
@@ -134,16 +136,18 @@ export default function FeatureRequests() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 md:justify-end">
-                  <Button
-                    variant={item.isDone ? "secondary" : "outline"}
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setDone.mutate({ id: item.id, isDone: !item.isDone })}
-                    disabled={setDone.isPending}
-                  >
-                    {item.isDone ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-                    {item.isDone ? "완료됨" : "처리 체크"}
-                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant={item.isDone ? "secondary" : "outline"}
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setDone.mutate({ id: item.id, isDone: !item.isDone })}
+                      disabled={setDone.isPending}
+                    >
+                      {item.isDone ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                      {item.isDone ? "완료됨" : "처리 체크"}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"

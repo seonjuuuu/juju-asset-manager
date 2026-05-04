@@ -496,10 +496,27 @@ export const loans = pgTable("loans", {
 export type Loan = typeof loans.$inferSelect;
 export type InsertLoan = typeof loans.$inferInsert;
 
+// ─── 사용자 연락처 ───────────────────────────────────────────────────────────
+export const userContacts = pgTable("user_contacts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  contactUserId: integer("contact_user_id").notNull(),
+  nickname: varchar("nickname", { length: 100 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => ({
+  userContactUserIdx: uniqueIndex("user_contacts_user_contact_idx").on(table.userId, table.contactUserId),
+}));
+export type UserContact = typeof userContacts.$inferSelect;
+export type InsertUserContact = typeof userContacts.$inferInsert;
+
 // ─── 빌린돈 ───────────────────────────────────────────────────────────────────
 export const borrowedMoney = pgTable("borrowed_money", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().default(0),
+  lenderUserId: integer("lender_user_id"),
+  borrowerUserId: integer("borrower_user_id"),
+  shareStatus: varchar("share_status", { length: 30 }).notNull().default("private"),
   lenderName: varchar("lender_name", { length: 200 }).notNull(),
   principalAmount: bigint("principal_amount", { mode: "number" }).notNull().default(0),
   repaidAmount: bigint("repaid_amount", { mode: "number" }).notNull().default(0),

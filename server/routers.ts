@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 
@@ -85,6 +85,9 @@ const loanInput = z.object({
 });
 const borrowedMoneyInput = z.object({
   lenderName: z.string().min(1),
+  lenderUserId: z.number().int().nullable().optional(),
+  borrowerUserId: z.number().int().nullable().optional(),
+  shareStatus: z.enum(["private", "pending", "accepted", "rejected"]).optional(),
   principalAmount: z.number().int().min(0).default(0),
   repaidAmount: z.number().int().min(0).default(0),
   borrowedDate: z.string().nullable().optional(),
@@ -315,6 +318,14 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+    shareableUsers: protectedProcedure.query(({ ctx }) => db.listShareableUsers(ctx.user.id)),
+    contacts: protectedProcedure.query(({ ctx }) => db.listUserContacts(ctx.user.id)),
+    searchUsers: protectedProcedure
+      .input(z.object({ query: z.string().min(1) }))
+      .query(({ input, ctx }) => db.searchUsersForContact(ctx.user.id, input.query)),
+    upsertContact: protectedProcedure
+      .input(z.object({ contactUserId: z.number().int(), nickname: z.string().min(1) }))
+      .mutation(({ input, ctx }) => db.upsertUserContact(ctx.user.id, input)),
     updateProfile: protectedProcedure
       .input(
         z.object({
@@ -766,6 +777,9 @@ export const appRouter = router({
     list: protectedProcedure.query(({ ctx }) => db.listBorrowedMoney(ctx.user.id)),
     create: protectedProcedure.input(borrowedMoneyInput).mutation(({ input, ctx }) => db.createBorrowedMoney(ctx.user.id, {
       ...input,
+      lenderUserId: input.lenderUserId ?? null,
+      borrowerUserId: input.borrowerUserId ?? null,
+      shareStatus: input.shareStatus ?? "private",
       borrowedDate: input.borrowedDate ?? null,
       repaymentStartDate: input.repaymentStartDate ?? null,
       repaymentDueDate: input.repaymentDueDate ?? null,
@@ -779,6 +793,9 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), data: borrowedMoneyInput.partial() }))
       .mutation(({ input, ctx }) => db.updateBorrowedMoney(ctx.user.id, input.id, {
         ...input.data,
+        lenderUserId: input.data.lenderUserId ?? undefined,
+        borrowerUserId: input.data.borrowerUserId ?? undefined,
+        shareStatus: input.data.shareStatus ?? undefined,
         borrowedDate: input.data.borrowedDate ?? undefined,
         repaymentStartDate: input.data.repaymentStartDate ?? undefined,
         repaymentDueDate: input.data.repaymentDueDate ?? undefined,
@@ -1118,7 +1135,7 @@ export const appRouter = router({
         ...input,
         authorName: ctx.user.name ?? ctx.user.email ?? "사용자",
       })),
-    setDone: protectedProcedure
+    setDone: adminProcedure
       .input(z.object({ id: z.number().int(), isDone: z.boolean() }))
       .mutation(({ input, ctx }) => db.updateFeatureRequestStatus(ctx.user.id, input.id, input.isDone)),
     delete: protectedProcedure

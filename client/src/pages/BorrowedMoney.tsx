@@ -12,14 +12,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Pencil, Plus, ReceiptText, Trash2, Wallet } from "lucide-react";
 
 type RepaymentType = "일시상환" | "할부상환" | "자유상환";
+type ShareStatus = "private" | "pending" | "accepted" | "rejected" | "shared";
 
 type BorrowedMoneyRow = {
   id: number;
+  userId: number;
+  lenderUserId: number | null;
+  borrowerUserId: number | null;
+  shareStatus: ShareStatus;
   lenderName: string;
   principalAmount: number;
   repaidAmount: number;
@@ -36,7 +42,9 @@ type BorrowedMoneyRow = {
 };
 
 type BorrowedMoneyForm = {
+  direction: "pay" | "receive";
   lenderName: string;
+  sharedBorrowerUserId: number | null;
   principalAmount: number;
   repaidAmount: number;
   borrowedDate: string;
@@ -68,8 +76,24 @@ type PaymentForm = {
   note: string;
 };
 
+type ShareableUser = {
+  id: number;
+  name: string | null;
+  email: string | null;
+};
+
+type UserContact = {
+  id: number;
+  contactUserId: number;
+  nickname: string;
+  name: string | null;
+  email: string | null;
+};
+
 const EMPTY_FORM: BorrowedMoneyForm = {
+  direction: "pay",
   lenderName: "",
+  sharedBorrowerUserId: null,
   principalAmount: 0,
   repaidAmount: 0,
   borrowedDate: "",
@@ -150,6 +174,7 @@ function installmentNo(item: BorrowedMoneyRow, year: number, month: number) {
 }
 
 function scheduledAmountForMonth(item: BorrowedMoneyRow, year: number, month: number) {
+  if (item.shareStatus !== "private" && item.shareStatus !== "accepted" && item.shareStatus !== "shared") return 0;
   const remain = remainingAmount(item);
   if (remain <= 0) return 0;
   if (item.repaymentType === "할부상환") {
@@ -174,6 +199,14 @@ export default function BorrowedMoney() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(currentYear);
+  const [viewMode, setViewMode] = useState<"all" | "pay" | "receive">("all");
+  const [lenderInputFocused, setLenderInputFocused] = useState(false);
+  const [lenderSuggestionIndex, setLenderSuggestionIndex] = useState(0);
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  const [contactSearch, setContactSearch] = useState("");
+  const [contactNickname, setContactNickname] = useState("");
+  const [selectedContactUser, setSelectedContactUser] = useState<ShareableUser | null>(null);
+  const [todayAlertDismissed, setTodayAlertDismissed] = useState(false);
   const [editing, setEditing] = useState<BorrowedMoneyRow | null>(null);
   const [form, setForm] = useState<BorrowedMoneyForm>(EMPTY_FORM);
   const [paymentForm, setPaymentForm] = useState<PaymentForm>({
@@ -184,21 +217,81 @@ export default function BorrowedMoney() {
     note: "",
   });
 
+  const { data: me } = trpc.auth.me.useQuery();
+  const { data: contacts = [] } = trpc.auth.contacts.useQuery();
+  const { data: searchedUsers = [] } = trpc.auth.searchUsers.useQuery(
+    { query: contactSearch },
+    { enabled: contactSearch.trim().length >= 2 },
+  );
   const { data: rows = [], isLoading } = trpc.borrowedMoney.list.useQuery();
   const { data: payments = [] } = trpc.borrowedMoney.listPayments.useQuery({});
 
   const activeRows = rows as BorrowedMoneyRow[];
+  const currentUserId = typeof (me as { id?: unknown } | null | undefined)?.id === "number" ? (me as { id: number }).id : null;
+  const contactOptions = contacts as UserContact[];
+  const userOptions = contactOptions.map((contact) => ({
+    id: contact.contactUserId,
+    name: contact.nickname,
+    email: contact.email,
+  }));
+  const contactSearchResults = searchedUsers as ShareableUser[];
+  const displayUserName = (user: ShareableUser) => user.name?.trim() || user.email?.split("@")[0] || `사용자 ${user.id}`;
+  const userNameById = new Map(userOptions.map((user) => [user.id, displayUserName(user)]));
+  const lenderQuery = form.lenderName.trim().toLowerCase();
+  const lenderSuggestions = lenderQuery
+    ? userOptions
+      .filter((user) => displayUserName(user).toLowerCase().includes(lenderQuery))
+      .slice(0, 5)
+    : [];
+  const showLenderSuggestions = lenderInputFocused && lenderSuggestions.length > 0;
+  const selectLenderUser = (user: ShareableUser) => {
+    setForm((prev) => ({
+      ...prev,
+      lenderName: displayUserName(user),
+      sharedBorrowerUserId: user.id,
+    }));
+    setLenderInputFocused(false);
+  };
+  const upsertContact = trpc.auth.upsertContact.useMutation({
+    onSuccess: () => {
+      utils.auth.contacts.invalidate();
+      toast.success("연락처가 저장되었습니다");
+      if (selectedContactUser) {
+        setForm((prev) => ({
+          ...prev,
+          lenderName: contactNickname.trim(),
+          sharedBorrowerUserId: selectedContactUser.id,
+        }));
+      }
+      setContactDialogOpen(false);
+      setContactSearch("");
+      setContactNickname("");
+      setSelectedContactUser(null);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const isAcceptedShared = (item: BorrowedMoneyRow) => item.shareStatus === "accepted" || item.shareStatus === "shared";
+  const isSharedRow = (item: BorrowedMoneyRow) => item.shareStatus !== "private";
+  const isReceiveRow = (item: BorrowedMoneyRow) => currentUserId !== null && isSharedRow(item) && item.lenderUserId === currentUserId;
+  const isPayRow = (item: BorrowedMoneyRow) => currentUserId === null || !isSharedRow(item) || item.borrowerUserId === currentUserId;
+  const isIncomingPending = (item: BorrowedMoneyRow) => currentUserId !== null && item.shareStatus === "pending" && item.borrowerUserId === currentUserId;
+  const visibleRows = activeRows.filter((item) => {
+    if (viewMode === "receive") return isReceiveRow(item);
+    if (viewMode === "pay") return isPayRow(item);
+    return true;
+  });
+  const confirmedVisibleRows = visibleRows.filter((item) => item.shareStatus === "private" || isAcceptedShared(item));
   const paymentRows = payments as BorrowedMoneyPaymentRow[];
   const selectedDate = new Date(currentYear, currentMonth - 1 + monthOffset, 1);
   const selectedYear = selectedDate.getFullYear();
   const selectedMonth = selectedDate.getMonth() + 1;
   const selectedMonthKey = `${selectedYear}-${pad2(selectedMonth)}`;
-  const totalPrincipal = activeRows.reduce((sum, item) => sum + item.principalAmount, 0);
-  const totalRepaid = activeRows.reduce((sum, item) => sum + item.repaidAmount, 0);
-  const totalRemaining = activeRows.reduce((sum, item) => sum + remainingAmount(item), 0);
-  const thisMonthScheduled = activeRows.reduce((sum, item) => sum + scheduledAmountForMonth(item, currentYear, currentMonth), 0);
+  const totalPrincipal = confirmedVisibleRows.reduce((sum, item) => sum + item.principalAmount, 0);
+  const totalRepaid = confirmedVisibleRows.reduce((sum, item) => sum + item.repaidAmount, 0);
+  const totalRemaining = confirmedVisibleRows.reduce((sum, item) => sum + remainingAmount(item), 0);
+  const thisMonthScheduled = confirmedVisibleRows.reduce((sum, item) => sum + scheduledAmountForMonth(item, currentYear, currentMonth), 0);
   const selectedMonthSchedule = useMemo(() => {
-    return activeRows
+    return visibleRows
       .map((item) => {
         const amount = scheduledAmountForMonth(item, selectedYear, selectedMonth);
         if (amount <= 0) return null;
@@ -214,17 +307,33 @@ export default function BorrowedMoney() {
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [activeRows, selectedMonth, selectedMonthKey, selectedYear]);
+  }, [selectedMonth, selectedMonthKey, selectedYear, visibleRows]);
   const selectedMonthScheduledTotal = selectedMonthSchedule.reduce((sum, entry) => sum + entry.amount, 0);
+  const todayKey = `${currentYear}-${pad2(currentMonth)}-${pad2(now.getDate())}`;
+  const todayDueItems = useMemo(() => {
+    return activeRows
+      .map((item) => {
+        const amount = scheduledAmountForMonth(item, currentYear, currentMonth);
+        if (amount <= 0) return null;
+        const fallbackDay = Number(item.repaymentStartDate?.slice(8, 10)) || 1;
+        const paymentDay = item.paymentDay ?? fallbackDay;
+        const date = item.repaymentType === "할부상환"
+          ? `${currentYear}-${pad2(currentMonth)}-${pad2(Math.min(Math.max(paymentDay, 1), new Date(currentYear, currentMonth, 0).getDate()))}`
+          : item.repaymentDueDate ?? "";
+        if (date !== todayKey) return null;
+        return { item, amount };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  }, [activeRows, currentMonth, currentYear, todayKey]);
 
   const summaryRows = useMemo(
-    () => activeRows.map((item) => ({
+    () => visibleRows.map((item) => ({
       ...item,
       remaining: remainingAmount(item),
       progress: item.principalAmount > 0 ? Math.min(100, Math.round((item.repaidAmount / item.principalAmount) * 100)) : 0,
       scheduled: scheduledAmountForMonth(item, currentYear, currentMonth),
     })),
-    [activeRows, currentMonth, currentYear],
+    [currentMonth, currentYear, visibleRows],
   );
 
   const invalidate = () => {
@@ -272,6 +381,42 @@ export default function BorrowedMoney() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const acceptShare = trpc.borrowedMoney.update.useMutation({
+    onSuccess: () => {
+      invalidate();
+      toast.success("요청을 수락했습니다");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const rejectShare = trpc.borrowedMoney.update.useMutation({
+    onSuccess: () => {
+      invalidate();
+      toast.success("요청을 거절했습니다");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const openContactDialog = () => {
+    setContactSearch(form.lenderName.trim());
+    setContactNickname(form.lenderName.trim());
+    setSelectedContactUser(null);
+    setContactDialogOpen(true);
+  };
+
+  const handleContactSave = () => {
+    if (!selectedContactUser) {
+      toast.error("추가할 사용자를 선택해주세요");
+      return;
+    }
+    if (!contactNickname.trim()) {
+      toast.error("별칭을 입력해주세요");
+      return;
+    }
+    upsertContact.mutate({
+      contactUserId: selectedContactUser.id,
+      nickname: contactNickname.trim(),
+    });
+  };
 
   const set = (key: keyof BorrowedMoneyForm, value: string | number) => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -310,16 +455,19 @@ export default function BorrowedMoney() {
     });
   };
 
-  const openCreate = () => {
+  const openCreate = (direction: "pay" | "receive" = "pay") => {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, direction });
     setDialogOpen(true);
   };
 
   const openEdit = (item: BorrowedMoneyRow) => {
     setEditing(item);
+    const isReceivingItem = isReceiveRow(item);
     setForm({
+      direction: isReceivingItem ? "receive" : "pay",
       lenderName: item.lenderName,
+      sharedBorrowerUserId: item.shareStatus !== "private" ? (isReceivingItem ? item.borrowerUserId : item.lenderUserId) : null,
       principalAmount: item.principalAmount,
       repaidAmount: item.repaidAmount,
       borrowedDate: item.borrowedDate ?? "",
@@ -338,15 +486,19 @@ export default function BorrowedMoney() {
 
   const handleSubmit = () => {
     if (!form.lenderName.trim()) {
-      toast.error("빌린 사람/기관을 입력해주세요");
+      toast.error(form.direction === "receive" ? "받을 사람을 입력해주세요" : "빌린 사람/기관을 입력해주세요");
       return;
     }
     if (form.principalAmount <= 0) {
-      toast.error("빌린 금액을 입력해주세요");
+      toast.error(form.direction === "receive" ? "받을 금액을 입력해주세요" : "빌린 금액을 입력해주세요");
       return;
     }
     if (form.repaidAmount > form.principalAmount) {
-      toast.error("갚은 금액은 빌린 금액보다 클 수 없습니다");
+      toast.error(form.direction === "receive" ? "받은 금액은 받을 금액보다 클 수 없습니다" : "갚은 금액은 빌린 금액보다 클 수 없습니다");
+      return;
+    }
+    if (form.direction === "receive" && !form.sharedBorrowerUserId) {
+      toast.error("받을돈은 친구를 선택해야 공유 알림을 보낼 수 있습니다");
       return;
     }
     if (form.borrowedDate && !isCompleteCalendarDate(form.borrowedDate)) {
@@ -379,6 +531,11 @@ export default function BorrowedMoney() {
 
     const payload = {
       lenderName: form.lenderName.trim(),
+      lenderUserId: form.sharedBorrowerUserId && currentUserId ? (form.direction === "receive" ? currentUserId : form.sharedBorrowerUserId) : null,
+      borrowerUserId: form.sharedBorrowerUserId && currentUserId ? (form.direction === "receive" ? form.sharedBorrowerUserId : currentUserId) : null,
+      shareStatus: form.sharedBorrowerUserId
+        ? (editing && editing.shareStatus !== "private" ? (editing.shareStatus === "shared" ? "accepted" as const : editing.shareStatus) : "pending" as const)
+        : "private" as const,
       principalAmount: form.principalAmount,
       repaidAmount: form.repaidAmount,
       borrowedDate: form.borrowedDate || null,
@@ -447,12 +604,25 @@ export default function BorrowedMoney() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">빌린돈</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">개인에게 빌린 돈과 갚아야 할 일정을 관리합니다</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">내가 갚을 돈과 공유 사용자에게 받을 돈을 함께 관리합니다</p>
         </div>
-        <Button onClick={openCreate} size="sm" className="gap-1.5">
-          <Plus className="h-4 w-4" /> 빌린돈 추가
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => openCreate("pay")} size="sm" variant="outline" className="gap-1.5">
+            <Plus className="h-4 w-4" /> 빌린돈 추가
+          </Button>
+          <Button onClick={() => openCreate("receive")} size="sm" className="gap-1.5">
+            <Plus className="h-4 w-4" /> 받을돈 추가
+          </Button>
+        </div>
       </div>
+
+      <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as typeof viewMode)}>
+        <TabsList>
+          <TabsTrigger value="all">전체</TabsTrigger>
+          <TabsTrigger value="pay">내가 갚을 돈</TabsTrigger>
+          <TabsTrigger value="receive">내가 받을 돈</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       <div className="flex items-center gap-3">
         <button onClick={() => setMonthOffset((value) => value - 1)} className="p-1.5 rounded-lg border border-border hover:bg-muted transition-colors">
@@ -567,6 +737,7 @@ export default function BorrowedMoney() {
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium">{entry.item.lenderName}</p>
                       <p className="text-xs text-muted-foreground">
+                        {isReceiveRow(entry.item) ? "받을 돈" : "갚을 돈"} ·{" "}
                         {entry.item.repaymentType}
                         {entry.installmentNo && entry.item.totalInstallments ? ` · ${entry.installmentNo}/${entry.item.totalInstallments}회` : ""}
                       </p>
@@ -587,7 +758,7 @@ export default function BorrowedMoney() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button variant="outline" size="sm" onClick={() => openPaymentDialog(entry.item, entry.amount)}>
-                        상환
+                        {isReceiveRow(entry.item) ? "받음" : "상환"}
                       </Button>
                     </td>
                   </tr>
@@ -609,7 +780,7 @@ export default function BorrowedMoney() {
             <div className="py-14 text-center">
               <Wallet className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">등록된 빌린돈이 없습니다</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={openCreate}>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => openCreate("pay")}>
                 <Plus className="mr-1 h-3.5 w-3.5" /> 추가하기
               </Button>
             </div>
@@ -632,15 +803,32 @@ export default function BorrowedMoney() {
                     <tr key={item.id} className="border-b transition-colors hover:bg-muted/30">
                       <td className="px-3 py-3">
                         <div className="font-medium">{item.lenderName}</div>
-                        <div className="text-xs text-muted-foreground">{item.borrowedDate || "-"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {isSharedRow(item) ? (
+                            isReceiveRow(item)
+                              ? `${userNameById.get(item.borrowerUserId ?? 0) ?? "공유 사용자"}에게 받을 돈`
+                              : `${userNameById.get(item.lenderUserId ?? 0) ?? "공유 사용자"}에게 갚을 돈`
+                          ) : "개인 기록"}
+                          {" · "}
+                          {item.borrowedDate || "-"}
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-right">₩{formatAmount(item.principalAmount)}</td>
                       <td className="px-3 py-3 text-right font-semibold text-rose-600">₩{formatAmount(item.remaining)}</td>
                       <td className="hidden px-3 py-3 text-center sm:table-cell">
-                        <Badge variant={item.repaymentType === "할부상환" ? "default" : "secondary"}>{item.repaymentType}</Badge>
+                        <div className="flex justify-center gap-1">
+                          <Badge variant={item.repaymentType === "할부상환" ? "default" : "secondary"}>{item.repaymentType}</Badge>
+                          {isSharedRow(item) && <Badge variant="outline">{isReceiveRow(item) ? "받을 돈" : "갚을 돈"}</Badge>}
+                          {item.shareStatus === "pending" && <Badge variant="secondary">{isIncomingPending(item) ? "승인 요청" : "승인 대기"}</Badge>}
+                          {item.shareStatus === "rejected" && <Badge variant="destructive">거절됨</Badge>}
+                        </div>
                       </td>
                       <td className="hidden px-3 py-3 text-muted-foreground md:table-cell">
-                        {item.scheduled > 0 ? (
+                        {item.shareStatus === "pending" ? (
+                          <span className="text-xs text-muted-foreground">상대 승인 후 반영</span>
+                        ) : item.shareStatus === "rejected" ? (
+                          <span className="text-xs text-destructive">거절된 요청</span>
+                        ) : item.scheduled > 0 ? (
                           <span className="inline-flex items-center gap-1 text-foreground">
                             <CalendarDays className="h-3.5 w-3.5" /> ₩{formatAmount(item.scheduled)}
                           </span>
@@ -654,12 +842,34 @@ export default function BorrowedMoney() {
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex justify-end gap-1">
-                          {item.remaining > 0 && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openPaymentDialog(item)} title="상환 기록">
+                          {isIncomingPending(item) && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2"
+                                onClick={() => acceptShare.mutate({ id: item.id, data: { shareStatus: "accepted" } })}
+                                disabled={acceptShare.isPending}
+                              >
+                                수락
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-destructive hover:text-destructive"
+                                onClick={() => rejectShare.mutate({ id: item.id, data: { shareStatus: "rejected" } })}
+                                disabled={rejectShare.isPending}
+                              >
+                                거절
+                              </Button>
+                            </>
+                          )}
+                          {item.remaining > 0 && (item.shareStatus === "private" || isAcceptedShared(item)) && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openPaymentDialog(item)} title={isReceiveRow(item) ? "받음 기록" : "상환 기록"}>
                               <ReceiptText className="h-3.5 w-3.5" />
                             </Button>
                           )}
-                          {item.remaining > 0 && (
+                          {item.remaining > 0 && (item.shareStatus === "private" || isAcceptedShared(item)) && (
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openPaymentDialog(item, item.remaining)} title="완납 기록">
                               <CheckCircle2 className="h-3.5 w-3.5" />
                             </Button>
@@ -728,24 +938,100 @@ export default function BorrowedMoney() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editing ? "빌린돈 수정" : "빌린돈 추가"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? (form.direction === "receive" ? "받을돈 수정" : "빌린돈 수정") : (form.direction === "receive" ? "받을돈 추가" : "빌린돈 추가")}
+            </DialogTitle>
+          </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>빌린 사람/기관 *</Label>
-                <Input value={form.lenderName} onChange={(event) => set("lenderName", event.target.value)} placeholder="예: 친구 A, 가족" />
+              <div className="relative space-y-1.5">
+                <Label>{form.direction === "receive" ? "받을 사람 *" : "빌린 사람/기관 *"}</Label>
+                <Input
+                  value={form.lenderName}
+                  onFocus={() => {
+                    setLenderInputFocused(true);
+                    setLenderSuggestionIndex(0);
+                  }}
+                  onBlur={() => window.setTimeout(() => setLenderInputFocused(false), 120)}
+                  onChange={(event) => {
+                    setLenderSuggestionIndex(0);
+                    setForm((prev) => ({
+                      ...prev,
+                      lenderName: event.target.value,
+                      sharedBorrowerUserId: null,
+                    }));
+                  }}
+                  onKeyDown={(event) => {
+                    if (!showLenderSuggestions) return;
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setLenderSuggestionIndex((index) => (index + 1) % lenderSuggestions.length);
+                    }
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setLenderSuggestionIndex((index) => (index - 1 + lenderSuggestions.length) % lenderSuggestions.length);
+                    }
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      selectLenderUser(lenderSuggestions[lenderSuggestionIndex] ?? lenderSuggestions[0]);
+                    }
+                    if (event.key === "Escape") {
+                      setLenderInputFocused(false);
+                    }
+                  }}
+                  placeholder={form.direction === "receive" ? "친구를 검색해서 선택" : "이름을 검색하거나 직접 입력"}
+                />
+                {showLenderSuggestions && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+                    {lenderSuggestions.map((user, index) => {
+                      const name = displayUserName(user);
+                      return (
+                        <button
+                          key={user.id}
+                          type="button"
+                          className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted ${
+                            index === lenderSuggestionIndex ? "bg-muted" : ""
+                          }`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setLenderSuggestionIndex(index)}
+                          onClick={() => selectLenderUser(user)}
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {name.slice(0, 1)}
+                          </span>
+                          <span className="truncate text-sm font-medium text-foreground">{name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {form.sharedBorrowerUserId && (
+                  <p className="text-xs text-muted-foreground">
+                    {form.direction === "receive" ? "선택한 사용자에게 갚을 돈으로 공유됩니다." : "선택한 사용자와 공유됩니다. 다시 타이핑하면 일반 텍스트 기록으로 저장됩니다."}
+                  </p>
+                )}
+                {!form.sharedBorrowerUserId && (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                    onClick={openContactDialog}
+                  >
+                    아이디/이메일로 친구 추가
+                  </button>
+                )}
               </div>
               <div className="space-y-1.5">
-                <FlexibleDateField label="빌린 날짜" value={form.borrowedDate} onChange={handleBorrowedDateChange} />
+                <FlexibleDateField label={form.direction === "receive" ? "빌려준 날짜" : "빌린 날짜"} value={form.borrowedDate} onChange={handleBorrowedDateChange} />
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>빌린 금액 *</Label>
+                <Label>{form.direction === "receive" ? "받을 금액 *" : "빌린 금액 *"}</Label>
                 <CurrencyInput value={form.principalAmount} onChange={(value) => setInstallmentForm({ principalAmount: value })} suffix="원" />
               </div>
               <div className="space-y-1.5">
-                <Label>이미 갚은 금액</Label>
+                <Label>{form.direction === "receive" ? "이미 받은 금액" : "이미 갚은 금액"}</Label>
                 <CurrencyInput value={form.repaidAmount} onChange={(value) => setInstallmentForm({ repaidAmount: value })} suffix="원" />
               </div>
             </div>
@@ -825,6 +1111,105 @@ export default function BorrowedMoney() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>취소</Button>
             <Button onClick={handleSubmit} disabled={create.isPending || update.isPending}>저장</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!todayAlertDismissed && todayDueItems.length > 0} onOpenChange={(open) => !open && setTodayAlertDismissed(true)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>오늘 확인할 빌린돈</DialogTitle></DialogHeader>
+          <div className="space-y-2 py-2">
+            {todayDueItems.map(({ item, amount }) => {
+              const receiving = isReceiveRow(item);
+              return (
+                <div key={item.id} className="rounded-lg border border-border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{receiving ? `${item.lenderName} 입금 확인` : `${item.lenderName} 상환 예정`}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.repaymentType}</p>
+                    </div>
+                    <p className="shrink-0 text-sm font-bold">₩{formatAmount(amount)}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="mt-3 w-full"
+                    onClick={() => {
+                      setTodayAlertDismissed(true);
+                      openPaymentDialog(item, amount);
+                    }}
+                  >
+                    {receiving ? "받음 기록하기" : "상환 기록하기"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTodayAlertDismissed(true)}>나중에</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>친구 추가</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>아이디 또는 이메일 검색</Label>
+              <Input
+                value={contactSearch}
+                onChange={(event) => {
+                  setContactSearch(event.target.value);
+                  setSelectedContactUser(null);
+                }}
+                placeholder="이메일, 이름, 사용자 ID"
+              />
+            </div>
+            {contactSearch.trim().length >= 2 && (
+              <div className="max-h-44 overflow-y-auto rounded-lg border border-border">
+                {contactSearchResults.length === 0 ? (
+                  <p className="px-3 py-6 text-center text-sm text-muted-foreground">검색된 사용자가 없습니다</p>
+                ) : (
+                  contactSearchResults.map((user) => {
+                    const name = displayUserName(user);
+                    const selected = selectedContactUser?.id === user.id;
+                    return (
+                      <button
+                        key={user.id}
+                        type="button"
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted ${
+                          selected ? "bg-muted" : ""
+                        }`}
+                        onClick={() => {
+                          setSelectedContactUser(user);
+                          setContactNickname((prev) => prev.trim() || name);
+                        }}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                          {name.slice(0, 1)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">{name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">ID {user.id}</span>
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>내가 부를 이름</Label>
+              <Input
+                value={contactNickname}
+                onChange={(event) => setContactNickname(event.target.value)}
+                placeholder="예: 동생, 엄마, 철수"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContactDialogOpen(false)}>취소</Button>
+            <Button onClick={handleContactSave} disabled={upsertContact.isPending}>저장</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

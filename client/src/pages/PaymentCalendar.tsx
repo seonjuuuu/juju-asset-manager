@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { formatAmount } from "@/lib/utils";
 import { ledgerSubCostForMonth, subscriptionLedgerDate } from "@/lib/subscriptionLedger";
@@ -18,6 +19,7 @@ type PaymentEvent = {
   type: PaymentType;
   method?: string | null;
   detail?: string | null;
+  href: string;
 };
 
 type FixedExpenseRow = {
@@ -85,6 +87,9 @@ type LoanRow = {
 
 type BorrowedMoneyRow = {
   id: number;
+  lenderUserId: number | null;
+  borrowerUserId: number | null;
+  shareStatus: "private" | "pending" | "accepted" | "rejected" | "shared";
   lenderName: string;
   principalAmount: number;
   repaidAmount: number;
@@ -246,6 +251,7 @@ function buildCalendarDays(year: number, month: number) {
 }
 
 export default function PaymentCalendar() {
+  const [, setLocation] = useLocation();
   const now = new Date();
   const todayKey = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   const [monthOffset, setMonthOffset] = useState(0);
@@ -265,6 +271,8 @@ export default function PaymentCalendar() {
   const { data: borrowedMoneyList = [] } = trpc.borrowedMoney.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
   const { data: ledgerEntries = [] } = trpc.ledger.list.useQuery({ year, month });
+  const { data: me } = trpc.auth.me.useQuery();
+  const currentUserId = typeof (me as { id?: unknown } | null | undefined)?.id === "number" ? (me as { id: number }).id : null;
 
   const events = useMemo(() => {
     const cardMap = new Map((cardList as CardRow[]).map((card) => [card.id, card]));
@@ -281,6 +289,7 @@ export default function PaymentCalendar() {
         type: "구독결제",
         method: sub.paymentMethod,
         detail: sub.billingCycle,
+        href: "/subscriptions",
       });
     }
 
@@ -295,6 +304,7 @@ export default function PaymentCalendar() {
         type: "고정지출",
         method: expense.paymentAccount,
         detail: [expense.mainCategory, expense.subCategory].filter(Boolean).join(" > "),
+        href: "/fixed-expenses",
       });
     }
 
@@ -309,6 +319,7 @@ export default function PaymentCalendar() {
         type: "보험",
         method: ins.paymentMethod,
         detail: ins.paymentType === "annual" ? "연납" : "월납",
+        href: "/insurance",
       });
     }
 
@@ -325,6 +336,7 @@ export default function PaymentCalendar() {
         type: "할부",
         method: card ? `${card.cardCompany}${card.cardName ? ` ${card.cardName}` : ""}` : null,
         detail: `${inst.months}개월`,
+        href: "/installments",
       });
     }
 
@@ -338,12 +350,16 @@ export default function PaymentCalendar() {
         type: "대출",
         method: loan.lender,
         detail: `${loan.loanType} · ${loan.repaymentType}`,
+        href: "/loans",
       });
     }
 
     for (const borrowed of borrowedMoneyList as BorrowedMoneyRow[]) {
+      if (borrowed.shareStatus !== "private" && borrowed.shareStatus !== "accepted" && borrowed.shareStatus !== "shared") continue;
       const remain = borrowedRemaining(borrowed);
       if (remain <= 0) continue;
+      const isReceiving = currentUserId !== null && borrowed.shareStatus !== "private" && borrowed.lenderUserId === currentUserId;
+      const borrowedTitle = isReceiving ? `${borrowed.lenderName} 입금 예정` : `${borrowed.lenderName} 상환`;
       if (borrowed.repaymentType === "할부상환") {
         const no = borrowedInstallmentNo(borrowed, year, month);
         if (!no) continue;
@@ -354,19 +370,21 @@ export default function PaymentCalendar() {
         rows.push({
           id: `borrowed-${borrowed.id}`,
           date: `${key}-${pad2(day)}`,
-          title: `${borrowed.lenderName} 상환`,
+          title: borrowedTitle,
           amount: Math.min(remain, installmentAmount),
           type: "빌린돈",
           detail: borrowed.totalInstallments ? `${no}/${borrowed.totalInstallments}회` : `${no}회차`,
+          href: "/borrowed-money",
         });
       } else if (borrowed.repaymentDueDate?.slice(0, 7) === key) {
         rows.push({
           id: `borrowed-${borrowed.id}`,
           date: borrowed.repaymentDueDate,
-          title: `${borrowed.lenderName} 상환`,
+          title: borrowedTitle,
           amount: remain,
           type: "빌린돈",
           detail: borrowed.repaymentType,
+          href: "/borrowed-money",
         });
       }
     }
@@ -389,11 +407,12 @@ export default function PaymentCalendar() {
         amount: value.amount,
         type: "가계부",
         detail: "월별가계부 직접 지출",
+        href: "/ledger",
       });
     }
 
     return rows.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
-  }, [borrowedMoneyList, cardList, fixedExpenses, installmentList, insuranceList, key, ledgerEntries, loanList, month, subscriptions, year]);
+  }, [borrowedMoneyList, cardList, currentUserId, fixedExpenses, installmentList, insuranceList, key, ledgerEntries, loanList, month, subscriptions, year]);
 
   const visibleEvents = useMemo(
     () => selectedType ? events.filter((event) => event.type === selectedType) : events,
@@ -558,10 +577,16 @@ export default function PaymentCalendar() {
                   </div>
                   <div className="mt-2 space-y-1">
                     {dayEvents.slice(0, 3).map((event) => (
-                      <div key={event.id} className={`rounded-md border px-2 py-1 ${TYPE_STYLE[event.type]}`}>
+                      <button
+                        key={event.id}
+                        type="button"
+                        onClick={() => setLocation(event.href)}
+                        className={`w-full rounded-md border px-2 py-1 text-left transition-opacity hover:opacity-80 ${TYPE_STYLE[event.type]}`}
+                        title={`${event.type} 페이지로 이동`}
+                      >
                         <p className="truncate text-[11px] font-semibold">{event.title}</p>
                         <p className="text-[11px] opacity-80">₩{formatAmount(event.amount)}</p>
-                      </div>
+                      </button>
                     ))}
                     {dayEvents.length > 3 && (
                       <p className="text-[11px] text-muted-foreground">+{dayEvents.length - 3}건 더보기</p>
@@ -607,7 +632,12 @@ export default function PaymentCalendar() {
               </div>
             ) : (
               visibleEvents.map((event) => (
-                <div key={event.id} className="rounded-lg border border-border p-3">
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => setLocation(event.href)}
+                  className="w-full rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/30"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -623,7 +653,7 @@ export default function PaymentCalendar() {
                     </div>
                     <p className="shrink-0 text-sm font-bold">₩{formatAmount(event.amount)}</p>
                   </div>
-                </div>
+                </button>
               ))
             )}
           </div>

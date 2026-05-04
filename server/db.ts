@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import {
@@ -62,6 +62,8 @@ import {
   weddingBudgetSettings,
   laborCosts,
   InsertLaborCost,
+  userContacts,
+  InsertUserContact,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -97,6 +99,23 @@ async function ensureUserMemosTable(db: NonNullable<Awaited<ReturnType<typeof ge
   `);
 }
 
+async function ensureUserContactsTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "user_contacts" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "contact_user_id" integer NOT NULL,
+      "nickname" varchar(100) NOT NULL,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS "user_contacts_user_contact_idx"
+    ON "user_contacts" ("user_id", "contact_user_id")
+  `);
+}
+
 async function ensureLoansTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "loans" (
@@ -127,6 +146,9 @@ async function ensureBorrowedMoneyTable(db: NonNullable<Awaited<ReturnType<typeo
     CREATE TABLE IF NOT EXISTS "borrowed_money" (
       "id" serial PRIMARY KEY,
       "user_id" integer NOT NULL DEFAULT 0,
+      "lender_user_id" integer,
+      "borrower_user_id" integer,
+      "share_status" varchar(30) NOT NULL DEFAULT 'private',
       "lender_name" varchar(200) NOT NULL,
       "principal_amount" bigint NOT NULL DEFAULT 0,
       "repaid_amount" bigint NOT NULL DEFAULT 0,
@@ -145,6 +167,9 @@ async function ensureBorrowedMoneyTable(db: NonNullable<Awaited<ReturnType<typeo
       "updatedAt" timestamp NOT NULL DEFAULT now()
     )
   `);
+  await db.execute(sql`ALTER TABLE "borrowed_money" ADD COLUMN IF NOT EXISTS "lender_user_id" integer`);
+  await db.execute(sql`ALTER TABLE "borrowed_money" ADD COLUMN IF NOT EXISTS "borrower_user_id" integer`);
+  await db.execute(sql`ALTER TABLE "borrowed_money" ADD COLUMN IF NOT EXISTS "share_status" varchar(30) NOT NULL DEFAULT 'private'`);
   await db.execute(sql`ALTER TABLE "borrowed_money" ADD COLUMN IF NOT EXISTS "installment_mode" varchar(20) NOT NULL DEFAULT 'equal'`);
   await db.execute(sql`ALTER TABLE "borrowed_money" ADD COLUMN IF NOT EXISTS "repayment_schedule" text`);
   await db.execute(sql`
@@ -271,6 +296,79 @@ export async function getUserById(id: number) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function listShareableUsers(currentUserId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+    })
+    .from(users)
+    .where(sql`${users.id} <> ${currentUserId}`)
+    .orderBy(users.name, users.email);
+}
+
+export async function listUserContacts(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureUserContactsTable(db);
+  return db
+    .select({
+      id: userContacts.id,
+      userId: userContacts.userId,
+      contactUserId: userContacts.contactUserId,
+      nickname: userContacts.nickname,
+      name: users.name,
+      email: users.email,
+    })
+    .from(userContacts)
+    .leftJoin(users, eq(userContacts.contactUserId, users.id))
+    .where(eq(userContacts.userId, userId))
+    .orderBy(userContacts.nickname);
+}
+
+export async function searchUsersForContact(userId: number, query: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length < 2) return [];
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+    })
+    .from(users)
+    .where(and(
+      sql`${users.id} <> ${userId}`,
+      or(
+        sql`LOWER(COALESCE(${users.name}, '')) LIKE ${`%${normalized}%`}`,
+        sql`LOWER(COALESCE(${users.email}, '')) LIKE ${`%${normalized}%`}`,
+        sql`CAST(${users.id} AS text) = ${normalized}`,
+      ),
+    ))
+    .orderBy(users.name, users.email)
+    .limit(8);
+}
+
+export async function upsertUserContact(userId: number, data: Pick<InsertUserContact, "contactUserId" | "nickname">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureUserContactsTable(db);
+  if (data.contactUserId === userId) throw new Error("내 계정은 연락처로 추가할 수 없습니다");
+  const nickname = data.nickname.trim();
+  if (!nickname) throw new Error("별칭을 입력해주세요");
+  await db
+    .insert(userContacts)
+    .values({ userId, contactUserId: data.contactUserId, nickname })
+    .onConflictDoUpdate({
+      target: [userContacts.userId, userContacts.contactUserId],
+      set: { nickname, updatedAt: new Date() },
+    });
 }
 
 export async function updateUserProfile(
@@ -466,7 +564,14 @@ export async function listBorrowedMoney(userId: number) {
   if (!db) return [];
   await ensureBorrowedMoneyTable(db);
   return db.select().from(borrowedMoney)
-    .where(and(eq(borrowedMoney.userId, userId), eq(borrowedMoney.isActive, true)))
+    .where(and(
+      or(
+        eq(borrowedMoney.userId, userId),
+        eq(borrowedMoney.lenderUserId, userId),
+        eq(borrowedMoney.borrowerUserId, userId),
+      ),
+      eq(borrowedMoney.isActive, true),
+    ))
     .orderBy(desc(borrowedMoney.createdAt));
 }
 
@@ -483,7 +588,10 @@ export async function updateBorrowedMoney(userId: number, id: number, data: Part
   await ensureBorrowedMoneyTable(db);
   await db.update(borrowedMoney)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(borrowedMoney.id, id), eq(borrowedMoney.userId, userId)));
+    .where(and(
+      eq(borrowedMoney.id, id),
+      or(eq(borrowedMoney.userId, userId), eq(borrowedMoney.lenderUserId, userId), eq(borrowedMoney.borrowerUserId, userId)),
+    ));
 }
 
 export async function deleteBorrowedMoney(userId: number, id: number) {
@@ -499,9 +607,18 @@ export async function listBorrowedMoneyPayments(userId: number, borrowedMoneyId?
   const db = await getDb();
   if (!db) return [];
   await ensureBorrowedMoneyTable(db);
+  const accessible = await db
+    .select({ id: borrowedMoney.id })
+    .from(borrowedMoney)
+    .where(and(
+      or(eq(borrowedMoney.userId, userId), eq(borrowedMoney.lenderUserId, userId), eq(borrowedMoney.borrowerUserId, userId)),
+      eq(borrowedMoney.isActive, true),
+    ));
+  const ids = accessible.map((item) => item.id);
+  if (ids.length === 0) return [];
   const where = borrowedMoneyId
-    ? and(eq(borrowedMoneyPayments.userId, userId), eq(borrowedMoneyPayments.borrowedMoneyId, borrowedMoneyId))
-    : eq(borrowedMoneyPayments.userId, userId);
+    ? and(inArray(borrowedMoneyPayments.borrowedMoneyId, ids), eq(borrowedMoneyPayments.borrowedMoneyId, borrowedMoneyId))
+    : inArray(borrowedMoneyPayments.borrowedMoneyId, ids);
   return db.select().from(borrowedMoneyPayments)
     .where(where)
     .orderBy(desc(borrowedMoneyPayments.paymentDate), desc(borrowedMoneyPayments.createdAt));
@@ -521,24 +638,32 @@ export async function createBorrowedMoneyPayment(
   if (!db) throw new Error("DB not available");
   await ensureBorrowedMoneyTable(db);
   const [target] = await db.select().from(borrowedMoney)
-    .where(and(eq(borrowedMoney.id, data.borrowedMoneyId), eq(borrowedMoney.userId, userId), eq(borrowedMoney.isActive, true)))
+    .where(and(
+      eq(borrowedMoney.id, data.borrowedMoneyId),
+      or(eq(borrowedMoney.userId, userId), eq(borrowedMoney.lenderUserId, userId), eq(borrowedMoney.borrowerUserId, userId)),
+      eq(borrowedMoney.isActive, true),
+    ))
     .limit(1);
   if (!target) throw new Error("빌린돈 내역을 찾을 수 없습니다");
+  if (target.shareStatus !== "private" && target.shareStatus !== "accepted" && target.shareStatus !== "shared") {
+    throw new Error("상대방 승인 후 상환 기록을 추가할 수 있습니다");
+  }
   const remaining = Math.max(0, target.principalAmount - target.repaidAmount);
   const amount = Math.min(Math.max(0, data.amount), remaining);
   if (amount <= 0) throw new Error("상환할 금액이 없습니다");
 
   const [y, m] = data.paymentDate.split("-").map(Number);
   if (!y || !m) throw new Error("상환일 형식이 올바르지 않습니다");
+  const isReceiver = target.lenderUserId === userId && target.borrowerUserId !== userId;
   const ledgerResult = await db.insert(ledgerEntries).values({
     userId,
     entryDate: data.paymentDate,
     year: y,
     month: m,
-    mainCategory: "변동지출",
+    mainCategory: isReceiver ? "수입" : "변동지출",
     subCategory: "빌린돈상환",
-    description: `${target.lenderName} 상환`,
-    amount: -Math.abs(amount),
+    description: isReceiver ? `${target.lenderName} 입금 확인` : `${target.lenderName} 상환`,
+    amount: isReceiver ? Math.abs(amount) : -Math.abs(amount),
     note: `[빌린돈 자동연동]${data.note ? ` ${data.note}` : ""}`,
   }).returning({ id: ledgerEntries.id });
   const ledgerEntryId = ledgerResult[0]?.id ?? null;
@@ -546,7 +671,10 @@ export async function createBorrowedMoneyPayment(
   await db.insert(borrowedMoneyPayments).values({ ...data, amount, ledgerEntryId, userId });
   await db.update(borrowedMoney)
     .set({ repaidAmount: Math.min(target.principalAmount, target.repaidAmount + amount), updatedAt: new Date() })
-    .where(and(eq(borrowedMoney.id, data.borrowedMoneyId), eq(borrowedMoney.userId, userId)));
+    .where(and(
+      eq(borrowedMoney.id, data.borrowedMoneyId),
+      or(eq(borrowedMoney.userId, userId), eq(borrowedMoney.lenderUserId, userId), eq(borrowedMoney.borrowerUserId, userId)),
+    ));
 }
 
 export async function deleteBorrowedMoneyPayment(userId: number, id: number) {
