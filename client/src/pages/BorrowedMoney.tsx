@@ -114,14 +114,21 @@ function pad2(value: number) {
   return String(value).padStart(2, "0");
 }
 
-function addOneMonth(dateValue: string) {
+function dateWithDay(dateValue: string, day: number) {
+  if (!isCompleteCalendarDate(dateValue)) return dateValue;
+  const [year, month] = dateValue.split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${pad2(month)}-${pad2(Math.min(Math.max(day, 1), lastDay))}`;
+}
+
+function addOneMonth(dateValue: string, preferredDay?: number) {
   if (!isCompleteCalendarDate(dateValue)) return "";
   const [year, month, day] = dateValue.split("-").map(Number);
   const next = new Date(year, month, 1);
   const nextYear = next.getFullYear();
   const nextMonth = next.getMonth() + 1;
   const lastDay = new Date(nextYear, nextMonth, 0).getDate();
-  return `${nextYear}-${pad2(nextMonth)}-${pad2(Math.min(day, lastDay))}`;
+  return `${nextYear}-${pad2(nextMonth)}-${pad2(Math.min(preferredDay ?? day, lastDay))}`;
 }
 
 function monthIndex(year: number, month: number) {
@@ -189,6 +196,31 @@ function scheduledAmountForMonth(item: BorrowedMoneyRow, year: number, month: nu
   if (item.repaymentType === "일시상환" && oneTimeApplies(item, year, month)) return remain;
   if (item.repaymentType === "자유상환" && oneTimeApplies(item, year, month)) return remain;
   return 0;
+}
+
+function scheduledDateForMonth(item: BorrowedMoneyRow, year: number, month: number) {
+  const monthKey = `${year}-${pad2(month)}`;
+  if (item.repaymentType === "할부상환") {
+    const fallbackDay = Number(item.repaymentStartDate?.slice(8, 10)) || 1;
+    const paymentDay = item.paymentDay ?? fallbackDay;
+    const lastDay = new Date(year, month, 0).getDate();
+    return `${monthKey}-${pad2(Math.min(Math.max(paymentDay, 1), lastDay))}`;
+  }
+  return item.repaymentDueDate ?? "";
+}
+
+function installmentSummary(item: BorrowedMoneyRow, year: number, month: number) {
+  if (item.repaymentType !== "할부상환") return "";
+  const total = item.totalInstallments ?? 0;
+  const currentNo = installmentNo(item, year, month);
+  const amount = currentNo ? installmentAmountForNo(item, currentNo) : item.monthlyPayment;
+  const totalText = total > 0 ? `총 ${total}회` : "";
+  if (item.installmentMode === "custom") {
+    const amountText = amount > 0 ? `${currentNo ? `${currentNo}회차 ` : "회차별 "}₩${formatAmount(amount)}` : "회차별 금액";
+    return [amountText, totalText].filter(Boolean).join(" · ");
+  }
+  const amountText = amount > 0 ? `매월 ₩${formatAmount(amount)}` : "매월 금액";
+  return [amountText, totalText].filter(Boolean).join(" · ");
 }
 
 export default function BorrowedMoney() {
@@ -322,12 +354,7 @@ export default function BorrowedMoney() {
         const amount = scheduledAmountForMonth(item, selectedYear, selectedMonth);
         if (amount <= 0) return null;
         const no = installmentNo(item, selectedYear, selectedMonth);
-        const fallbackDay = Number(item.repaymentStartDate?.slice(8, 10)) || 1;
-        const paymentDay = item.paymentDay ?? fallbackDay;
-        const date =
-          item.repaymentType === "할부상환"
-            ? `${selectedMonthKey}-${pad2(Math.min(Math.max(paymentDay, 1), new Date(selectedYear, selectedMonth, 0).getDate()))}`
-            : item.repaymentDueDate ?? `${selectedMonthKey}-01`;
+        const date = scheduledDateForMonth(item, selectedYear, selectedMonth) || `${selectedMonthKey}-01`;
         const progress = item.principalAmount > 0 ? Math.min(100, Math.round((item.repaidAmount / item.principalAmount) * 100)) : 0;
         return { item, amount, date, installmentNo: no, progress };
       })
@@ -341,11 +368,7 @@ export default function BorrowedMoney() {
       .map((item) => {
         const amount = scheduledAmountForMonth(item, currentYear, currentMonth);
         if (amount <= 0) return null;
-        const fallbackDay = Number(item.repaymentStartDate?.slice(8, 10)) || 1;
-        const paymentDay = item.paymentDay ?? fallbackDay;
-        const date = item.repaymentType === "할부상환"
-          ? `${currentYear}-${pad2(currentMonth)}-${pad2(Math.min(Math.max(paymentDay, 1), new Date(currentYear, currentMonth, 0).getDate()))}`
-          : item.repaymentDueDate ?? "";
+        const date = scheduledDateForMonth(item, currentYear, currentMonth);
         if (date !== todayKey) return null;
         return { item, amount };
       })
@@ -358,6 +381,7 @@ export default function BorrowedMoney() {
       remaining: remainingAmount(item),
       progress: item.principalAmount > 0 ? Math.min(100, Math.round((item.repaidAmount / item.principalAmount) * 100)) : 0,
       scheduled: scheduledAmountForMonth(item, currentYear, currentMonth),
+      scheduledDate: scheduledDateForMonth(item, currentYear, currentMonth),
     })),
     [currentMonth, currentYear, visibleRows],
   );
@@ -501,14 +525,24 @@ export default function BorrowedMoney() {
 
   const handleBorrowedDateChange = (value: string) => {
     setForm((prev) => {
-      const nextDate = addOneMonth(value);
+      const nextDate = addOneMonth(value, prev.repaymentType === "할부상환" ? prev.paymentDay : undefined);
+      const previousAutoDate = addOneMonth(prev.borrowedDate, prev.repaymentType === "할부상환" ? prev.paymentDay : undefined);
       return {
         ...prev,
         borrowedDate: value,
-        repaymentStartDate: nextDate && (!prev.repaymentStartDate || prev.repaymentStartDate === addOneMonth(prev.borrowedDate)) ? nextDate : prev.repaymentStartDate,
-        repaymentDueDate: nextDate && (!prev.repaymentDueDate || prev.repaymentDueDate === addOneMonth(prev.borrowedDate)) ? nextDate : prev.repaymentDueDate,
+        repaymentStartDate: nextDate && (!prev.repaymentStartDate || prev.repaymentStartDate === previousAutoDate) ? nextDate : prev.repaymentStartDate,
+        repaymentDueDate: nextDate && (!prev.repaymentDueDate || prev.repaymentDueDate === previousAutoDate) ? nextDate : prev.repaymentDueDate,
       };
     });
+  };
+
+  const handlePaymentDayChange = (value: number) => {
+    const day = Math.min(Math.max(value || 1, 1), 31);
+    setForm((prev) => ({
+      ...prev,
+      paymentDay: day,
+      repaymentStartDate: prev.repaymentStartDate ? dateWithDay(prev.repaymentStartDate, day) : prev.repaymentStartDate,
+    }));
   };
 
   const openCreate = (direction: "pay" | "receive" = "pay") => {
@@ -522,7 +556,7 @@ export default function BorrowedMoney() {
     const isReceivingItem = isReceiveRow(item);
     setForm({
       direction: isReceivingItem ? "receive" : "pay",
-      lenderName: item.lenderName,
+      lenderName: isReceivingItem ? counterpartyName(item) : item.lenderName,
       sharedBorrowerUserId: item.shareStatus !== "private" ? (isReceivingItem ? item.borrowerUserId : item.lenderUserId) : null,
       principalAmount: item.principalAmount,
       repaidAmount: item.repaidAmount,
@@ -923,11 +957,16 @@ export default function BorrowedMoney() {
                       <td className="px-3 py-3 text-right">₩{formatAmount(item.principalAmount)}</td>
                       <td className="px-3 py-3 text-right font-semibold text-rose-600">₩{formatAmount(item.remaining)}</td>
                       <td className="hidden px-3 py-3 text-center sm:table-cell">
-                        <div className="flex justify-center gap-1">
-                          <Badge variant={item.repaymentType === "할부상환" ? "default" : "secondary"}>{item.repaymentType}</Badge>
-                          {isSharedRow(item) && <Badge variant="outline">{isReceiveRow(item) ? "받을 돈" : "갚을 돈"}</Badge>}
-                          {item.shareStatus === "pending" && <Badge variant="secondary">{isIncomingPending(item) ? "승인 요청" : "승인 대기"}</Badge>}
-                          {item.shareStatus === "rejected" && <Badge variant="destructive">거절됨</Badge>}
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex justify-center gap-1">
+                            <Badge variant={item.repaymentType === "할부상환" ? "default" : "secondary"}>{item.repaymentType}</Badge>
+                            {isSharedRow(item) && <Badge variant="outline">{isReceiveRow(item) ? "받을 돈" : "갚을 돈"}</Badge>}
+                            {item.shareStatus === "pending" && <Badge variant="secondary">{isIncomingPending(item) ? "승인 요청" : "승인 대기"}</Badge>}
+                            {item.shareStatus === "rejected" && <Badge variant="destructive">거절됨</Badge>}
+                          </div>
+                          {item.repaymentType === "할부상환" && (
+                            <span className="text-xs text-muted-foreground">{installmentSummary(item, currentYear, currentMonth)}</span>
+                          )}
                         </div>
                       </td>
                       <td className="hidden px-3 py-3 text-muted-foreground md:table-cell">
@@ -937,7 +976,7 @@ export default function BorrowedMoney() {
                           <span className="text-xs text-destructive">거절된 요청</span>
                         ) : item.scheduled > 0 ? (
                           <span className="inline-flex items-center gap-1 text-foreground">
-                            <CalendarDays className="h-3.5 w-3.5" /> ₩{formatAmount(item.scheduled)}
+                            <CalendarDays className="h-3.5 w-3.5" /> {item.scheduledDate} · ₩{formatAmount(item.scheduled)}
                           </span>
                         ) : item.repaymentDueDate ? item.repaymentDueDate : "-"}
                       </td>
@@ -1160,7 +1199,7 @@ export default function BorrowedMoney() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>매월 상환일</Label>
-                  <Input type="number" min={1} max={31} value={form.paymentDay || ""} onChange={(event) => set("paymentDay", Number(event.target.value))} />
+                  <Input type="number" min={1} max={31} value={form.paymentDay || ""} onChange={(event) => handlePaymentDayChange(Number(event.target.value))} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>나눠 낼 회차</Label>
