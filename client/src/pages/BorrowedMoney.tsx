@@ -850,7 +850,7 @@ export default function BorrowedMoney() {
                         {entry.installmentNo && entry.item.totalInstallments ? ` · ${entry.installmentNo}/${entry.item.totalInstallments}회` : ""}
                       </p>
                       {entry.item.note && (
-                        <p className="mt-1 truncate text-xs text-foreground" title={entry.item.note}>
+                        <p className="mt-1 line-clamp-1 text-xs text-foreground" title={entry.item.note}>
                           요청 건: {entry.item.note}
                         </p>
                       )}
@@ -967,7 +967,7 @@ export default function BorrowedMoney() {
                           {item.borrowedDate || "-"}
                         </div>
                         {item.note && (
-                          <div className="mt-1 truncate text-xs text-foreground" title={item.note}>
+                          <div className="mt-1 line-clamp-1 text-xs text-foreground" title={item.note}>
                             요청 건: {item.note}
                           </div>
                         )}
