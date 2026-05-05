@@ -289,7 +289,7 @@ export default function BorrowedMoney() {
       .filter((user) => displayUserName(user).toLowerCase().includes(lenderQuery))
       .slice(0, 5)
     : [];
-  const showLenderSuggestions = lenderInputFocused && lenderSuggestions.length > 0;
+  const showLenderSuggestions = lenderInputFocused && lenderSuggestions.length > 0 && !form.sharedBorrowerUserId;
   const selectLenderUser = (user: ShareableUser) => {
     setForm((prev) => ({
       ...prev,
