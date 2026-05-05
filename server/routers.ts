@@ -102,6 +102,20 @@ const borrowedMoneyInput = z.object({
   note: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
 });
+const borrowedMoneyUpdateInput = borrowedMoneyInput.omit({
+  principalAmount: true,
+  repaidAmount: true,
+  repaymentType: true,
+  monthlyPayment: true,
+  installmentMode: true,
+}).extend({
+  principalAmount: z.number().int().min(0).optional(),
+  repaidAmount: z.number().int().min(0).optional(),
+  repaymentType: z.enum(["일시상환", "할부상환", "자유상환"]).optional(),
+  monthlyPayment: z.number().int().min(0).optional(),
+  installmentMode: z.enum(["equal", "custom"]).optional(),
+}).partial();
+
 const borrowedMoneyPaymentInput = z.object({
   borrowedMoneyId: z.number().int(),
   paymentDate: z.string(),
@@ -790,7 +804,7 @@ export const appRouter = router({
       isActive: input.isActive ?? true,
     })),
     update: protectedProcedure
-      .input(z.object({ id: z.number(), data: borrowedMoneyInput.partial() }))
+      .input(z.object({ id: z.number(), data: borrowedMoneyUpdateInput }))
       .mutation(({ input, ctx }) => db.updateBorrowedMoney(ctx.user.id, input.id, {
         ...input.data,
         lenderUserId: input.data.lenderUserId ?? undefined,
