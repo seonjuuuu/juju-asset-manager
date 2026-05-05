@@ -917,6 +917,13 @@ export default function BorrowedMoney() {
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <div className="font-medium">{partyName(item)}</div>
+                          {isReceiveRow(item) ? (
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">빌려준 돈</span>
+                          ) : isSharedRow(item) ? (
+                            <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">빌린 돈</span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">개인 기록</span>
+                          )}
                           {isSharedRow(item) && (
                             <Button
                               variant="ghost"
