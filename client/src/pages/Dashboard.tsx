@@ -172,6 +172,7 @@ export default function Dashboard() {
       id: number;
       lenderUserId?: number | null;
       borrowerUserId?: number | null;
+      lenderUserName?: string | null;
       lenderName: string;
       principalAmount: number;
       repaidAmount: number;
@@ -180,6 +181,7 @@ export default function Dashboard() {
       repaymentDueDate?: string | null;
       paymentDay?: number | null;
       totalInstallments?: number | null;
+      note?: string | null;
       shareStatus?: string | null;
     }>)
       .filter((item) => item.shareStatus === "pending" && (item.borrowerUserId === currentUserId || item.lenderUserId === currentUserId))
@@ -339,6 +341,7 @@ export default function Dashboard() {
       id: number;
       lenderUserId?: number | null;
       shareStatus?: string | null;
+      lenderUserName?: string | null;
       lenderName: string;
       principalAmount: number;
       repaidAmount: number;
@@ -380,10 +383,11 @@ export default function Dashboard() {
         amount = remain;
       }
       if (!date || amount <= 0) continue;
+      const lenderDisplayName = item.lenderUserName?.trim() || item.lenderName;
       payments.push({
         id: `borrowed-${item.id}`,
         date,
-        title: isReceiving ? `${item.lenderName} 입금 예정` : `${item.lenderName} 상환`,
+        title: isReceiving ? `${lenderDisplayName} 입금 예정` : `${lenderDisplayName} 상환`,
         amount: Math.min(remain, amount),
         type: isReceiving ? "받을돈" : "빌린돈",
       });
@@ -655,14 +659,20 @@ export default function Dashboard() {
             {pendingBorrowedRequests.map((request) => {
               const remaining = Math.max(0, request.principalAmount - request.repaidAmount);
               const isChangeApproval = request.lenderUserId === currentUserId;
+              const lenderDisplayName = request.lenderUserName?.trim() || request.lenderName;
               return (
                 <div key={request.id} className="rounded-lg border border-border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-foreground">{request.lenderName}</p>
+                      <p className="truncate text-sm font-semibold text-foreground">{lenderDisplayName}</p>
                       <p className="mt-1 text-xs font-medium text-primary">
                         {isChangeApproval ? "상대방이 상환 조건을 변경했습니다" : "상대방이 돈 거래 확인을 요청했습니다"}
                       </p>
+                      {request.note && (
+                        <p className="mt-1 rounded-md bg-muted/60 px-2 py-1 text-xs text-foreground">
+                          요청 건: {request.note}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-muted-foreground">
                         {request.repaymentType}
                         {request.totalInstallments ? ` · ${request.totalInstallments}회` : ""}

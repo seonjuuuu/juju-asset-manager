@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import {
@@ -563,7 +563,11 @@ export async function listBorrowedMoney(userId: number) {
   const db = await getDb();
   if (!db) return [];
   await ensureBorrowedMoneyTable(db);
-  return db.select().from(borrowedMoney)
+  return db.select({
+    ...getTableColumns(borrowedMoney),
+    lenderUserName: sql<string | null>`(SELECT COALESCE(${users.name}, ${users.email}) FROM ${users} WHERE ${users.id} = ${borrowedMoney.lenderUserId} LIMIT 1)`,
+    borrowerUserName: sql<string | null>`(SELECT COALESCE(${users.name}, ${users.email}) FROM ${users} WHERE ${users.id} = ${borrowedMoney.borrowerUserId} LIMIT 1)`,
+  }).from(borrowedMoney)
     .where(and(
       or(
         eq(borrowedMoney.userId, userId),

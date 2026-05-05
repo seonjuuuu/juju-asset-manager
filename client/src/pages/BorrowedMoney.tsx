@@ -25,6 +25,8 @@ type BorrowedMoneyRow = {
   userId: number;
   lenderUserId: number | null;
   borrowerUserId: number | null;
+  lenderUserName?: string | null;
+  borrowerUserName?: string | null;
   shareStatus: ShareStatus;
   lenderName: string;
   principalAmount: number;
@@ -288,6 +290,7 @@ export default function BorrowedMoney() {
     const id = counterpartyId(item);
     return id ? userNameById.get(id) ?? `사용자 ${id}` : item.lenderName;
   };
+  const actualLenderName = (item: BorrowedMoneyRow) => item.lenderUserName?.trim() || item.lenderName;
   const visibleRows = activeRows.filter((item) => {
     if (viewMode === "receive") return isReceiveRow(item);
     if (viewMode === "pay") return isPayRow(item);
@@ -348,6 +351,17 @@ export default function BorrowedMoney() {
     })),
     [currentMonth, currentYear, visibleRows],
   );
+  const receiveMode = viewMode === "receive";
+  const allMode = viewMode === "all";
+  const scheduleLabel = receiveMode ? "입금" : "상환";
+  const partyColumnLabel = allMode ? "빌린 곳/받을 곳" : receiveMode ? "받을 곳" : "빌린 곳";
+  const principalLabel = receiveMode ? "총 받을 금액" : "총 빌린 금액";
+  const repaidLabel = receiveMode ? "받은 금액" : "갚은 금액";
+  const remainingLabel = receiveMode ? "남은 받을 금액" : "남은 금액";
+  const listTitle = receiveMode ? "받을돈 목록" : "상환 목록";
+  const emptyListText = receiveMode ? "등록된 받을돈이 없습니다" : "등록된 빌린돈이 없습니다";
+  const activePaymentTarget = activeRows.find((item) => item.id === paymentForm.borrowedMoneyId);
+  const activePaymentIsReceive = activePaymentTarget ? isReceiveRow(activePaymentTarget) : receiveMode;
 
   const invalidate = () => {
     utils.borrowedMoney.list.invalidate();
@@ -359,7 +373,7 @@ export default function BorrowedMoney() {
   const create = trpc.borrowedMoney.create.useMutation({
     onSuccess: () => {
       invalidate();
-      toast.success("빌린돈이 추가되었습니다");
+      toast.success(form.direction === "receive" ? "받을돈이 추가되었습니다" : "빌린돈이 추가되었습니다");
       setDialogOpen(false);
     },
     onError: (error) => toast.error(error.message),
@@ -382,7 +396,7 @@ export default function BorrowedMoney() {
   const addPayment = trpc.borrowedMoney.addPayment.useMutation({
     onSuccess: () => {
       invalidate();
-      toast.success("상환 기록이 추가되었습니다");
+      toast.success(activePaymentIsReceive ? "받음 기록이 추가되었습니다" : "상환 기록이 추가되었습니다");
       setPaymentDialogOpen(false);
     },
     onError: (error) => toast.error(error.message),
@@ -607,24 +621,25 @@ export default function BorrowedMoney() {
 
   const handlePaymentSubmit = () => {
     const target = activeRows.find((item) => item.id === paymentForm.borrowedMoneyId);
+    const receiving = target ? isReceiveRow(target) : false;
     if (!target) {
-      toast.error("상환 대상을 선택해주세요");
+      toast.error(`${activePaymentIsReceive ? "받을" : "상환"} 대상을 선택해주세요`);
       return;
     }
     if (!paymentForm.paymentDate) {
-      toast.error("상환일을 입력해주세요");
+      toast.error(receiving ? "받은 날을 입력해주세요" : "상환일을 입력해주세요");
       return;
     }
     if (!isCompleteCalendarDate(paymentForm.paymentDate)) {
-      toast.error("상환일을 끝까지 입력해주세요");
+      toast.error(receiving ? "받은 날을 끝까지 입력해주세요" : "상환일을 끝까지 입력해주세요");
       return;
     }
     if (paymentForm.amount <= 0) {
-      toast.error("상환 금액을 입력해주세요");
+      toast.error(receiving ? "받은 금액을 입력해주세요" : "상환 금액을 입력해주세요");
       return;
     }
     if (paymentForm.amount > remainingAmount(target)) {
-      toast.error("상환 금액은 남은 금액보다 클 수 없습니다");
+      toast.error(receiving ? "받은 금액은 남은 금액보다 클 수 없습니다" : "상환 금액은 남은 금액보다 클 수 없습니다");
       return;
     }
     addPayment.mutate({
@@ -716,7 +731,7 @@ export default function BorrowedMoney() {
             <CalendarDays className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">이달 상환 예정</p>
+            <p className="text-xs text-muted-foreground">이달 {scheduleLabel} 예정</p>
             <p className="text-xl font-bold">₩{formatAmount(selectedMonthScheduledTotal)}</p>
           </div>
         </div>
@@ -725,7 +740,7 @@ export default function BorrowedMoney() {
             <ReceiptText className="w-5 h-5 text-blue-500" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">이달 상환 건수</p>
+            <p className="text-xs text-muted-foreground">이달 {scheduleLabel} 건수</p>
             <p className="text-xl font-bold">{selectedMonthSchedule.length}건</p>
           </div>
         </div>
@@ -734,34 +749,34 @@ export default function BorrowedMoney() {
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="grid gap-2 sm:grid-cols-3">
           <div className="rounded-lg border border-border px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">총 빌린 금액</p>
+            <p className="text-xs text-muted-foreground">{principalLabel}</p>
             <p className="mt-1 text-base font-bold">₩{formatAmount(totalPrincipal)}</p>
           </div>
           <div className="rounded-lg border border-border px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">갚은 금액</p>
+            <p className="text-xs text-muted-foreground">{repaidLabel}</p>
             <p className="mt-1 text-base font-bold text-emerald-600">₩{formatAmount(totalRepaid)}</p>
           </div>
           <div className="rounded-lg border border-border px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">남은 금액</p>
+            <p className="text-xs text-muted-foreground">{remainingLabel}</p>
             <p className="mt-1 text-base font-bold text-rose-600">₩{formatAmount(totalRemaining)}</p>
           </div>
         </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-5">
-        <h3 className="text-sm font-semibold mb-1">월별 상환 예정</h3>
+        <h3 className="text-sm font-semibold mb-1">월별 {scheduleLabel} 예정</h3>
         <p className="text-xs text-muted-foreground mb-4">{selectedYear}년 {pad2(selectedMonth)}월 기준 · 예정 ₩{formatAmount(selectedMonthScheduledTotal)}</p>
         {selectedMonthSchedule.length === 0 ? (
           <div className="rounded-xl border border-border py-12 text-center text-sm text-muted-foreground">
-            이달 상환 예정 내역이 없습니다
+            이달 {scheduleLabel} 예정 내역이 없습니다
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border">
             <table className="w-full">
               <thead>
                 <tr className="bg-muted/50 border-b border-border">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">상환일</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">빌린 곳</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{scheduleLabel}일</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{partyColumnLabel}</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">예정 금액</th>
                   <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[180px]">진행률</th>
                   <th className="px-4 py-3 w-20"></th>
@@ -772,12 +787,17 @@ export default function BorrowedMoney() {
                   <tr key={`${entry.item.id}-${entry.date}-${entry.installmentNo ?? "due"}`} className="border-t border-border transition-colors hover:bg-muted/30">
                     <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{entry.date}</td>
                     <td className="px-4 py-3">
-                      <p className="text-sm font-medium">{isReceiveRow(entry.item) ? counterpartyName(entry.item) : entry.item.lenderName}</p>
+                      <p className="text-sm font-medium">{isReceiveRow(entry.item) ? counterpartyName(entry.item) : actualLenderName(entry.item)}</p>
                       <p className="text-xs text-muted-foreground">
                         {isReceiveRow(entry.item) ? "받을 돈" : "갚을 돈"} ·{" "}
                         {entry.item.repaymentType}
                         {entry.installmentNo && entry.item.totalInstallments ? ` · ${entry.installmentNo}/${entry.item.totalInstallments}회` : ""}
                       </p>
+                      {entry.item.note && (
+                        <p className="mt-1 truncate text-xs text-foreground" title={entry.item.note}>
+                          요청 건: {entry.item.note}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className="text-sm font-bold text-primary">₩{formatAmount(entry.amount)}</span>
@@ -785,7 +805,7 @@ export default function BorrowedMoney() {
                     <td className="px-4 py-3 min-w-[180px]">
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>상환 진행</span>
+                          <span>{isReceiveRow(entry.item) ? "입금 진행" : "상환 진행"}</span>
                           <span>{entry.progress}%</span>
                         </div>
                         <div className="h-1.5 rounded-full bg-muted overflow-hidden">
@@ -808,7 +828,7 @@ export default function BorrowedMoney() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">상환 목록</CardTitle>
+          <CardTitle className="text-base">{listTitle}</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -816,8 +836,8 @@ export default function BorrowedMoney() {
           ) : summaryRows.length === 0 ? (
             <div className="py-14 text-center">
               <Wallet className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">등록된 빌린돈이 없습니다</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => openCreate("pay")}>
+              <p className="text-sm text-muted-foreground">{emptyListText}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => openCreate(receiveMode ? "receive" : "pay")}>
                 <Plus className="mr-1 h-3.5 w-3.5" /> 추가하기
               </Button>
             </div>
@@ -826,10 +846,10 @@ export default function BorrowedMoney() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-muted-foreground">
-                    <th className="px-3 py-2 text-left font-medium">빌린 곳</th>
+                    <th className="px-3 py-2 text-left font-medium">{partyColumnLabel}</th>
                     <th className="px-3 py-2 text-right font-medium">총액</th>
-                    <th className="px-3 py-2 text-right font-medium">남은 금액</th>
-                    <th className="hidden px-3 py-2 text-center font-medium sm:table-cell">상환 방식</th>
+                    <th className="px-3 py-2 text-right font-medium">{remainingLabel}</th>
+                    <th className="hidden px-3 py-2 text-center font-medium sm:table-cell">{scheduleLabel} 방식</th>
                     <th className="hidden px-3 py-2 text-left font-medium md:table-cell">다음/이번달</th>
                     <th className="px-3 py-2 text-center font-medium">진행</th>
                     <th className="px-3 py-2" />
@@ -839,16 +859,21 @@ export default function BorrowedMoney() {
                   {summaryRows.map((item) => (
                     <tr key={item.id} className="border-b transition-colors hover:bg-muted/30">
                       <td className="px-3 py-3">
-                        <div className="font-medium">{isReceiveRow(item) ? counterpartyName(item) : item.lenderName}</div>
+                        <div className="font-medium">{isReceiveRow(item) ? counterpartyName(item) : actualLenderName(item)}</div>
                         <div className="text-xs text-muted-foreground">
                           {isSharedRow(item) ? (
                             isReceiveRow(item)
                               ? `${counterpartyName(item)}에게 받을 돈`
-                              : `${item.lenderName}에게 갚을 돈`
+                              : `${actualLenderName(item)}에게 갚을 돈`
                           ) : "개인 기록"}
                           {" · "}
                           {item.borrowedDate || "-"}
                         </div>
+                        {item.note && (
+                          <div className="mt-1 truncate text-xs text-foreground" title={item.note}>
+                            요청 건: {item.note}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-3 text-right">₩{formatAmount(item.principalAmount)}</td>
                       <td className="px-3 py-3 text-right font-semibold text-rose-600">₩{formatAmount(item.remaining)}</td>
@@ -935,11 +960,11 @@ export default function BorrowedMoney() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">최근 상환 기록</CardTitle>
+          <CardTitle className="text-base">최근 {scheduleLabel} 기록</CardTitle>
         </CardHeader>
         <CardContent>
           {paymentRows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">상환 기록이 없습니다</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{scheduleLabel} 기록이 없습니다</p>
           ) : (
             <div className="space-y-2">
               {paymentRows.slice(0, 8).map((payment) => {
@@ -947,7 +972,9 @@ export default function BorrowedMoney() {
                 return (
                   <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{target?.lenderName ?? "삭제된 내역"}</p>
+                      <p className="truncate text-sm font-medium">
+                        {target ? (isReceiveRow(target) ? counterpartyName(target) : actualLenderName(target)) : "삭제된 내역"}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {payment.paymentDate}
                         {payment.installmentNo ? ` · ${payment.installmentNo}회차` : ""}
@@ -960,7 +987,7 @@ export default function BorrowedMoney() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => { if (confirm("상환 기록을 삭제하시겠습니까? 가계부 자동연동 항목도 함께 삭제됩니다.")) deletePayment.mutate({ id: payment.id }); }}
+                        onClick={() => { if (confirm(`${scheduleLabel} 기록을 삭제하시겠습니까? 가계부 자동연동 항목도 함께 삭제됩니다.`)) deletePayment.mutate({ id: payment.id }); }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -1141,8 +1168,8 @@ export default function BorrowedMoney() {
               </div>
             )}
             <div className="space-y-1.5">
-              <Label>메모</Label>
-              <Textarea value={form.note} onChange={(event) => set("note", event.target.value)} rows={3} placeholder="상환 약속이나 계좌 정보 등을 적어둘 수 있어요" />
+              <Label>요청 건 / 메모</Label>
+              <Textarea value={form.note} onChange={(event) => set("note", event.target.value)} rows={3} placeholder="예: 여행 경비, 병원비, 생활비 등 어떤 건인지 적어주세요" />
             </div>
           </div>
           <DialogFooter>
@@ -1162,7 +1189,7 @@ export default function BorrowedMoney() {
                 <div key={item.id} className="rounded-lg border border-border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{receiving ? `${item.lenderName} 입금 확인` : `${item.lenderName} 상환 예정`}</p>
+                      <p className="truncate text-sm font-semibold">{receiving ? `${counterpartyName(item)} 입금 확인` : `${actualLenderName(item)} 상환 예정`}</p>
                       <p className="mt-1 text-xs text-muted-foreground">{item.repaymentType}</p>
                     </div>
                     <p className="shrink-0 text-sm font-bold">₩{formatAmount(amount)}</p>
@@ -1253,10 +1280,10 @@ export default function BorrowedMoney() {
 
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>상환 기록 추가</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{activePaymentIsReceive ? "받음 기록 추가" : "상환 기록 추가"}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>상환 대상</Label>
+              <Label>{activePaymentIsReceive ? "받을 대상" : "상환 대상"}</Label>
               <Select
                 value={paymentForm.borrowedMoneyId ? String(paymentForm.borrowedMoneyId) : ""}
                 onValueChange={(value) => {
@@ -1269,11 +1296,11 @@ export default function BorrowedMoney() {
                   }));
                 }}
               >
-                <SelectTrigger><SelectValue placeholder="상환 대상 선택" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={activePaymentIsReceive ? "받을 대상 선택" : "상환 대상 선택"} /></SelectTrigger>
                 <SelectContent>
                   {activeRows.filter((item) => remainingAmount(item) > 0).map((item) => (
                     <SelectItem key={item.id} value={String(item.id)}>
-                      {item.lenderName} · 남은 ₩{formatAmount(remainingAmount(item))}
+                      {isReceiveRow(item) ? counterpartyName(item) : actualLenderName(item)} · 남은 ₩{formatAmount(remainingAmount(item))}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1281,14 +1308,14 @@ export default function BorrowedMoney() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <FlexibleDateField label="상환일" value={paymentForm.paymentDate} onChange={(value) => setPaymentForm((prev) => ({ ...prev, paymentDate: value }))} />
+                <FlexibleDateField label={activePaymentIsReceive ? "받은 날" : "상환일"} value={paymentForm.paymentDate} onChange={(value) => setPaymentForm((prev) => ({ ...prev, paymentDate: value }))} />
               </div>
               <div className="space-y-1.5">
-                <Label>상환 금액</Label>
+                <Label>{activePaymentIsReceive ? "받은 금액" : "상환 금액"}</Label>
                 <CurrencyInput value={paymentForm.amount} onChange={(value) => setPaymentForm((prev) => ({ ...prev, amount: value }))} suffix="원" />
               </div>
             </div>
-            {activeRows.find((item) => item.id === paymentForm.borrowedMoneyId)?.repaymentType === "할부상환" && (
+            {activePaymentTarget?.repaymentType === "할부상환" && (
               <div className="space-y-1.5">
                 <Label>회차</Label>
                 <Input type="number" min={1} value={paymentForm.installmentNo || ""} onChange={(event) => setPaymentForm((prev) => ({ ...prev, installmentNo: Number(event.target.value) }))} />
