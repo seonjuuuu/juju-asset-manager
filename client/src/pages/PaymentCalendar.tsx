@@ -89,6 +89,8 @@ type BorrowedMoneyRow = {
   id: number;
   lenderUserId: number | null;
   borrowerUserId: number | null;
+  lenderUserName?: string | null;
+  borrowerUserName?: string | null;
   shareStatus: "private" | "pending" | "accepted" | "rejected" | "shared";
   lenderName: string;
   principalAmount: number;

@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
+import ReceiveConfirmDialog from "@/components/ReceiveConfirmDialog";
 
 type SidebarNavLink = { href: string; icon: LucideIcon; label: string };
 
@@ -279,6 +280,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <ReceiveConfirmDialog />
 
       {/* ── 모바일 오버레이 드로어 ── */}
       {mobileOpen && (
