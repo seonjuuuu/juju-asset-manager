@@ -1,6 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { formatAmount, MONTH_NAMES, currentYear } from "@/lib/utils";
 import { ledgerSubCostForMonth, subscriptionLedgerDate } from "@/lib/subscriptionLedger";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "sonner";
 import {
   BarChart,
   Bar,
@@ -140,6 +143,7 @@ const EXPENSE_COLORS = [
 ];
 
 export default function Dashboard() {
+  const utils = trpc.useUtils();
   const { data: summary, isLoading: summaryLoading } = trpc.dashboard.summary.useQuery();
   const { data: yearly, isLoading: yearlyLoading } = trpc.dashboard.yearlySummary.useQuery({ year: currentYear });
 
@@ -160,6 +164,43 @@ export default function Dashboard() {
   const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
   const { data: me } = trpc.auth.me.useQuery();
+  const currentUserId = typeof (me as { id?: unknown } | null | undefined)?.id === "number" ? (me as { id: number }).id : null;
+
+  const pendingBorrowedRequests = useMemo(() => {
+    if (currentUserId === null) return [];
+    return (borrowedMoneyList as Array<{
+      id: number;
+      lenderUserId?: number | null;
+      borrowerUserId?: number | null;
+      lenderName: string;
+      principalAmount: number;
+      repaidAmount: number;
+      repaymentType: string;
+      repaymentStartDate?: string | null;
+      repaymentDueDate?: string | null;
+      paymentDay?: number | null;
+      totalInstallments?: number | null;
+      shareStatus?: string | null;
+    }>)
+      .filter((item) => item.shareStatus === "pending" && (item.borrowerUserId === currentUserId || item.lenderUserId === currentUserId))
+      .sort((a, b) => b.id - a.id);
+  }, [borrowedMoneyList, currentUserId]);
+
+  const acceptBorrowedRequest = trpc.borrowedMoney.update.useMutation({
+    onSuccess: () => {
+      utils.borrowedMoney.list.invalidate();
+      toast.success("요청을 수락했습니다");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const rejectBorrowedRequest = trpc.borrowedMoney.update.useMutation({
+    onSuccess: () => {
+      utils.borrowedMoney.list.invalidate();
+      toast.success("요청을 거절했습니다");
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   // 차트 legend 토글 state
   const [hiddenMonthly, setHiddenMonthly] = useState<Record<string, boolean>>({});
@@ -602,6 +643,62 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <Dialog open={pendingBorrowedRequests.length > 0}>
+        <DialogContent className="max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>돈 거래 확인 요청</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              받을돈/갚을돈 공유 요청 또는 상환 조건 변경이 있습니다. 수락하면 월별 예정 금액에 반영됩니다.
+            </p>
+            {pendingBorrowedRequests.map((request) => {
+              const remaining = Math.max(0, request.principalAmount - request.repaidAmount);
+              const isChangeApproval = request.lenderUserId === currentUserId;
+              return (
+                <div key={request.id} className="rounded-lg border border-border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{request.lenderName}</p>
+                      <p className="mt-1 text-xs font-medium text-primary">
+                        {isChangeApproval ? "상대방이 상환 조건을 변경했습니다" : "상대방이 돈 거래 확인을 요청했습니다"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {request.repaymentType}
+                        {request.totalInstallments ? ` · ${request.totalInstallments}회` : ""}
+                        {request.paymentDay ? ` · 매월 ${request.paymentDay}일` : ""}
+                        {request.repaymentDueDate ? ` · ${request.repaymentDueDate}` : ""}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-bold text-foreground">₩{formatAmount(remaining)}</p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => rejectBorrowedRequest.mutate({ id: request.id, data: { shareStatus: "rejected" } })}
+                      disabled={rejectBorrowedRequest.isPending || acceptBorrowedRequest.isPending}
+                    >
+                      거절
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => acceptBorrowedRequest.mutate({ id: request.id, data: { shareStatus: "accepted" } })}
+                      disabled={rejectBorrowedRequest.isPending || acceptBorrowedRequest.isPending}
+                    >
+                      수락
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <p className="text-xs text-muted-foreground">확인 전까지 대시보드에서 계속 표시됩니다.</p>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-foreground">

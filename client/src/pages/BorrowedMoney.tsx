@@ -206,6 +206,7 @@ export default function BorrowedMoney() {
   const [contactSearch, setContactSearch] = useState("");
   const [contactNickname, setContactNickname] = useState("");
   const [selectedContactUser, setSelectedContactUser] = useState<ShareableUser | null>(null);
+  const [nicknameDrafts, setNicknameDrafts] = useState<Record<number, string>>({});
   const [todayAlertDismissed, setTodayAlertDismissed] = useState(false);
   const [editing, setEditing] = useState<BorrowedMoneyRow | null>(null);
   const [form, setForm] = useState<BorrowedMoneyForm>(EMPTY_FORM);
@@ -228,6 +229,10 @@ export default function BorrowedMoney() {
 
   const activeRows = rows as BorrowedMoneyRow[];
   const currentUserId = typeof (me as { id?: unknown } | null | undefined)?.id === "number" ? (me as { id: number }).id : null;
+  const myDisplayName =
+    (me as { name?: string | null; email?: string | null } | null | undefined)?.name?.trim()
+    || (me as { email?: string | null } | null | undefined)?.email?.split("@")[0]
+    || "나";
   const contactOptions = contacts as UserContact[];
   const userOptions = contactOptions.map((contact) => ({
     id: contact.contactUserId,
@@ -275,6 +280,14 @@ export default function BorrowedMoney() {
   const isReceiveRow = (item: BorrowedMoneyRow) => currentUserId !== null && isSharedRow(item) && item.lenderUserId === currentUserId;
   const isPayRow = (item: BorrowedMoneyRow) => currentUserId === null || !isSharedRow(item) || item.borrowerUserId === currentUserId;
   const isIncomingPending = (item: BorrowedMoneyRow) => currentUserId !== null && item.shareStatus === "pending" && item.borrowerUserId === currentUserId;
+  const counterpartyId = (item: BorrowedMoneyRow) => {
+    if (!isSharedRow(item)) return null;
+    return isReceiveRow(item) ? item.borrowerUserId : item.lenderUserId;
+  };
+  const counterpartyName = (item: BorrowedMoneyRow) => {
+    const id = counterpartyId(item);
+    return id ? userNameById.get(id) ?? `사용자 ${id}` : item.lenderName;
+  };
   const visibleRows = activeRows.filter((item) => {
     if (viewMode === "receive") return isReceiveRow(item);
     if (viewMode === "pay") return isPayRow(item);
@@ -395,6 +408,13 @@ export default function BorrowedMoney() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const saveContactNickname = trpc.auth.upsertContact.useMutation({
+    onSuccess: () => {
+      utils.auth.contacts.invalidate();
+      toast.success("이름이 저장되었습니다");
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const openContactDialog = () => {
     setContactSearch(form.lenderName.trim());
@@ -416,6 +436,17 @@ export default function BorrowedMoney() {
       contactUserId: selectedContactUser.id,
       nickname: contactNickname.trim(),
     });
+  };
+
+  const saveCounterpartyNickname = (item: BorrowedMoneyRow) => {
+    const id = counterpartyId(item);
+    if (!id) return;
+    const nickname = (nicknameDrafts[id] ?? counterpartyName(item)).trim();
+    if (!nickname) {
+      toast.error("저장할 이름을 입력해주세요");
+      return;
+    }
+    saveContactNickname.mutate({ contactUserId: id, nickname });
   };
 
   const set = (key: keyof BorrowedMoneyForm, value: string | number) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -528,14 +559,20 @@ export default function BorrowedMoney() {
       toast.error("상환 예정일을 끝까지 입력해주세요");
       return;
     }
+    const editingIsBorrower = !!editing && currentUserId !== null && editing.shareStatus !== "private" && editing.borrowerUserId === currentUserId;
+    const nextShareStatus = form.sharedBorrowerUserId
+      ? editing && editing.shareStatus !== "private"
+        ? editingIsBorrower
+          ? "pending" as const
+          : (editing.shareStatus === "shared" ? "accepted" as const : editing.shareStatus)
+        : "pending" as const
+      : "private" as const;
 
     const payload = {
-      lenderName: form.lenderName.trim(),
+      lenderName: form.direction === "receive" ? myDisplayName : form.lenderName.trim(),
       lenderUserId: form.sharedBorrowerUserId && currentUserId ? (form.direction === "receive" ? currentUserId : form.sharedBorrowerUserId) : null,
       borrowerUserId: form.sharedBorrowerUserId && currentUserId ? (form.direction === "receive" ? form.sharedBorrowerUserId : currentUserId) : null,
-      shareStatus: form.sharedBorrowerUserId
-        ? (editing && editing.shareStatus !== "private" ? (editing.shareStatus === "shared" ? "accepted" as const : editing.shareStatus) : "pending" as const)
-        : "private" as const,
+      shareStatus: nextShareStatus,
       principalAmount: form.principalAmount,
       repaidAmount: form.repaidAmount,
       borrowedDate: form.borrowedDate || null,
@@ -735,7 +772,7 @@ export default function BorrowedMoney() {
                   <tr key={`${entry.item.id}-${entry.date}-${entry.installmentNo ?? "due"}`} className="border-t border-border transition-colors hover:bg-muted/30">
                     <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{entry.date}</td>
                     <td className="px-4 py-3">
-                      <p className="text-sm font-medium">{entry.item.lenderName}</p>
+                      <p className="text-sm font-medium">{isReceiveRow(entry.item) ? counterpartyName(entry.item) : entry.item.lenderName}</p>
                       <p className="text-xs text-muted-foreground">
                         {isReceiveRow(entry.item) ? "받을 돈" : "갚을 돈"} ·{" "}
                         {entry.item.repaymentType}
@@ -802,12 +839,12 @@ export default function BorrowedMoney() {
                   {summaryRows.map((item) => (
                     <tr key={item.id} className="border-b transition-colors hover:bg-muted/30">
                       <td className="px-3 py-3">
-                        <div className="font-medium">{item.lenderName}</div>
+                        <div className="font-medium">{isReceiveRow(item) ? counterpartyName(item) : item.lenderName}</div>
                         <div className="text-xs text-muted-foreground">
                           {isSharedRow(item) ? (
                             isReceiveRow(item)
-                              ? `${userNameById.get(item.borrowerUserId ?? 0) ?? "공유 사용자"}에게 받을 돈`
-                              : `${userNameById.get(item.lenderUserId ?? 0) ?? "공유 사용자"}에게 갚을 돈`
+                              ? `${counterpartyName(item)}에게 받을 돈`
+                              : `${item.lenderName}에게 갚을 돈`
                           ) : "개인 기록"}
                           {" · "}
                           {item.borrowedDate || "-"}
