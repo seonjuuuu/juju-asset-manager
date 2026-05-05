@@ -376,13 +376,24 @@ export default function BorrowedMoney() {
   }, [activeRows, currentMonth, currentYear, todayKey]);
 
   const summaryRows = useMemo(
-    () => visibleRows.map((item) => ({
-      ...item,
-      remaining: remainingAmount(item),
-      progress: item.principalAmount > 0 ? Math.min(100, Math.round((item.repaidAmount / item.principalAmount) * 100)) : 0,
-      scheduled: scheduledAmountForMonth(item, currentYear, currentMonth),
-      scheduledDate: scheduledDateForMonth(item, currentYear, currentMonth),
-    })),
+    () => {
+      const nextDate = new Date(currentYear, currentMonth, 1);
+      const nextYear = nextDate.getFullYear();
+      const nextMonth = nextDate.getMonth() + 1;
+      return visibleRows.map((item) => {
+        const scheduled = scheduledAmountForMonth(item, currentYear, currentMonth);
+        const scheduledDate = scheduledDateForMonth(item, currentYear, currentMonth);
+        const effectiveScheduled = scheduled > 0 ? scheduled : scheduledAmountForMonth(item, nextYear, nextMonth);
+        const effectiveScheduledDate = scheduled > 0 ? scheduledDate : scheduledDateForMonth(item, nextYear, nextMonth);
+        return {
+          ...item,
+          remaining: remainingAmount(item),
+          progress: item.principalAmount > 0 ? Math.min(100, Math.round((item.repaidAmount / item.principalAmount) * 100)) : 0,
+          scheduled: effectiveScheduled,
+          scheduledDate: effectiveScheduledDate,
+        };
+      });
+    },
     [currentMonth, currentYear, visibleRows],
   );
   const receiveMode = viewMode === "receive";
