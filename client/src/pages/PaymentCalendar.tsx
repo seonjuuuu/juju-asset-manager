@@ -272,10 +272,30 @@ export default function PaymentCalendar() {
   const { data: cardList = [] } = trpc.card.list.useQuery();
   const { data: ledgerEntries = [] } = trpc.ledger.list.useQuery({ year, month });
   const { data: me } = trpc.auth.me.useQuery();
+  const { data: contactList = [] } = trpc.auth.contacts.useQuery();
+  const { data: shareableUsers = [] } = trpc.auth.shareableUsers.useQuery();
   const currentUserId = typeof (me as { id?: unknown } | null | undefined)?.id === "number" ? (me as { id: number }).id : null;
 
   const events = useMemo(() => {
     const cardMap = new Map((cardList as CardRow[]).map((card) => [card.id, card]));
+    const contactNicknameById = new Map(
+      (contactList as { contactUserId: number; nickname: string }[]).map((c) => [c.contactUserId, c.nickname.trim()])
+    );
+    const userNameById = new Map(
+      (shareableUsers as { id: number; name?: string | null; email?: string | null }[]).map((u) => [
+        u.id,
+        u.name?.trim() || u.email?.split("@")[0] || `사용자 ${u.id}`,
+      ])
+    );
+    const getBorrowedDisplayName = (borrowed: BorrowedMoneyRow) => {
+      const isReceiving = currentUserId !== null && borrowed.shareStatus !== "private" && borrowed.lenderUserId === currentUserId;
+      const cpId = isReceiving ? borrowed.borrowerUserId : borrowed.lenderUserId;
+      const officialName = isReceiving ? borrowed.borrowerUserName : borrowed.lenderUserName;
+      if (cpId) {
+        return contactNicknameById.get(cpId) || userNameById.get(cpId) || officialName?.split("@")[0] || borrowed.lenderName;
+      }
+      return borrowed.lenderName;
+    };
     const rows: PaymentEvent[] = [];
 
     for (const sub of subscriptions as SubscriptionRow[]) {
@@ -359,7 +379,8 @@ export default function PaymentCalendar() {
       const remain = borrowedRemaining(borrowed);
       if (remain <= 0) continue;
       const isReceiving = currentUserId !== null && borrowed.shareStatus !== "private" && borrowed.lenderUserId === currentUserId;
-      const borrowedTitle = isReceiving ? `${borrowed.lenderName} 입금 예정` : `${borrowed.lenderName} 상환`;
+      const displayName = getBorrowedDisplayName(borrowed);
+      const borrowedTitle = isReceiving ? `${displayName} 입금 예정` : `${displayName} 상환`;
       if (borrowed.repaymentType === "할부상환") {
         const no = borrowedInstallmentNo(borrowed, year, month);
         if (!no) continue;
@@ -412,7 +433,7 @@ export default function PaymentCalendar() {
     }
 
     return rows.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
-  }, [borrowedMoneyList, cardList, currentUserId, fixedExpenses, installmentList, insuranceList, key, ledgerEntries, loanList, month, subscriptions, year]);
+  }, [borrowedMoneyList, cardList, contactList, currentUserId, fixedExpenses, installmentList, insuranceList, key, ledgerEntries, loanList, month, shareableUsers, subscriptions, year]);
 
   const visibleEvents = useMemo(
     () => selectedType ? events.filter((event) => event.type === selectedType) : events,
