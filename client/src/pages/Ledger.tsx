@@ -1,5 +1,6 @@
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { useState, useMemo } from "react";
+import * as XLSX from "xlsx";
 import { trpc } from "@/lib/trpc";
 import { formatAmount, currentYear, currentMonth, MONTH_NAMES } from "@/lib/utils";
 import { ledgerSubCostForMonth, subscriptionLedgerDate } from "@/lib/subscriptionLedger";
@@ -9,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Upload, Loader2 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -52,6 +53,27 @@ type LoanRow = {
   note: string | null;
 };
 
+type CardUploadRow = {
+  id: string;
+  selected: boolean;
+  duplicate: boolean;
+  entryDate: string;
+  cardName: string;
+  merchant: string;
+  amount: number;
+  signedAmount: number;
+  entryType: "expense" | "income";
+  status: string;
+  installment: string;
+  mainCategory: string;
+  subCategory: string;
+  categorySource: "learned" | "rule" | "default";
+  selectedCardId: number | null;
+  matchedCardName: string;
+  note: string;
+  raw: Record<string, unknown>;
+};
+
 const INCOME_MAIN_CATEGORIES = new Set(["소득", "근로소득", "사업소득", "투자소득", "기타소득"]);
 
 const isIncomeCategory = (mainCategory: string) => INCOME_MAIN_CATEGORIES.has(mainCategory);
@@ -90,6 +112,74 @@ function loanAppliesToMonth(loan: LoanRow, year: number, month: number) {
   return true;
 }
 
+function normalizeHeader(value: string) {
+  return value.replace(/\s/g, "").toLowerCase();
+}
+
+function findValue(row: Record<string, unknown>, candidates: string[]) {
+  const entries = Object.entries(row);
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizeHeader(candidate);
+    const found = entries.find(([key]) => normalizeHeader(key).includes(normalizedCandidate));
+    if (found) return found[1];
+  }
+  return undefined;
+}
+
+function parseExcelDate(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === "number") {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed?.y && parsed?.m && parsed?.d) {
+      return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+    }
+  }
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const digits = text.replace(/\D/g, "");
+  if (digits.length >= 8) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function parseAmount(value: unknown) {
+  if (typeof value === "number") return Math.round(value);
+  const text = String(value ?? "").replace(/[^\d.-]/g, "");
+  const amount = Number(text);
+  return Number.isFinite(amount) ? Math.round(amount) : 0;
+}
+
+function merchantKey(value: string) {
+  return value.replace(/\s/g, "").toLowerCase();
+}
+
+function readCategoryMemory(): Record<string, { mainCategory: string; subCategory: string }> {
+  try {
+    const raw = localStorage.getItem(CARD_UPLOAD_CATEGORY_MEMORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCategoryMemory(memory: Record<string, { mainCategory: string; subCategory: string }>) {
+  localStorage.setItem(CARD_UPLOAD_CATEGORY_MEMORY_KEY, JSON.stringify(memory));
+}
+
+const CATEGORY_RULES: Array<{ words: string[]; subCategory: string }> = [
+  { words: ["쿠팡", "11번가", "g마켓", "옥션", "네이버페이", "스마트스토어", "무신사", "오늘의집", "ssg", "이마트몰", "마켓컬리", "컬리"], subCategory: "쇼핑" },
+  { words: ["배달의민족", "배민", "요기요", "쿠팡이츠", "땡겨요"], subCategory: "배달" },
+  { words: ["맥도날드", "버거킹", "롯데리아", "kfc", "맘스터치", "써브웨이", "식당", "김밥", "분식", "국밥", "마라탕", "초밥", "족발", "보쌈"], subCategory: "식비" },
+  { words: ["스타벅스", "투썸", "이디야", "메가커피", "컴포즈", "빽다방", "커피", "카페"], subCategory: "카페" },
+  { words: ["gs25", "cu", "세븐일레븐", "이마트24", "미니스톱", "편의점"], subCategory: "편의점" },
+  { words: ["주유", "gs칼텍스", "sk에너지", "s-oil", "soil", "현대오일", "하이패스", "톨게이트", "주차", "파킹"], subCategory: "차량" },
+  { words: ["카카오택시", "택시", "코레일", "srt", "버스", "지하철", "티머니", "캐시비"], subCategory: "교통" },
+  { words: ["약국", "병원", "의원", "치과", "한의원", "올리브영"], subCategory: "의료" },
+  { words: ["넷플릭스", "유튜브", "youtube", "spotify", "멜론", "왓챠", "티빙", "쿠팡플레이", "디즈니", "애플"], subCategory: "구독서비스" },
+  { words: ["관리비", "전기", "가스", "수도", "통신", "휴대폰", "인터넷"], subCategory: "공과금" },
+];
+
 const PIE_COLORS = [
   "#5b7cfa","#f97316","#22c55e","#a855f7","#ec4899",
   "#14b8a6","#f59e0b","#ef4444","#06b6d4","#84cc16","#8b5cf6","#f43f5e",
@@ -107,6 +197,9 @@ const EMPTY_FORM = {
   note: "",
 };
 
+const CARD_UPLOAD_NOTE_PREFIX = "[카드내역 업로드]";
+const CARD_UPLOAD_CATEGORY_MEMORY_KEY = "ledger-card-upload-category-memory";
+
 export default function Ledger() {
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
@@ -116,6 +209,12 @@ export default function Ledger() {
   const [pickerYear, setPickerYear] = useState(currentYear);
   const [rowFilter, setRowFilter] = useState<"all" | "manual" | "auto">("all");
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadRows, setUploadRows] = useState<CardUploadRow[]>([]);
+  const [uploadFileName, setUploadFileName] = useState("");
+  const [uploadDefaultCardId, setUploadDefaultCardId] = useState<number | null>(null);
+  const [isParsingUpload, setIsParsingUpload] = useState(false);
+  const [isSavingUpload, setIsSavingUpload] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: entries = [], isLoading } = trpc.ledger.list.useQuery({ year, month });
@@ -135,6 +234,7 @@ export default function Ledger() {
     onSuccess: () => { utils.ledger.list.invalidate(); utils.ledger.monthSummary.invalidate(); toast.success("항목이 추가되었습니다"); setDialogOpen(false); },
     onError: () => toast.error("추가 실패"),
   });
+  const uploadCreateMutation = trpc.ledger.create.useMutation();
   const updateMutation = trpc.ledger.update.useMutation({
     onSuccess: () => { utils.ledger.list.invalidate(); utils.ledger.monthSummary.invalidate(); toast.success("수정되었습니다"); setDialogOpen(false); },
     onError: () => toast.error("수정 실패"),
@@ -321,6 +421,178 @@ export default function Ledger() {
     return cat ? cat.subCategories.map((s) => s.name) : [];
   };
 
+  const defaultExpenseCategory = useMemo(() => {
+    const variable = categoryList.find((c) => c.name === "변동지출");
+    const firstExpense = categoryList.find((c) => c.type === "expense" || c.type === "both");
+    return variable?.name ?? firstExpense?.name ?? "변동지출";
+  }, [categoryList]);
+
+  const defaultExpenseSubCategory = useMemo(() => {
+    const cat = categoryList.find((c) => c.name === defaultExpenseCategory);
+    return cat?.subCategories[0]?.name ?? "";
+  }, [categoryList, defaultExpenseCategory]);
+
+  const findExpenseCategoryBySub = (subCategory: string) => {
+    const wanted = merchantKey(subCategory);
+    const found = categoryList.find((cat) =>
+      (cat.type === "expense" || cat.type === "both")
+      && cat.subCategories.some((sub) => {
+        const current = merchantKey(sub.name);
+        return current === wanted || current.includes(wanted) || wanted.includes(current);
+      })
+    );
+    const foundSub = found?.subCategories.find((sub) => {
+      const current = merchantKey(sub.name);
+      return current === wanted || current.includes(wanted) || wanted.includes(current);
+    });
+    return found && foundSub ? { mainCategory: found.name, subCategory: foundSub.name } : null;
+  };
+
+  const recommendCategory = (merchant: string) => {
+    const key = merchantKey(merchant);
+    const learned = readCategoryMemory()[key];
+    if (learned) return { ...learned, source: "learned" as const };
+    const rule = CATEGORY_RULES.find((item) => item.words.some((word) => key.includes(merchantKey(word))));
+    const matched = rule ? findExpenseCategoryBySub(rule.subCategory) : null;
+    if (matched) return { ...matched, source: "rule" as const };
+    return { mainCategory: defaultExpenseCategory, subCategory: defaultExpenseSubCategory, source: "default" as const };
+  };
+
+  const managedCardOptions = useMemo(
+    () => (cardList as { id: number; cardCompany: string; cardName: string | null }[])
+      .map((card) => ({
+        id: card.id,
+        label: `${card.cardCompany}${card.cardName ? ` ${card.cardName}` : ""}`,
+      })),
+    [cardList],
+  );
+
+  const matchManagedCard = (uploadedCardName: string) => {
+    const key = merchantKey(uploadedCardName);
+    if (!key) return null;
+    const card = managedCardOptions.find((item) => {
+      const label = merchantKey(item.label);
+      return label.includes(key) || key.includes(label);
+    });
+    return card ?? null;
+  };
+
+  const isDuplicateUploadRow = (row: Pick<CardUploadRow, "entryDate" | "merchant" | "amount" | "cardName">) => {
+    const normalizedMerchant = row.merchant.trim();
+    const normalizedCard = row.cardName.trim();
+    return (entries as LedgerEntry[]).some((entry) => {
+      const entryDate = String(entry.entryDate).split("T")[0];
+      const note = entry.note ?? "";
+      return entryDate === row.entryDate
+        && Math.abs(entry.amount) === row.amount
+        && (entry.description ?? "").trim() === normalizedMerchant
+        && (!normalizedCard || note.includes(normalizedCard))
+        && note.startsWith(CARD_UPLOAD_NOTE_PREFIX);
+    });
+  };
+
+  const parseCardUploadFile = async (file: File) => {
+    setIsParsingUpload(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      const parsed = rawRows.map((raw, index) => {
+        const entryDate = parseExcelDate(findValue(raw, ["이용일", "사용일", "승인일", "거래일", "일자", "날짜"]));
+        const merchant = String(findValue(raw, ["가맹점명", "가맹점", "사용처", "이용가맹점", "내용", "적요"]) ?? "").trim();
+        const cardName = String(findValue(raw, ["카드명", "카드", "카드번호", "결제수단"]) ?? "").trim();
+        const status = String(findValue(raw, ["승인상태", "상태", "구분", "취소여부"]) ?? "").trim();
+        const installment = String(findValue(raw, ["할부개월", "할부", "개월"]) ?? "").trim();
+        const signedAmount = parseAmount(findValue(raw, ["이용금액", "사용금액", "승인금액", "금액", "합계"]));
+        const amount = Math.abs(signedAmount);
+        const isNegativeAmount = signedAmount < 0;
+        const isCancel = isNegativeAmount || /취소|환불|매출취소/i.test(status) || /취소|환불/i.test(merchant);
+        const recommended = recommendCategory(merchant);
+        const matchedCard = uploadDefaultCardId
+          ? managedCardOptions.find((card) => card.id === uploadDefaultCardId) ?? null
+          : matchManagedCard(cardName);
+        const row: CardUploadRow = {
+          id: `${index}-${entryDate}-${merchant}-${amount}`,
+          selected: !!entryDate && !!merchant && amount > 0 && !isCancel,
+          duplicate: false,
+          entryDate,
+          cardName,
+          merchant,
+          amount,
+          signedAmount,
+          entryType: isNegativeAmount ? "income" : "expense",
+          status,
+          installment,
+          mainCategory: recommended.mainCategory,
+          subCategory: recommended.subCategory,
+          categorySource: recommended.source,
+          selectedCardId: matchedCard?.id ?? null,
+          matchedCardName: matchedCard?.label ?? "",
+          note: [CARD_UPLOAD_NOTE_PREFIX, matchedCard?.label || cardName, installment ? `할부 ${installment}` : "", isNegativeAmount ? "마이너스 금액" : "", status].filter(Boolean).join(" · "),
+          raw,
+        };
+        row.duplicate = isDuplicateUploadRow(row);
+        if (row.duplicate) row.selected = false;
+        return row;
+      }).filter((row) => row.entryDate || row.merchant || row.amount > 0);
+
+      setUploadRows(parsed);
+      if (!uploadDefaultCardId) {
+        const firstCardId = parsed.find((row) => row.selectedCardId)?.selectedCardId ?? null;
+        setUploadDefaultCardId(firstCardId);
+      }
+      setUploadFileName(file.name);
+      toast.success(`${parsed.length}건을 읽었습니다`);
+    } catch {
+      toast.error("파일을 읽지 못했습니다");
+    } finally {
+      setIsParsingUpload(false);
+    }
+  };
+
+  const saveUploadedRows = async () => {
+    const targets = uploadRows.filter((row) => row.selected && row.entryDate && row.merchant && row.amount > 0);
+    if (targets.length === 0) {
+      toast.error("저장할 행을 선택해주세요");
+      return;
+    }
+    setIsSavingUpload(true);
+    try {
+      for (const row of targets) {
+        const date = new Date(row.entryDate);
+        const selectedCardLabel = managedCardOptions.find((card) => card.id === row.selectedCardId)?.label;
+        await uploadCreateMutation.mutateAsync({
+          entryDate: row.entryDate,
+          year: date.getFullYear(),
+          month: date.getMonth() + 1,
+          mainCategory: row.mainCategory,
+          subCategory: row.subCategory || undefined,
+          description: row.merchant,
+          amount: row.entryType === "income" ? Math.abs(row.amount) : -Math.abs(row.amount),
+          note: [CARD_UPLOAD_NOTE_PREFIX, selectedCardLabel || row.cardName, row.installment ? `할부 ${row.installment}` : "", row.entryType === "income" ? "마이너스 금액" : "", row.status].filter(Boolean).join(" · "),
+        });
+      }
+      const memory = readCategoryMemory();
+      for (const row of targets) {
+        if (row.merchant && row.mainCategory) {
+          memory[merchantKey(row.merchant)] = { mainCategory: row.mainCategory, subCategory: row.subCategory };
+        }
+      }
+      writeCategoryMemory(memory);
+      utils.ledger.list.invalidate();
+      utils.ledger.monthSummary.invalidate();
+      toast.success(`${targets.length}건을 가계부에 반영했습니다`);
+      setUploadDialogOpen(false);
+      setUploadRows([]);
+      setUploadFileName("");
+    } catch {
+      toast.error("저장 중 오류가 발생했습니다");
+    } finally {
+      setIsSavingUpload(false);
+    }
+  };
+
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY_FORM, year, month, entryDate: `${year}-${String(month).padStart(2, "0")}-01` });
@@ -393,9 +665,14 @@ export default function Ledger() {
           <h1 className="text-xl font-bold text-foreground">월별 가계부</h1>
           <p className="text-sm text-muted-foreground mt-0.5">수입·지출·저축 내역 관리</p>
         </div>
-        <Button onClick={openCreate} size="sm" className="gap-1.5">
-          <Plus className="w-4 h-4" /> 항목 추가
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setUploadDialogOpen(true)} size="sm" variant="outline" className="gap-1.5">
+            <Upload className="w-4 h-4" /> 카드내역 업로드
+          </Button>
+          <Button onClick={openCreate} size="sm" className="gap-1.5">
+            <Plus className="w-4 h-4" /> 항목 추가
+          </Button>
+        </div>
       </div>
 
       {/* Month Navigator */}
@@ -694,6 +971,194 @@ export default function Ledger() {
       </div>
 
       {/* Dialog */}
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="w-[calc(100vw-24px)] !max-w-[calc(100vw-24px)] xl:!max-w-[1600px] max-h-[90vh] overflow-y-auto p-5">
+          <DialogHeader>
+            <DialogTitle>카드 사용내역 업로드</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border border-dashed border-border p-4">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div>
+                  <Label className="text-sm font-medium">엑셀/CSV 파일</Label>
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="mt-2"
+                    disabled={isParsingUpload || isSavingUpload}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void parseCardUploadFile(file);
+                      event.target.value = "";
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">전체 적용 카드</Label>
+                  <Select
+                    value={uploadDefaultCardId ? String(uploadDefaultCardId) : "none"}
+                    onValueChange={(value) => {
+                      const selectedCardId = value === "none" ? null : Number(value);
+                      const selectedCard = managedCardOptions.find((card) => card.id === selectedCardId);
+                      setUploadDefaultCardId(selectedCardId);
+                      setUploadRows((rows) => rows.map((row) => ({
+                        ...row,
+                        selectedCardId,
+                        matchedCardName: selectedCard?.label ?? "",
+                      })));
+                    }}
+                  >
+                    <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">카드 미지정</SelectItem>
+                      {managedCardOptions.map((card) => (
+                        <SelectItem key={card.id} value={String(card.id)}>{card.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {(isParsingUpload || isSavingUpload) && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{isParsingUpload ? "파일을 읽는 중입니다..." : "선택한 항목을 저장하는 중입니다..."}</span>
+                </div>
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                이용일, 가맹점명, 이용금액 컬럼을 자동으로 찾습니다. 같은 카드 내역이면 상단 카드만 선택해 전체 행에 적용하세요.
+              </p>
+              {uploadFileName && <p className="mt-1 text-xs font-medium text-foreground">{uploadFileName}</p>}
+            </div>
+
+            {uploadRows.length > 0 && (
+              <>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    총 {uploadRows.length}건 · 선택 {uploadRows.filter((row) => row.selected).length}건 · 중복 후보 {uploadRows.filter((row) => row.duplicate).length}건
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setUploadRows((rows) => rows.map((row) => ({ ...row, selected: !row.duplicate && row.entryDate !== "" && row.merchant !== "" && row.amount > 0 && row.entryType === "expense" })))}
+                    >
+                      유효행 전체 선택
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setUploadRows((rows) => rows.map((row) => ({ ...row, selected: false })))}>
+                      전체 해제
+                    </Button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-border">
+                  <table className="min-w-[1180px] w-full table-fixed text-sm">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="w-14 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">선택</th>
+                        <th className="w-28 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">날짜</th>
+                        <th className="w-64 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">가맹점</th>
+                        <th className="w-32 px-3 py-2 text-right text-xs font-semibold text-muted-foreground">금액</th>
+                        <th className="w-56 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">카드</th>
+                        <th className="w-[400px] px-3 py-2 text-left text-xs font-semibold text-muted-foreground">카테고리</th>
+                        <th className="w-36 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">상태</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {uploadRows.map((row) => (
+                        <tr key={row.id} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={row.selected}
+                              onChange={(event) => setUploadRows((rows) => rows.map((item) => item.id === row.id ? { ...item, selected: event.target.checked } : item))}
+                            />
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">{row.entryDate || "-"}</td>
+                          <td className="px-3 py-2">
+                            <div className="truncate" title={row.merchant}>{row.merchant || "-"}</div>
+                          </td>
+                          <td className={`px-3 py-2 text-right whitespace-nowrap font-medium ${row.entryType === "income" ? "text-blue-600" : "text-red-600"}`}>
+                            {row.entryType === "income" ? "+" : "-"}₩{formatAmount(row.amount)}
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            <Select
+                              value={row.selectedCardId ? String(row.selectedCardId) : "none"}
+                              onValueChange={(value) => setUploadRows((rows) => rows.map((item) => {
+                                if (item.id !== row.id) return item;
+                                const selectedCardId = value === "none" ? null : Number(value);
+                                const selectedCard = managedCardOptions.find((card) => card.id === selectedCardId);
+                                return { ...item, selectedCardId, matchedCardName: selectedCard?.label ?? "" };
+                              }))}
+                            >
+                              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">카드 미지정</SelectItem>
+                                {managedCardOptions.map((card) => (
+                                  <SelectItem key={card.id} value={String(card.id)}>{card.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <div className="mt-1 truncate text-[11px] text-muted-foreground" title={row.cardName}>
+                              원본 {row.cardName || "-"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="grid grid-cols-[1fr_1fr] gap-2">
+                              <Select
+                                value={row.mainCategory}
+                                onValueChange={(value) => setUploadRows((rows) => rows.map((item) => {
+                                  if (item.id !== row.id) return item;
+                                  const nextSub = categoryList.find((cat) => cat.name === value)?.subCategories[0]?.name ?? "";
+                                  return { ...item, mainCategory: value, subCategory: nextSub, categorySource: "learned" };
+                                }))}
+                              >
+                                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {getFilteredCategories("expense").map((cat) => <SelectItem key={cat.name} value={cat.name}>{cat.name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                              <Select
+                                value={row.subCategory}
+                                onValueChange={(value) => setUploadRows((rows) => rows.map((item) => item.id === row.id ? { ...item, subCategory: value, categorySource: "learned" } : item))}
+                              >
+                                <SelectTrigger className="h-8"><SelectValue placeholder="중분류" /></SelectTrigger>
+                                <SelectContent>
+                                  {getSubCategories(row.mainCategory).map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              {row.categorySource === "learned" ? "기억된 분류" : row.categorySource === "rule" ? "자동 추천" : "기본값"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            {row.duplicate ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">중복 후보</span>
+                            ) : row.entryType === "income" ? (
+                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">환불 후보</span>
+                            ) : row.status ? (
+                              <span className="text-xs text-muted-foreground">{row.status}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadDialogOpen(false)} disabled={isParsingUpload || isSavingUpload}>취소</Button>
+            <Button onClick={saveUploadedRows} disabled={isParsingUpload || isSavingUpload || uploadRows.filter((row) => row.selected).length === 0}>
+              {isSavingUpload && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              {isSavingUpload ? "저장 중..." : "선택 항목 저장"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
