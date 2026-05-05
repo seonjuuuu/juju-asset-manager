@@ -994,7 +994,7 @@ export default function BorrowedMoney() {
                           <span className="text-xs text-destructive">거절된 요청</span>
                         ) : item.scheduled > 0 ? (
                           <span className="inline-flex items-center gap-1 text-foreground">
-                            <CalendarDays className="h-3.5 w-3.5" /> {item.scheduledDate} · ₩{formatAmount(item.scheduled)}
+                            <CalendarDays className="h-3.5 w-3.5" /> {item.scheduledDate}
                           </span>
                         ) : item.repaymentDueDate ? item.repaymentDueDate : "-"}
                       </td>
