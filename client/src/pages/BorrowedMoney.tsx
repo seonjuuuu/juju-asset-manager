@@ -209,6 +209,7 @@ export default function BorrowedMoney() {
   const [contactNickname, setContactNickname] = useState("");
   const [selectedContactUser, setSelectedContactUser] = useState<ShareableUser | null>(null);
   const [nicknameDrafts, setNicknameDrafts] = useState<Record<number, string>>({});
+  const [editingNicknameId, setEditingNicknameId] = useState<number | null>(null);
   const [todayAlertDismissed, setTodayAlertDismissed] = useState(false);
   const [editing, setEditing] = useState<BorrowedMoneyRow | null>(null);
   const [form, setForm] = useState<BorrowedMoneyForm>(EMPTY_FORM);
@@ -243,7 +244,13 @@ export default function BorrowedMoney() {
   }));
   const contactSearchResults = searchedUsers as ShareableUser[];
   const displayUserName = (user: ShareableUser) => user.name?.trim() || user.email?.split("@")[0] || `사용자 ${user.id}`;
+  const displayStoredName = (value?: string | null) => {
+    const name = value?.trim();
+    if (!name) return "";
+    return name.includes("@") ? name.split("@")[0] : name;
+  };
   const userNameById = new Map(userOptions.map((user) => [user.id, displayUserName(user)]));
+  const contactNicknameById = new Map(contactOptions.map((contact) => [contact.contactUserId, contact.nickname.trim()]));
   const lenderQuery = form.lenderName.trim().toLowerCase();
   const lenderSuggestions = lenderQuery
     ? userOptions
@@ -288,9 +295,12 @@ export default function BorrowedMoney() {
   };
   const counterpartyName = (item: BorrowedMoneyRow) => {
     const id = counterpartyId(item);
-    return id ? userNameById.get(id) ?? `사용자 ${id}` : item.lenderName;
+    if (!id) return item.lenderName;
+    const officialName = isReceiveRow(item) ? item.borrowerUserName : item.lenderUserName;
+    return contactNicknameById.get(id) || userNameById.get(id) || displayStoredName(officialName) || "이름 없음";
   };
-  const actualLenderName = (item: BorrowedMoneyRow) => item.lenderUserName?.trim() || item.lenderName;
+  const actualLenderName = (item: BorrowedMoneyRow) => displayStoredName(item.lenderUserName) || item.lenderName;
+  const partyName = (item: BorrowedMoneyRow) => (isSharedRow(item) ? counterpartyName(item) : actualLenderName(item));
   const visibleRows = activeRows.filter((item) => {
     if (viewMode === "receive") return isReceiveRow(item);
     if (viewMode === "pay") return isPayRow(item);
@@ -426,6 +436,7 @@ export default function BorrowedMoney() {
     onSuccess: () => {
       utils.auth.contacts.invalidate();
       toast.success("이름이 저장되었습니다");
+      setEditingNicknameId(null);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -787,7 +798,7 @@ export default function BorrowedMoney() {
                   <tr key={`${entry.item.id}-${entry.date}-${entry.installmentNo ?? "due"}`} className="border-t border-border transition-colors hover:bg-muted/30">
                     <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{entry.date}</td>
                     <td className="px-4 py-3">
-                      <p className="text-sm font-medium">{isReceiveRow(entry.item) ? counterpartyName(entry.item) : actualLenderName(entry.item)}</p>
+                      <p className="text-sm font-medium">{partyName(entry.item)}</p>
                       <p className="text-xs text-muted-foreground">
                         {isReceiveRow(entry.item) ? "받을 돈" : "갚을 돈"} ·{" "}
                         {entry.item.repaymentType}
@@ -859,12 +870,46 @@ export default function BorrowedMoney() {
                   {summaryRows.map((item) => (
                     <tr key={item.id} className="border-b transition-colors hover:bg-muted/30">
                       <td className="px-3 py-3">
-                        <div className="font-medium">{isReceiveRow(item) ? counterpartyName(item) : actualLenderName(item)}</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-medium">{partyName(item)}</div>
+                          {isSharedRow(item) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 rounded-full border border-primary/20 bg-primary/10 px-2 text-xs font-medium text-primary hover:bg-primary/15 hover:text-primary"
+                              onClick={() => {
+                                const id = counterpartyId(item);
+                                if (!id) return;
+                                setEditingNicknameId(item.id);
+                                setNicknameDrafts((prev) => ({ ...prev, [id]: prev[id] ?? partyName(item) }));
+                              }}
+                            >
+                              이름 수정
+                            </Button>
+                          )}
+                        </div>
+                        {editingNicknameId === item.id && counterpartyId(item) && (
+                          <div className="mt-2 flex max-w-xs gap-1">
+                            <Input
+                              className="h-8"
+                              value={nicknameDrafts[counterpartyId(item)!] ?? ""}
+                              onChange={(event) => {
+                                const id = counterpartyId(item);
+                                if (!id) return;
+                                setNicknameDrafts((prev) => ({ ...prev, [id]: event.target.value }));
+                              }}
+                              placeholder="내가 볼 이름"
+                            />
+                            <Button size="sm" className="h-8 px-2" onClick={() => saveCounterpartyNickname(item)} disabled={saveContactNickname.isPending}>
+                              저장
+                            </Button>
+                          </div>
+                        )}
                         <div className="text-xs text-muted-foreground">
                           {isSharedRow(item) ? (
                             isReceiveRow(item)
-                              ? `${counterpartyName(item)}에게 받을 돈`
-                              : `${actualLenderName(item)}에게 갚을 돈`
+                              ? `${partyName(item)}에게 받을 돈`
+                              : `${partyName(item)}에게 갚을 돈`
                           ) : "개인 기록"}
                           {" · "}
                           {item.borrowedDate || "-"}
@@ -972,9 +1017,7 @@ export default function BorrowedMoney() {
                 return (
                   <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {target ? (isReceiveRow(target) ? counterpartyName(target) : actualLenderName(target)) : "삭제된 내역"}
-                      </p>
+                      <p className="truncate text-sm font-medium">{target ? partyName(target) : "삭제된 내역"}</p>
                       <p className="text-xs text-muted-foreground">
                         {payment.paymentDate}
                         {payment.installmentNo ? ` · ${payment.installmentNo}회차` : ""}
@@ -1189,7 +1232,7 @@ export default function BorrowedMoney() {
                 <div key={item.id} className="rounded-lg border border-border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{receiving ? `${counterpartyName(item)} 입금 확인` : `${actualLenderName(item)} 상환 예정`}</p>
+                      <p className="truncate text-sm font-semibold">{receiving ? `${partyName(item)} 입금 확인` : `${partyName(item)} 상환 예정`}</p>
                       <p className="mt-1 text-xs text-muted-foreground">{item.repaymentType}</p>
                     </div>
                     <p className="shrink-0 text-sm font-bold">₩{formatAmount(amount)}</p>
@@ -1300,7 +1343,7 @@ export default function BorrowedMoney() {
                 <SelectContent>
                   {activeRows.filter((item) => remainingAmount(item) > 0).map((item) => (
                     <SelectItem key={item.id} value={String(item.id)}>
-                      {isReceiveRow(item) ? counterpartyName(item) : actualLenderName(item)} · 남은 ₩{formatAmount(remainingAmount(item))}
+                      {partyName(item)} · 남은 ₩{formatAmount(remainingAmount(item))}
                     </SelectItem>
                   ))}
                 </SelectContent>
