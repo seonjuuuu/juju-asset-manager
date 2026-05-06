@@ -368,8 +368,11 @@ export const appRouter = router({
   // ─── 가계부 ─────────────────────────────────────────────────────────────────
   ledger: router({
     list: protectedProcedure
+      .input(z.object({ year: z.number(), month: z.number(), page: z.number().int().min(1).default(1), pageSize: z.number().int().min(1).max(200).default(50) }))
+      .query(({ input, ctx }) => db.getLedgerEntries(ctx.user.id, input.year, input.month, input.page, input.pageSize)),
+    count: protectedProcedure
       .input(z.object({ year: z.number(), month: z.number() }))
-      .query(({ input, ctx }) => db.getLedgerEntries(ctx.user.id, input.year, input.month)),
+      .query(({ input, ctx }) => db.getLedgerCount(ctx.user.id, input.year, input.month)),
     monthSummary: protectedProcedure
       .input(z.object({ year: z.number(), month: z.number() }))
       .query(({ input, ctx }) => db.getLedgerMonthSummary(ctx.user.id, input.year, input.month)),
@@ -741,6 +744,9 @@ export const appRouter = router({
     update: protectedProcedure
       .input(z.object({ id: z.number(), data: accountInput.partial() }))
       .mutation(({ input, ctx }) => db.updateAccount(ctx.user.id, input.id, input.data)),
+    toggleActive: protectedProcedure
+      .input(z.object({ id: z.number(), isActive: z.boolean() }))
+      .mutation(({ input, ctx }) => db.updateAccount(ctx.user.id, input.id, { isActive: input.isActive })),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(({ input, ctx }) => db.deleteAccount(ctx.user.id, input.id)),
@@ -1155,6 +1161,112 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .mutation(({ input }) => db.deleteFeatureRequest(input.id)),
+  }),
+  businessCardLedger: router({
+    list: protectedProcedure
+      .input(z.object({ year: z.number().int().optional(), month: z.number().int().min(1).max(12).optional() }))
+      .query(({ input, ctx }) => db.listBusinessCardLedger(ctx.user.id, input.year, input.month)),
+    create: protectedProcedure
+      .input(z.object({
+        transactionDate: z.string(),
+        year: z.number().int(),
+        month: z.number().int().min(1).max(12),
+        merchant: z.string().min(1),
+        amount: z.number().int().min(0),
+        category: z.string().nullable().optional(),
+        cardName: z.string().nullable().optional(),
+        note: z.string().nullable().optional(),
+      }))
+      .mutation(({ input, ctx }) => db.createBusinessCardLedgerEntry(ctx.user.id, input)),
+    bulkCreate: protectedProcedure
+      .input(z.array(z.object({
+        transactionDate: z.string(),
+        year: z.number().int(),
+        month: z.number().int().min(1).max(12),
+        merchant: z.string().min(1),
+        amount: z.number().int().min(0),
+        category: z.string().nullable().optional(),
+        cardName: z.string().nullable().optional(),
+        note: z.string().nullable().optional(),
+      })))
+      .mutation(({ input, ctx }) => db.bulkCreateBusinessCardLedger(ctx.user.id, input)),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        data: z.object({
+          transactionDate: z.string().optional(),
+          year: z.number().int().optional(),
+          month: z.number().int().min(1).max(12).optional(),
+          merchant: z.string().min(1).optional(),
+          amount: z.number().int().min(0).optional(),
+          category: z.string().nullable().optional(),
+          cardName: z.string().nullable().optional(),
+          note: z.string().nullable().optional(),
+        }),
+      }))
+      .mutation(({ input, ctx }) => db.updateBusinessCardLedgerEntry(ctx.user.id, input.id, input.data)),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(({ input, ctx }) => db.deleteBusinessCardLedgerEntry(ctx.user.id, input.id)),
+  }),
+  businessBankLedger: router({
+    list: protectedProcedure
+      .input(z.object({ year: z.number().int().optional(), month: z.number().int().min(1).max(12).optional() }))
+      .query(({ input, ctx }) => db.listBusinessBankLedger(ctx.user.id, input.year, input.month)),
+    create: protectedProcedure
+      .input(z.object({
+        transactionDate: z.string(),
+        year: z.number().int(),
+        month: z.number().int().min(1).max(12),
+        transactionType: z.enum(["입금", "출금"]).default("출금"),
+        description: z.string().min(1),
+        counterparty: z.string().nullable().optional(),
+        depositAmount: z.number().int().min(0).default(0),
+        withdrawAmount: z.number().int().min(0).default(0),
+        balance: z.number().int().nullable().optional(),
+        accountName: z.string().nullable().optional(),
+        category: z.string().nullable().optional(),
+        note: z.string().nullable().optional(),
+      }))
+      .mutation(({ input, ctx }) => db.createBusinessBankLedgerEntry(ctx.user.id, input)),
+    bulkCreate: protectedProcedure
+      .input(z.array(z.object({
+        transactionDate: z.string(),
+        year: z.number().int(),
+        month: z.number().int().min(1).max(12),
+        transactionType: z.enum(["입금", "출금"]).default("출금"),
+        description: z.string().min(1),
+        counterparty: z.string().nullable().optional(),
+        depositAmount: z.number().int().min(0).default(0),
+        withdrawAmount: z.number().int().min(0).default(0),
+        balance: z.number().int().nullable().optional(),
+        accountName: z.string().nullable().optional(),
+        category: z.string().nullable().optional(),
+        note: z.string().nullable().optional(),
+      })))
+      .mutation(({ input, ctx }) => db.bulkCreateBusinessBankLedger(ctx.user.id, input)),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number().int(),
+        data: z.object({
+          transactionDate: z.string().optional(),
+          year: z.number().int().optional(),
+          month: z.number().int().min(1).max(12).optional(),
+          transactionType: z.enum(["입금", "출금"]).optional(),
+          description: z.string().min(1).optional(),
+          counterparty: z.string().nullable().optional(),
+          depositAmount: z.number().int().min(0).optional(),
+          withdrawAmount: z.number().int().min(0).optional(),
+          balance: z.number().int().nullable().optional(),
+          accountName: z.string().nullable().optional(),
+          category: z.string().nullable().optional(),
+          note: z.string().nullable().optional(),
+        }),
+      }))
+      .mutation(({ input, ctx }) => db.updateBusinessBankLedgerEntry(ctx.user.id, input.id, input.data)),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(({ input, ctx }) => db.deleteBusinessBankLedgerEntry(ctx.user.id, input.id)),
   }),
   exchangeRate: router({
     get: protectedProcedure

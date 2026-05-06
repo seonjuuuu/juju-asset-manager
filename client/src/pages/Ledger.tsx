@@ -65,12 +65,15 @@ type CardUploadRow = {
   entryType: "expense" | "income";
   status: string;
   installment: string;
+  installmentMonths: number;
+  installmentStatus: "none" | "registered" | "new";
   mainCategory: string;
   subCategory: string;
   categorySource: "learned" | "rule" | "default";
   selectedCardId: number | null;
   matchedCardName: string;
   note: string;
+  userNote: string;
   raw: Record<string, unknown>;
 };
 
@@ -168,16 +171,69 @@ function writeCategoryMemory(memory: Record<string, { mainCategory: string; subC
 }
 
 const CATEGORY_RULES: Array<{ words: string[]; subCategory: string }> = [
-  { words: ["쿠팡", "11번가", "g마켓", "옥션", "네이버페이", "스마트스토어", "무신사", "오늘의집", "ssg", "이마트몰", "마켓컬리", "컬리"], subCategory: "쇼핑" },
-  { words: ["배달의민족", "배민", "요기요", "쿠팡이츠", "땡겨요"], subCategory: "배달" },
-  { words: ["맥도날드", "버거킹", "롯데리아", "kfc", "맘스터치", "써브웨이", "식당", "김밥", "분식", "국밥", "마라탕", "초밥", "족발", "보쌈"], subCategory: "식비" },
-  { words: ["스타벅스", "투썸", "이디야", "메가커피", "컴포즈", "빽다방", "커피", "카페"], subCategory: "카페" },
-  { words: ["gs25", "cu", "세븐일레븐", "이마트24", "미니스톱", "편의점"], subCategory: "편의점" },
-  { words: ["주유", "gs칼텍스", "sk에너지", "s-oil", "soil", "현대오일", "하이패스", "톨게이트", "주차", "파킹"], subCategory: "차량" },
-  { words: ["카카오택시", "택시", "코레일", "srt", "버스", "지하철", "티머니", "캐시비"], subCategory: "교통" },
-  { words: ["약국", "병원", "의원", "치과", "한의원", "올리브영"], subCategory: "의료" },
-  { words: ["넷플릭스", "유튜브", "youtube", "spotify", "멜론", "왓챠", "티빙", "쿠팡플레이", "디즈니", "애플"], subCategory: "구독서비스" },
-  { words: ["관리비", "전기", "가스", "수도", "통신", "휴대폰", "인터넷"], subCategory: "공과금" },
+  // 배달
+  { words: ["배달의민족", "배민", "요기요", "쿠팡이츠", "땡겨요", "위메프오", "배달통"], subCategory: "배달" },
+  // 카페
+  { words: ["스타벅스", "starbucks", "투썸플레이스", "이디야", "메가커피", "컴포즈", "빽다방", "할리스", "폴바셋", "탐앤탐스", "커피빈", "coffebean", "카페베네", "엔제리너스", "더벤티", "공차", "커피", "카페"], subCategory: "카페" },
+  // 편의점
+  { words: ["gs25", "cu편의점", "cu ", "세븐일레븐", "7eleven", "이마트24", "미니스톱", "씨스페이스"], subCategory: "편의점" },
+  // 식비 (식당/음식점)
+  { words: ["맥도날드", "버거킹", "롯데리아", "kfc", "맘스터치", "써브웨이", "서브웨이", "쉐이크쉑", "노브랜드버거", "맘스터치",
+            "피자헛", "도미노", "파파존스", "bhc", "교촌", "bbq", "네네치킨", "굽네치킨", "처갓집",
+            "김밥", "분식", "국밥", "마라탕", "초밥", "스시", "족발", "보쌈", "삼겹살", "고기집", "닭갈비",
+            "떡볶이", "라멘", "라면", "우동", "파스타", "피자", "치킨", "도시락",
+            "식당", "음식점", "한식", "중식", "일식", "양식", "뷔페", "정식"], subCategory: "식비" },
+  // 마트/장보기
+  { words: ["이마트", "홈플러스", "롯데마트", "코스트코", "costco", "하나로마트", "농협하나로", "킴스클럽", "메가마트",
+            "마트", "슈퍼마켓", "슈퍼", "마켓컬리", "컬리", "오아시스", "SSG", "새벽배송"], subCategory: "마트" },
+  // 온라인쇼핑
+  { words: ["쿠팡", "11번가", "g마켓", "gmarket", "옥션", "auction", "위메프", "티몬", "인터파크", "롯데온", "신세계몰",
+            "네이버쇼핑", "스마트스토어", "카카오쇼핑", "무신사", "에이블리", "지그재그", "브랜디", "오늘의집",
+            "알리익스프레스", "알리", "테무", "아마존", "amazon"], subCategory: "쇼핑" },
+  // 백화점/아울렛
+  { words: ["롯데백화점", "현대백화점", "신세계백화점", "갤러리아", "AK플라자", "nc백화점", "롯데아울렛", "프리미엄아울렛"], subCategory: "쇼핑" },
+  // 주유/차량
+  { words: ["gs칼텍스", "sk에너지", "s-oil", "현대오일뱅크", "알뜰주유", "주유소", "주유"],                        subCategory: "주유" },
+  { words: ["하이패스", "톨게이트", "한국도로공사", "ex", "고속도로"],                                              subCategory: "통행료" },
+  { words: ["주차", "파킹", "카파킹", "스마트파킹"],                                                              subCategory: "주차비" },
+  { words: ["카센터", "자동차", "오토바이", "차량정비", "타이어", "배터리", "엔진오일", "세차"],                      subCategory: "차량정비" },
+  // 대중교통
+  { words: ["카카오택시", "우버", "타다", "택시"],                                                                subCategory: "택시" },
+  { words: ["코레일", "korail", "srt", "ktx", "ktx"],                                                          subCategory: "기차" },
+  { words: ["대한항공", "아시아나", "제주항공", "진에어", "티웨이", "에어부산", "이스타", "피치", "peach", "항공"],     subCategory: "항공" },
+  { words: ["버스", "지하철", "티머니", "캐시비", "시내버스", "광역버스", "광역급행"],                               subCategory: "교통" },
+  // 의료/건강
+  { words: ["약국", "드러그스토어"],                                                                           subCategory: "약국" },
+  { words: ["올리브영", "랄라블라", "롭스", "세포라", "화장품", "스킨케어", "코스메틱"],                             subCategory: "미용/뷰티" },
+  { words: ["병원", "의원", "클리닉", "내과", "외과", "정형외과", "피부과", "안과", "이비인후과", "정신건강", "소아과",
+            "치과", "한의원", "한의", "dental", "orthodon"],                                                     subCategory: "병원" },
+  // 미용/뷰티
+  { words: ["미용실", "헤어", "hair", "네일", "nail", "속눈썹", "왁싱", "피부관리", "에스테틱", "뷰티"],            subCategory: "미용/뷰티" },
+  { words: ["다이소", "무인양품", "이케아", "ikea"],                                                             subCategory: "생활용품" },
+  // 운동/헬스
+  { words: ["헬스장", "헬스클럽", "피트니스", "pt", "요가", "필라테스", "크로스핏", "수영장", "골프", "테니스", "배드민턴", "풋살"], subCategory: "운동" },
+  // 교육
+  { words: ["학원", "교습소", "과외", "튜터링", "클래스101", "클래스101", "유데미", "udemy", "코세라", "coursera",
+            "yes24", "교보문고", "알라딘", "반디앤루니스", "영풍문고", "도서", "서점", "책"],                        subCategory: "교육" },
+  // 문화/여가
+  { words: ["cgv", "메가박스", "롯데시네마", "영화관", "영화"],                                                   subCategory: "영화" },
+  { words: ["카카오게임즈", "넥슨", "엔씨소프트", "크래프톤", "구글플레이", "앱스토어", "게임"],                      subCategory: "게임" },
+  { words: ["노래방", "pc방", "볼링", "탁구", "당구", "다트", "오락"],                                           subCategory: "여가" },
+  // 여행/숙박
+  { words: ["야놀자", "여기어때", "에어비앤비", "airbnb", "호텔", "모텔", "리조트", "펜션", "게스트하우스"],           subCategory: "숙박" },
+  // 구독/디지털서비스
+  { words: ["넷플릭스", "netflix", "왓챠", "웨이브", "wavve", "티빙", "tving", "시즌", "씨즌", "쿠팡플레이", "디즈니플러스", "disney",
+            "유튜브프리미엄", "youtube", "spotify", "스포티파이", "멜론", "지니", "플로", "vibe", "바이브",
+            "naver", "네이버플러스", "kakao", "카카오"],                                                          subCategory: "구독서비스" },
+  { words: ["애플", "apple", "구글", "google", "마이크로소프트", "microsoft", "adobe", "어도비"],                  subCategory: "구독서비스" },
+  // 공과금/통신
+  { words: ["sk텔레콤", "kt", "lg유플러스", "알뜰폰", "통신비", "휴대폰요금"],                                     subCategory: "통신비" },
+  { words: ["한국전력", "한전", "전기요금", "도시가스", "수도요금", "관리비", "아파트관리비"],                        subCategory: "공과금" },
+  { words: ["인터넷", "와이파이", "sk브로드밴드", "kt인터넷", "lg인터넷"],                                         subCategory: "인터넷" },
+  // 반려동물
+  { words: ["동물병원", "펫", "pet", "반려동물", "사료", "petfood", "멍이", "냥이"],                               subCategory: "반려동물" },
+  // 금융
+  { words: ["보험", "삼성생명", "한화생명", "교보생명", "현대해상", "kb손해보험", "db손해보험", "메리츠"],             subCategory: "보험" },
 ];
 
 const PIE_COLORS = [
@@ -198,6 +254,8 @@ const EMPTY_FORM = {
 };
 
 const CARD_UPLOAD_NOTE_PREFIX = "[카드내역 업로드]";
+const cleanCardName = (name: string) =>
+  name.replace(/^(본인|가족)\s*/g, "").replace(/\s*\d[\d*-]{2,}\s*$/g, "").trim();
 const CARD_UPLOAD_CATEGORY_MEMORY_KEY = "ledger-card-upload-category-memory";
 
 export default function Ledger() {
@@ -208,6 +266,8 @@ export default function Ledger() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(currentYear);
   const [rowFilter, setRowFilter] = useState<"all" | "manual" | "auto">("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploadRows, setUploadRows] = useState<CardUploadRow[]>([]);
@@ -217,7 +277,8 @@ export default function Ledger() {
   const [isSavingUpload, setIsSavingUpload] = useState(false);
 
   const utils = trpc.useUtils();
-  const { data: entries = [], isLoading } = trpc.ledger.list.useQuery({ year, month });
+  const { data: entries = [], isLoading } = trpc.ledger.list.useQuery({ year, month, page, pageSize: PAGE_SIZE });
+  const { data: totalCount = 0 } = trpc.ledger.count.useQuery({ year, month });
   const { data: summary = [] } = trpc.ledger.monthSummary.useQuery({ year, month });
   const { data: subscriptions = [] } = trpc.subscription.list.useQuery();
   const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
@@ -235,6 +296,7 @@ export default function Ledger() {
     onError: () => toast.error("추가 실패"),
   });
   const uploadCreateMutation = trpc.ledger.create.useMutation();
+  const installmentCreateMutation = trpc.installment.create.useMutation();
   const updateMutation = trpc.ledger.update.useMutation({
     onSuccess: () => { utils.ledger.list.invalidate(); utils.ledger.monthSummary.invalidate(); toast.success("수정되었습니다"); setDialogOpen(false); },
     onError: () => toast.error("수정 실패"),
@@ -496,15 +558,49 @@ export default function Ledger() {
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      const DATE_KEYS = ["이용일", "사용일", "승인일", "거래일", "이용일자", "일자", "날짜"];
+      const AMOUNT_KEYS = ["이용금액", "사용금액", "승인금액", "이용총액", "금액", "합계"];
+      const MERCHANT_KEYS = ["가맹점명", "가맹점", "사용처", "이용가맹점", "내용", "적요"];
+      const rowScore = (cells: unknown[]) => {
+        const strs = cells.map((c) => normalizeHeader(String(c ?? "")));
+        const hasDate = DATE_KEYS.some((c) => strs.some((s) => s.includes(normalizeHeader(c))));
+        const hasAmount = AMOUNT_KEYS.some((c) => strs.some((s) => s.includes(normalizeHeader(c))));
+        const hasMerchant = MERCHANT_KEYS.some((c) => strs.some((s) => s.includes(normalizeHeader(c))));
+        return (hasDate ? 2 : 0) + (hasAmount ? 1 : 0) + (hasMerchant ? 1 : 0);
+      };
+      const parseSheetRows = (sheetName: string) => {
+        const raw2d = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], { header: 1, defval: "" });
+        // 실제 헤더 행 탐색 (상위 10행 내에서 날짜+금액 컬럼을 포함한 행)
+        const headerRowIdx = raw2d.slice(0, 10).findIndex((row) => rowScore(row as unknown[]) >= 2);
+        if (headerRowIdx === -1) {
+          // fallback: 헤더 탐색 실패 시 기본 파싱
+          return XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName], { defval: "" });
+        }
+        const headers = (raw2d[headerRowIdx] as unknown[]).map((h) => String(h ?? "").trim());
+        return (raw2d.slice(headerRowIdx + 1) as unknown[][])
+          .filter((row) => row.some((c) => String(c ?? "").trim() !== ""))
+          .map((row) => Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""])));
+      };
+      const allSheets = workbook.SheetNames.map((name) => ({ name, rows: parseSheetRows(name) }));
+      const sheetScore = (rows: Record<string, unknown>[]) => {
+        const keys = rows.length > 0 ? Object.keys(rows[0]).map((k) => normalizeHeader(k)) : [];
+        const hasDate = DATE_KEYS.some((c) => keys.some((k) => k.includes(normalizeHeader(c))));
+        const hasAmount = AMOUNT_KEYS.some((c) => keys.some((k) => k.includes(normalizeHeader(c))));
+        return (hasDate ? 2 : 0) + (hasAmount ? 1 : 0);
+      };
+      const firstSheet = allSheets[0] ?? { rows: [] };
+      const bestSheet = sheetScore(firstSheet.rows) >= 2
+        ? firstSheet
+        : (allSheets.find((s) => sheetScore(s.rows) >= 2) ?? firstSheet);
+      const rawRows = bestSheet.rows;
       const parsed = rawRows.map((raw, index) => {
         const entryDate = parseExcelDate(findValue(raw, ["이용일", "사용일", "승인일", "거래일", "일자", "날짜"]));
         const merchant = String(findValue(raw, ["가맹점명", "가맹점", "사용처", "이용가맹점", "내용", "적요"]) ?? "").trim();
         const cardName = String(findValue(raw, ["카드명", "카드", "카드번호", "결제수단"]) ?? "").trim();
         const status = String(findValue(raw, ["승인상태", "상태", "구분", "취소여부"]) ?? "").trim();
         const installment = String(findValue(raw, ["할부개월", "할부", "개월"]) ?? "").trim();
-        const signedAmount = parseAmount(findValue(raw, ["이용금액", "사용금액", "승인금액", "금액", "합계"]));
+        const installmentMonths = (() => { const n = parseInt(installment.replace(/[^\d]/g, ""), 10); return Number.isFinite(n) ? n : 0; })();
+        const signedAmount = parseAmount(findValue(raw, ["이용금액", "사용금액", "승인금액", "이용총액", "금액", "합계"]));
         const amount = Math.abs(signedAmount);
         const isNegativeAmount = signedAmount < 0;
         const isCancel = isNegativeAmount || /취소|환불|매출취소/i.test(status) || /취소|환불/i.test(merchant);
@@ -512,9 +608,15 @@ export default function Ledger() {
         const matchedCard = uploadDefaultCardId
           ? managedCardOptions.find((card) => card.id === uploadDefaultCardId) ?? null
           : matchManagedCard(cardName);
+        const isInstallmentRow = installmentMonths >= 2;
+        const instAlreadyRegistered = isInstallmentRow && (installmentList as Array<{ name: string }>).some((inst) => {
+          const a = merchantKey(inst.name ?? ""), b = merchantKey(merchant);
+          return a === b || a.includes(b) || b.includes(a);
+        });
+        const installmentStatus: CardUploadRow["installmentStatus"] = !isInstallmentRow ? "none" : instAlreadyRegistered ? "registered" : "new";
         const row: CardUploadRow = {
           id: `${index}-${entryDate}-${merchant}-${amount}`,
-          selected: !!entryDate && !!merchant && amount > 0 && !isCancel,
+          selected: !!entryDate && !!merchant && amount > 0 && !isCancel && installmentStatus !== "registered",
           duplicate: false,
           entryDate,
           cardName,
@@ -524,12 +626,15 @@ export default function Ledger() {
           entryType: isNegativeAmount ? "income" : "expense",
           status,
           installment,
+          installmentMonths,
+          installmentStatus,
           mainCategory: recommended.mainCategory,
           subCategory: recommended.subCategory,
           categorySource: recommended.source,
           selectedCardId: matchedCard?.id ?? null,
           matchedCardName: matchedCard?.label ?? "",
-          note: [CARD_UPLOAD_NOTE_PREFIX, matchedCard?.label || cardName, installment ? `할부 ${installment}` : "", isNegativeAmount ? "마이너스 금액" : "", status].filter(Boolean).join(" · "),
+          note: [CARD_UPLOAD_NOTE_PREFIX, matchedCard?.label || cleanCardName(cardName), isNegativeAmount ? "마이너스 금액" : ""].filter(Boolean).join(" "),
+          userNote: "",
           raw,
         };
         row.duplicate = isDuplicateUploadRow(row);
@@ -558,20 +663,40 @@ export default function Ledger() {
       return;
     }
     setIsSavingUpload(true);
+    let instCount = 0;
     try {
       for (const row of targets) {
         const date = new Date(row.entryDate);
         const selectedCardLabel = managedCardOptions.find((card) => card.id === row.selectedCardId)?.label;
-        await uploadCreateMutation.mutateAsync({
-          entryDate: row.entryDate,
-          year: date.getFullYear(),
-          month: date.getMonth() + 1,
-          mainCategory: row.mainCategory,
-          subCategory: row.subCategory || undefined,
-          description: row.merchant,
-          amount: row.entryType === "income" ? Math.abs(row.amount) : -Math.abs(row.amount),
-          note: [CARD_UPLOAD_NOTE_PREFIX, selectedCardLabel || row.cardName, row.installment ? `할부 ${row.installment}` : "", row.entryType === "income" ? "마이너스 금액" : "", row.status].filter(Boolean).join(" · "),
-        });
+        const noteStr = [CARD_UPLOAD_NOTE_PREFIX, selectedCardLabel || cleanCardName(row.cardName), row.entryType === "income" ? "마이너스 금액" : "", row.userNote].filter(Boolean).join(" ");
+        if (row.installmentStatus === "new") {
+          const startD = new Date(row.entryDate);
+          const endD = new Date(startD);
+          endD.setMonth(endD.getMonth() + row.installmentMonths - 1);
+          const endDate = endD.toISOString().slice(0, 10);
+          await installmentCreateMutation.mutateAsync({
+            name: row.merchant,
+            cardId: row.selectedCardId ?? null,
+            totalAmount: row.amount,
+            months: row.installmentMonths,
+            startDate: row.entryDate,
+            endDate,
+            isInterestFree: true,
+            note: noteStr,
+          });
+          instCount++;
+        } else {
+          await uploadCreateMutation.mutateAsync({
+            entryDate: row.entryDate,
+            year: date.getFullYear(),
+            month: date.getMonth() + 1,
+            mainCategory: row.mainCategory,
+            subCategory: row.subCategory || undefined,
+            description: row.merchant,
+            amount: row.entryType === "income" ? Math.abs(row.amount) : -Math.abs(row.amount),
+            note: noteStr,
+          });
+        }
       }
       const memory = readCategoryMemory();
       for (const row of targets) {
@@ -582,7 +707,11 @@ export default function Ledger() {
       writeCategoryMemory(memory);
       utils.ledger.list.invalidate();
       utils.ledger.monthSummary.invalidate();
-      toast.success(`${targets.length}건을 가계부에 반영했습니다`);
+      const ledgerCount = targets.length - instCount;
+      const parts = [];
+      if (ledgerCount > 0) parts.push(`가계부 ${ledgerCount}건`);
+      if (instCount > 0) parts.push(`할부 ${instCount}건`);
+      toast.success(`${parts.join(" · ")} 저장했습니다`);
       setUploadDialogOpen(false);
       setUploadRows([]);
       setUploadFileName("");
@@ -637,10 +766,12 @@ export default function Ledger() {
   };
 
   const prevMonth = () => {
+    setPage(1);
     if (month === 1) { setYear(y => y - 1); setMonth(12); }
     else setMonth(m => m - 1);
   };
   const nextMonth = () => {
+    setPage(1);
     if (month === 12) { setYear(y => y + 1); setMonth(1); }
     else setMonth(m => m + 1);
   };
@@ -702,7 +833,7 @@ export default function Ledger() {
                 return (
                   <button
                     key={m}
-                    onClick={() => { setYear(pickerYear); setMonth(m); setPickerOpen(false); }}
+                    onClick={() => { setYear(pickerYear); setMonth(m); setPickerOpen(false); setPage(1); }}
                     className={`py-1.5 rounded-md text-sm font-medium transition-colors ${
                       isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"
                     }`}
@@ -968,6 +1099,51 @@ export default function Ledger() {
           </tbody>
         </table>
         </div>
+        {/* 페이지네이션 */}
+        {(() => {
+          const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+          if (totalPages <= 1) return null;
+          return (
+            <div className="flex items-center justify-between border-t border-border px-4 py-3">
+              <p className="text-xs text-muted-foreground">
+                총 {totalCount.toLocaleString()}건 · {page} / {totalPages} 페이지
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-30"
+                >«</button>
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-30"
+                >‹ 이전</button>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+                  const p = start + i;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`rounded px-2.5 py-1 text-xs font-medium ${p === page ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                    >{p}</button>
+                  );
+                })}
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-30"
+                >다음 ›</button>
+                <button
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-30"
+                >»</button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Dialog */}
@@ -1050,16 +1226,17 @@ export default function Ledger() {
                   </div>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-border">
-                  <table className="min-w-[1180px] w-full table-fixed text-sm">
+                  <table className="w-full text-sm" style={{ minWidth: "1440px" }}>
                     <thead className="bg-muted/50">
                       <tr>
-                        <th className="w-14 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">선택</th>
-                        <th className="w-28 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">날짜</th>
-                        <th className="w-64 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">가맹점</th>
-                        <th className="w-32 px-3 py-2 text-right text-xs font-semibold text-muted-foreground">금액</th>
-                        <th className="w-56 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">카드</th>
-                        <th className="w-[400px] px-3 py-2 text-left text-xs font-semibold text-muted-foreground">카테고리</th>
-                        <th className="w-36 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">상태</th>
+                        <th className="w-12 shrink-0 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">선택</th>
+                        <th className="w-28 shrink-0 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">날짜</th>
+                        <th className="w-52 shrink-0 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">가맹점</th>
+                        <th className="w-28 shrink-0 px-3 py-2 text-right text-xs font-semibold text-muted-foreground">금액</th>
+                        <th className="w-44 shrink-0 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">카드</th>
+                        <th className="w-80 shrink-0 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">카테고리</th>
+                        <th className="w-44 shrink-0 px-3 py-2 text-left text-xs font-semibold text-muted-foreground">메모</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">상태</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1131,15 +1308,23 @@ export default function Ledger() {
                             </div>
                           </td>
                           <td className="px-3 py-2">
-                            {row.duplicate ? (
-                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">중복 후보</span>
-                            ) : row.entryType === "income" ? (
-                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">환불 후보</span>
-                            ) : row.status ? (
-                              <span className="text-xs text-muted-foreground">{row.status}</span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
-                            )}
+                            <input
+                              type="text"
+                              className="h-8 w-full rounded border border-border bg-background px-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                              placeholder="메모 입력"
+                              value={row.userNote}
+                              onChange={(e) => setUploadRows((rows) => rows.map((item) => item.id === row.id ? { ...item, userNote: e.target.value } : item))}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap gap-1">
+                              {row.duplicate && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">중복 후보</span>}
+                              {!row.duplicate && row.entryType === "income" && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">환불 후보</span>}
+                              {row.installmentStatus === "registered" && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">할부등록됨</span>}
+                              {row.installmentStatus === "new" && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">할부신규 {row.installmentMonths}개월</span>}
+                              {row.installmentStatus === "none" && !row.duplicate && row.entryType !== "income" && row.status && <span className="text-xs text-muted-foreground">{row.status}</span>}
+                              {row.installmentStatus === "none" && !row.duplicate && row.entryType !== "income" && !row.status && <span className="text-xs text-muted-foreground">-</span>}
+                            </div>
                           </td>
                         </tr>
                       ))}

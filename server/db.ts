@@ -64,6 +64,10 @@ import {
   InsertLaborCost,
   userContacts,
   InsertUserContact,
+  businessCardLedger,
+  InsertBusinessCardLedger,
+  businessBankLedger,
+  InsertBusinessBankLedger,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -383,14 +387,26 @@ export async function updateUserProfile(
 }
 
 // ─── 가계부 ───────────────────────────────────────────────────────────────────
-export async function getLedgerEntries(userId: number, year: number, month: number) {
+export async function getLedgerEntries(userId: number, year: number, month: number, page = 1, pageSize = 50) {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
     .from(ledgerEntries)
     .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.year, year), eq(ledgerEntries.month, month)))
-    .orderBy(ledgerEntries.entryDate);
+    .orderBy(ledgerEntries.entryDate, ledgerEntries.id)
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+}
+
+export async function getLedgerCount(userId: number, year: number, month: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(ledgerEntries)
+    .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.year, year), eq(ledgerEntries.month, month)));
+  return result[0]?.count ?? 0;
 }
 
 export async function getLedgerMonthSummary(userId: number, year: number, month: number) {
@@ -1184,9 +1200,16 @@ export async function getSideIncomeMonthlySummary(userId: number, year: number) 
 }
 
 // ─── 계좌 ─────────────────────────────────────────────────────────────────────
+async function ensureAccountIsActiveColumn(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true
+  `);
+}
+
 export async function listAccounts(userId: number) {
   const db = await getDb();
   if (!db) return [];
+  await ensureAccountIsActiveColumn(db);
   return db.select().from(accounts)
     .where(eq(accounts.userId, userId))
     .orderBy(accounts.createdAt);
@@ -1334,7 +1357,7 @@ const DEFAULT_CATEGORIES: { name: string; type: "expense" | "income" | "both"; s
   { name: "교통/차량", type: "expense", subs: ["대중교통", "택시", "주유", "주차", "톨비", "차량유지"] },
   { name: "주거/통신", type: "expense", subs: ["월세/관리비", "전기/가스/수도", "인터넷/통신"] },
   { name: "의료/건강", type: "expense", subs: ["병원", "약국", "헬스/운동", "건강식품"] },
-  { name: "쇼핑/의류", type: "expense", subs: ["의류/잡화", "전자제품", "생활용품", "온라인쇼핑"] },
+  { name: "쇼핑/의류", type: "expense", subs: ["의류/잡화", "전자제품", "생활용품", "온라인쇼핑", "미용/뷰티"] },
   { name: "문화/여가", type: "expense", subs: ["영화/공연", "여행", "취미"] },
   { name: "교육", type: "expense", subs: ["학원/강의", "도서", "온라인강의"] },
   { name: "금융", type: "expense", subs: ["이체/송금", "수수료", "세금", "빌린돈상환"] },
@@ -1351,6 +1374,7 @@ const CANONICAL_SUB_NAMES = new Set([
   "모임비",
   "광고",
   "급여",
+  "미용/뷰티",
   ...DEFAULT_INCOME_SUB_CATEGORIES,
 ]);
 
@@ -1714,5 +1738,148 @@ export async function deleteLaborCost(userId: number, id: number) {
     );
   }
   await db.delete(laborCosts).where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId)));
+  return { id };
+}
+
+// ─── 사업자 카드 내역 ─────────────────────────────────────────────────────────
+async function ensureBusinessCardLedgerTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "business_card_ledger" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "transaction_date" varchar(20) NOT NULL,
+      "year" integer NOT NULL,
+      "month" integer NOT NULL,
+      "merchant" varchar(200) NOT NULL,
+      "amount" bigint NOT NULL DEFAULT 0,
+      "category" varchar(100),
+      "card_name" varchar(100),
+      "note" text,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+export async function listBusinessCardLedger(userId: number, year?: number, month?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureBusinessCardLedgerTable(db);
+  const conditions = [eq(businessCardLedger.userId, userId)];
+  if (year !== undefined) conditions.push(eq(businessCardLedger.year, year));
+  if (month !== undefined) conditions.push(eq(businessCardLedger.month, month));
+  return db.select().from(businessCardLedger)
+    .where(and(...conditions))
+    .orderBy(desc(businessCardLedger.transactionDate), desc(businessCardLedger.createdAt));
+}
+
+export async function createBusinessCardLedgerEntry(userId: number, data: Omit<InsertBusinessCardLedger, "userId" | "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBusinessCardLedgerTable(db);
+  await db.insert(businessCardLedger).values({ ...data, userId });
+  const result = await db.select().from(businessCardLedger)
+    .where(eq(businessCardLedger.userId, userId))
+    .orderBy(desc(businessCardLedger.createdAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function bulkCreateBusinessCardLedger(userId: number, rows: Omit<InsertBusinessCardLedger, "userId" | "id" | "createdAt" | "updatedAt">[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBusinessCardLedgerTable(db);
+  if (rows.length === 0) return { count: 0 };
+  await db.insert(businessCardLedger).values(rows.map(r => ({ ...r, userId })));
+  return { count: rows.length };
+}
+
+export async function updateBusinessCardLedgerEntry(userId: number, id: number, data: Partial<Omit<InsertBusinessCardLedger, "userId" | "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(businessCardLedger).set(data)
+    .where(and(eq(businessCardLedger.id, id), eq(businessCardLedger.userId, userId)));
+  const result = await db.select().from(businessCardLedger)
+    .where(and(eq(businessCardLedger.id, id), eq(businessCardLedger.userId, userId))).limit(1);
+  return result[0];
+}
+
+export async function deleteBusinessCardLedgerEntry(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(businessCardLedger).where(and(eq(businessCardLedger.id, id), eq(businessCardLedger.userId, userId)));
+  return { id };
+}
+
+// ─── 사업 통장 내역 ───────────────────────────────────────────────────────────
+async function ensureBusinessBankLedgerTable(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "business_bank_ledger" (
+      "id" serial PRIMARY KEY,
+      "user_id" integer NOT NULL DEFAULT 0,
+      "transaction_date" varchar(20) NOT NULL,
+      "year" integer NOT NULL,
+      "month" integer NOT NULL,
+      "transaction_type" varchar(10) NOT NULL DEFAULT '출금',
+      "description" varchar(300) NOT NULL,
+      "counterparty" varchar(200),
+      "deposit_amount" bigint NOT NULL DEFAULT 0,
+      "withdraw_amount" bigint NOT NULL DEFAULT 0,
+      "balance" bigint,
+      "account_name" varchar(100),
+      "category" varchar(100),
+      "note" text,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+export async function listBusinessBankLedger(userId: number, year?: number, month?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureBusinessBankLedgerTable(db);
+  const conditions = [eq(businessBankLedger.userId, userId)];
+  if (year !== undefined) conditions.push(eq(businessBankLedger.year, year));
+  if (month !== undefined) conditions.push(eq(businessBankLedger.month, month));
+  return db.select().from(businessBankLedger)
+    .where(and(...conditions))
+    .orderBy(desc(businessBankLedger.transactionDate), desc(businessBankLedger.createdAt));
+}
+
+export async function createBusinessBankLedgerEntry(userId: number, data: Omit<InsertBusinessBankLedger, "userId" | "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBusinessBankLedgerTable(db);
+  await db.insert(businessBankLedger).values({ ...data, userId });
+  const result = await db.select().from(businessBankLedger)
+    .where(eq(businessBankLedger.userId, userId))
+    .orderBy(desc(businessBankLedger.createdAt)).limit(1);
+  return result[0];
+}
+
+export async function bulkCreateBusinessBankLedger(userId: number, rows: Omit<InsertBusinessBankLedger, "userId" | "id" | "createdAt" | "updatedAt">[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await ensureBusinessBankLedgerTable(db);
+  if (rows.length === 0) return { count: 0 };
+  await db.insert(businessBankLedger).values(rows.map(r => ({ ...r, userId })));
+  return { count: rows.length };
+}
+
+export async function updateBusinessBankLedgerEntry(userId: number, id: number, data: Partial<Omit<InsertBusinessBankLedger, "userId" | "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(businessBankLedger).set(data)
+    .where(and(eq(businessBankLedger.id, id), eq(businessBankLedger.userId, userId)));
+  const result = await db.select().from(businessBankLedger)
+    .where(and(eq(businessBankLedger.id, id), eq(businessBankLedger.userId, userId))).limit(1);
+  return result[0];
+}
+
+export async function deleteBusinessBankLedgerEntry(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(businessBankLedger).where(and(eq(businessBankLedger.id, id), eq(businessBankLedger.userId, userId)));
   return { id };
 }

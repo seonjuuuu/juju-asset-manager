@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   CreditCard,
@@ -93,6 +94,7 @@ type AccountRow = {
   balance: number;
   interestRate: string | null;
   linkedCard: string | null;
+  isActive: boolean;
   note: string | null;
 };
 const emptyAccount = {
@@ -744,6 +746,10 @@ export default function Cards() {
     onSuccess: () => { utils.account.list.invalidate(); toast.success("계좌가 수정되었습니다"); setAccountDialog(null); },
     onError: () => toast.error("수정에 실패했습니다"),
   });
+  const toggleAccount = trpc.account.toggleActive.useMutation({
+    onSuccess: () => utils.account.list.invalidate(),
+    onError: () => toast.error("변경에 실패했습니다"),
+  });
   const deleteAccount = trpc.account.delete.useMutation({
     onSuccess: () => { utils.account.list.invalidate(); toast.success("계좌가 삭제되었습니다"); },
     onError: () => toast.error("삭제에 실패했습니다"),
@@ -1080,7 +1086,7 @@ export default function Cards() {
               {(accountList as AccountRow[]).map((acc) => (
                 <div
                   key={acc.id}
-                  className="rounded-xl border bg-card p-4 space-y-3"
+                  className={`rounded-xl border bg-card p-4 space-y-3 transition-opacity ${acc.isActive === false ? "opacity-50" : ""}`}
                   style={{ borderColor: "var(--border)" }}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -1109,7 +1115,14 @@ export default function Cards() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          checked={acc.isActive !== false}
+                          onCheckedChange={(v) => toggleAccount.mutate({ id: acc.id, isActive: v })}
+                        />
+                        <span className="text-xs text-muted-foreground">{acc.isActive !== false ? "활성" : "비활성"}</span>
+                      </div>
                       <Button
                         variant="ghost"
                         size="icon"

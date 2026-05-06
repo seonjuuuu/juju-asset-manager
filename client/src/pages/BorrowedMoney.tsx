@@ -906,7 +906,7 @@ export default function BorrowedMoney() {
                     <th className="px-3 py-2 text-right font-medium">총액</th>
                     <th className="px-3 py-2 text-right font-medium">{remainingLabel}</th>
                     <th className="hidden px-3 py-2 text-center font-medium sm:table-cell">{scheduleLabel} 방식</th>
-                    <th className="hidden px-3 py-2 text-left font-medium md:table-cell">다음/이번달</th>
+                    <th className="hidden px-3 py-2 text-left font-medium md:table-cell whitespace-nowrap w-36">다음/이번달</th>
                     <th className="px-3 py-2 text-center font-medium">진행</th>
                     <th className="px-3 py-2" />
                   </tr>
@@ -987,7 +987,7 @@ export default function BorrowedMoney() {
                           )}
                         </div>
                       </td>
-                      <td className="hidden px-3 py-3 text-muted-foreground md:table-cell">
+                      <td className="hidden px-3 py-3 text-muted-foreground md:table-cell whitespace-nowrap">
                         {item.shareStatus === "pending" ? (
                           <span className="text-xs text-muted-foreground">상대 승인 후 반영</span>
                         ) : item.shareStatus === "rejected" ? (

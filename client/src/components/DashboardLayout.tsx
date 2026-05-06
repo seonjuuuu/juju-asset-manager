@@ -73,6 +73,8 @@ const realEstateSubItems = [
 
 const businessSubItems = [
   { href: "/labor-costs", icon: Users, label: "인건비" },
+  { href: "/business-card-ledger", icon: CreditCard, label: "사업자 카드 내역" },
+  { href: "/business-bank-ledger", icon: Landmark, label: "통장 내역" },
 ];
 
 const debtSubItems = [

@@ -442,6 +442,7 @@ export const accounts = pgTable("accounts", {
   balance: bigint("balance", { mode: "number" }).notNull().default(0),
   interestRate: varchar("interest_rate", { length: 20 }),
   linkedCard: varchar("linked_card", { length: 200 }),
+  isActive: boolean("is_active").notNull().default(true),
   note: text("note"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -620,6 +621,46 @@ export const laborCosts = pgTable("labor_costs", {
 });
 export type LaborCost = typeof laborCosts.$inferSelect;
 export type InsertLaborCost = typeof laborCosts.$inferInsert;
+
+// ─── 사업자 카드 내역 ─────────────────────────────────────────────────────────
+export const businessCardLedger = pgTable("business_card_ledger", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  transactionDate: varchar("transaction_date", { length: 20 }).notNull(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  merchant: varchar("merchant", { length: 200 }).notNull(),
+  amount: bigint("amount", { mode: "number" }).notNull().default(0),
+  category: varchar("category", { length: 100 }),
+  cardName: varchar("card_name", { length: 100 }),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type BusinessCardLedgerRow = typeof businessCardLedger.$inferSelect;
+export type InsertBusinessCardLedger = typeof businessCardLedger.$inferInsert;
+
+// ─── 사업 통장 내역 ───────────────────────────────────────────────────────────
+export const businessBankLedger = pgTable("business_bank_ledger", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
+  transactionDate: varchar("transaction_date", { length: 20 }).notNull(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  transactionType: varchar("transaction_type", { length: 10 }).notNull().default("출금"),
+  description: varchar("description", { length: 300 }).notNull(),
+  counterparty: varchar("counterparty", { length: 200 }),
+  depositAmount: bigint("deposit_amount", { mode: "number" }).notNull().default(0),
+  withdrawAmount: bigint("withdraw_amount", { mode: "number" }).notNull().default(0),
+  balance: bigint("balance", { mode: "number" }),
+  accountName: varchar("account_name", { length: 100 }),
+  category: varchar("category", { length: 100 }),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type BusinessBankLedgerRow = typeof businessBankLedger.$inferSelect;
+export type InsertBusinessBankLedger = typeof businessBankLedger.$inferInsert;
 
 // ─── 기능 요청 게시판 ───────────────────────────────────────────────────────
 export const featureRequests = pgTable("feature_requests", {

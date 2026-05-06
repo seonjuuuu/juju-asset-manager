@@ -30,6 +30,8 @@ import BorrowedMoney from "./pages/BorrowedMoney";
 import Insurance from "./pages/Insurance";
 import BusinessIncome from "./pages/BusinessIncome";
 import LaborCosts from "./pages/LaborCosts";
+import BusinessCardLedger from "./pages/BusinessCardLedger";
+import BusinessBankLedger from "./pages/BusinessBankLedger";
 import Categories from "./pages/Categories";
 import Profile from "./pages/Profile";
 import FeatureRequests from "./pages/FeatureRequests";
@@ -66,6 +68,8 @@ function Router() {
             <Route path="/insurance" component={Insurance} />
             <Route path="/business-income" component={BusinessIncome} />
             <Route path="/labor-costs" component={LaborCosts} />
+            <Route path="/business-card-ledger" component={BusinessCardLedger} />
+            <Route path="/business-bank-ledger" component={BusinessBankLedger} />
             <Route path="/categories" component={Categories} />
             <Route path="/feature-requests" component={FeatureRequests} />
             <Route path="/profile" component={Profile} />

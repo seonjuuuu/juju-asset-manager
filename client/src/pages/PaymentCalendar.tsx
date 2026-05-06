@@ -20,6 +20,7 @@ type PaymentEvent = {
   method?: string | null;
   detail?: string | null;
   href: string;
+  isIncoming?: boolean;
 };
 
 type FixedExpenseRow = {
@@ -398,6 +399,7 @@ export default function PaymentCalendar() {
           type: "빌린돈",
           detail: borrowed.totalInstallments ? `${no}/${borrowed.totalInstallments}회` : `${no}회차`,
           href: "/borrowed-money",
+          isIncoming: isReceiving,
         });
       } else if (borrowed.repaymentDueDate?.slice(0, 7) === key) {
         rows.push({
@@ -408,6 +410,7 @@ export default function PaymentCalendar() {
           type: "빌린돈",
           detail: borrowed.repaymentType,
           href: "/borrowed-money",
+          isIncoming: isReceiving,
         });
       }
     }
@@ -469,9 +472,11 @@ export default function PaymentCalendar() {
 
   const calendarDays = useMemo(() => buildCalendarDays(year, month), [year, month]);
   const monthTotal = events.reduce((sum, event) => sum + event.amount, 0);
-  const remainingTotal = events.filter((event) => event.date >= todayKey).reduce((sum, event) => sum + event.amount, 0);
+  const remainingTotal = events.filter((event) => event.date >= todayKey && !event.isIncoming).reduce((sum, event) => sum + event.amount, 0);
+  const visibleOutgoingTotal = visibleEvents.filter((e) => !e.isIncoming).reduce((sum, e) => sum + e.amount, 0);
+  const visibleIncomingTotal = visibleEvents.filter((e) => e.isIncoming).reduce((sum, e) => sum + e.amount, 0);
   const visibleTotal = visibleEvents.reduce((sum, event) => sum + event.amount, 0);
-  const visibleRemainingTotal = visibleEvents.filter((event) => event.date >= todayKey).reduce((sum, event) => sum + event.amount, 0);
+  const visibleRemainingTotal = visibleEvents.filter((event) => event.date >= todayKey && !event.isIncoming).reduce((sum, event) => sum + event.amount, 0);
   const nextEvents = visibleEvents.filter((event) => event.date >= todayKey).slice(0, 5);
 
   return (
@@ -538,12 +543,23 @@ export default function PaymentCalendar() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <CalendarDays className="w-5 h-5 text-primary" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground">{selectedType ? `${selectedType} 예정액` : "이번 달 예정액"}</p>
-            <p className="text-xl font-bold">₩{formatAmount(visibleTotal)}</p>
+            <div className="flex items-baseline gap-3 mt-0.5">
+              <div>
+                <span className="text-[11px] text-rose-500 font-medium">지출</span>
+                <p className="text-lg font-bold leading-tight">₩{formatAmount(visibleOutgoingTotal)}</p>
+              </div>
+              {visibleIncomingTotal > 0 && (
+                <div>
+                  <span className="text-[11px] text-emerald-500 font-medium">입금</span>
+                  <p className="text-lg font-bold leading-tight text-emerald-600 dark:text-emerald-400">₩{formatAmount(visibleIncomingTotal)}</p>
+                </div>
+              )}
+            </div>
             <p className="mt-1 truncate text-[11px] text-muted-foreground">
               구독 ₩{formatAmount(typeTotals["구독결제"].amount)} · 고정 ₩{formatAmount(typeTotals["고정지출"].amount)} · 보험 ₩{formatAmount(typeTotals["보험"].amount)} · 할부 ₩{formatAmount(typeTotals["할부"].amount)} · 대출 ₩{formatAmount(typeTotals["대출"].amount)} · 빌린돈 ₩{formatAmount(typeTotals["빌린돈"].amount)} · 가계부 ₩{formatAmount(typeTotals["가계부"].amount)}
             </p>

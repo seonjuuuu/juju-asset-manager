@@ -4,12 +4,13 @@ import { formatAmount } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
-const CATEGORIES = ["예적금", "현금성통장", "투자", "연금저축", "주택청약", "기타저축"];
+const CATEGORIES = ["예적금", "파킹통장", "현금성통장", "투자", "연금저축", "주택청약", "기타저축"];
 
 const EMPTY_FORM = {
   category: "예적금", description: "", bank: "", accountNumber: "",
@@ -102,6 +103,7 @@ export default function Savings() {
 
   const catColors: Record<string, string> = {
     "예적금": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+    "파킹통장": "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
     "현금성통장": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
     "투자": "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
     "연금저축": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
@@ -219,7 +221,7 @@ export default function Savings() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">월 납입액 (원)</Label>
-                <Input value={form.monthlyDeposit} onChange={e => setForm(f => ({ ...f, monthlyDeposit: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={Number(form.monthlyDeposit) || 0} onChange={v => setForm(f => ({ ...f, monthlyDeposit: v ? String(v) : "" }))} className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">이자율 (%)</Label>
@@ -229,11 +231,22 @@ export default function Savings() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">잔액/평가액 (원)</Label>
-                <Input value={form.totalAmount} onChange={e => setForm(f => ({ ...f, totalAmount: e.target.value }))} placeholder="0" className="mt-1" />
+                <CurrencyInput value={Number(form.totalAmount) || 0} onChange={v => setForm(f => ({ ...f, totalAmount: v ? String(v) : "" }))} className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">만기일</Label>
-                <Input value={form.expiryDate} onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value }))} placeholder="예: 2026-12" className="mt-1" />
+                <Input
+                  value={form.expiryDate}
+                  onChange={e => {
+                    const digits = e.target.value.replace(/\D/g, "");
+                    let formatted = e.target.value;
+                    if (digits.length === 8) formatted = `${digits.slice(0,4)}-${digits.slice(4,6)}-${digits.slice(6,8)}`;
+                    else if (digits.length === 6) formatted = `${digits.slice(0,4)}-${digits.slice(4,6)}`;
+                    setForm(f => ({ ...f, expiryDate: formatted }));
+                  }}
+                  placeholder="예: 2026-12"
+                  className="mt-1"
+                />
               </div>
             </div>
             <div>

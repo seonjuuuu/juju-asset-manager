@@ -184,7 +184,7 @@ export default function Dashboard() {
       note?: string | null;
       shareStatus?: string | null;
     }>)
-      .filter((item) => item.shareStatus === "pending" && (item.borrowerUserId === currentUserId || item.lenderUserId === currentUserId))
+      .filter((item) => item.shareStatus === "pending" && item.borrowerUserId === currentUserId)
       .sort((a, b) => b.id - a.id);
   }, [borrowedMoneyList, currentUserId]);
 
@@ -340,8 +340,10 @@ export default function Dashboard() {
     for (const item of borrowedMoneyList as Array<{
       id: number;
       lenderUserId?: number | null;
+      borrowerUserId?: number | null;
       shareStatus?: string | null;
       lenderUserName?: string | null;
+      borrowerUserName?: string | null;
       lenderName: string;
       principalAmount: number;
       repaidAmount: number;
@@ -383,11 +385,13 @@ export default function Dashboard() {
         amount = remain;
       }
       if (!date || amount <= 0) continue;
-      const lenderDisplayName = item.lenderUserName?.trim() || item.lenderName;
+      const counterpartyName = isReceiving
+        ? (item.borrowerUserName?.trim() || item.lenderName)
+        : (item.lenderUserName?.trim() || item.lenderName);
       payments.push({
         id: `borrowed-${item.id}`,
         date,
-        title: isReceiving ? `${lenderDisplayName} 입금 예정` : `${lenderDisplayName} 상환`,
+        title: isReceiving ? `${counterpartyName} 입금 예정` : `${counterpartyName} 상환`,
         amount: Math.min(remain, amount),
         type: isReceiving ? "받을돈" : "빌린돈",
       });
@@ -415,10 +419,14 @@ export default function Dashboard() {
       }))
       .sort((a, b) => a.daysLeft - b.daysLeft);
 
+    const upcomingOutgoingTotal = upcomingPayments.filter((p) => p.type !== "받을돈").reduce((sum, p) => sum + p.amount, 0);
+    const upcomingIncomingTotal = upcomingPayments.filter((p) => p.type === "받을돈").reduce((sum, p) => sum + p.amount, 0);
     return {
       paymentCount: sortedPayments.length,
       upcomingPaymentCount: upcomingPayments.length,
       upcomingPaymentTotal: upcomingPayments.reduce((sum, payment) => sum + payment.amount, 0),
+      upcomingOutgoingTotal,
+      upcomingIncomingTotal,
       upcomingPayments: upcomingPayments.slice(0, 5),
       urgentCampaigns: urgentCampaigns.slice(0, 4),
     };
@@ -953,8 +961,19 @@ export default function Dashboard() {
             </div>
 
             <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">오늘 이후 결제 예정액</p>
-              <p className="mt-1 text-lg font-bold text-foreground">₩{formatAmount(dashboardAlerts.upcomingPaymentTotal)}</p>
+              <p className="text-xs text-muted-foreground mb-2">오늘 이후 결제 예정액</p>
+              <div className="flex items-center gap-4">
+                <div>
+                  <p className="text-[11px] text-rose-500 font-medium">지출</p>
+                  <p className="text-base font-bold text-foreground">₩{formatAmount(dashboardAlerts.upcomingOutgoingTotal)}</p>
+                </div>
+                {dashboardAlerts.upcomingIncomingTotal > 0 && (
+                  <div>
+                    <p className="text-[11px] text-emerald-500 font-medium">입금</p>
+                    <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">₩{formatAmount(dashboardAlerts.upcomingIncomingTotal)}</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

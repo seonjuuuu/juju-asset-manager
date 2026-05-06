@@ -211,10 +211,12 @@ export default function FixedExpenses() {
       label: `[카드] ${c.cardCompany} ${c.cardName ?? ""}`.trim(),
       value: `[카드] ${c.cardCompany} ${c.cardName ?? ""}`.trim(),
     })),
-    ...accountList.map(a => ({
-      label: `[계좌] ${a.bankName} ${a.accountType}`,
-      value: `[계좌] ${a.bankName} ${a.accountType}`,
-    })),
+    ...(accountList as { isActive?: boolean; bankName: string; accountType: string; accountNumber?: string | null }[])
+      .filter(a => a.isActive !== false)
+      .map(a => ({
+        label: `[계좌] ${a.bankName} ${a.accountType}${a.accountNumber ? ` (${a.accountNumber})` : ""}`,
+        value: `[계좌] ${a.bankName} ${a.accountType}`,
+      })),
   ];
   const mainCategoryNames = categoryList.map((c) => c.name);
   const getSubCategories = (main: string) => {
@@ -294,7 +296,7 @@ export default function FixedExpenses() {
 
   const pieData = activeExpenses
     .filter(e => (e.monthlyAmount ?? 0) > 0)
-    .map(e => ({ name: e.subCategory ?? e.mainCategory, value: e.monthlyAmount }));
+    .map(e => ({ name: e.description || e.subCategory || e.mainCategory, value: e.monthlyAmount }));
   const combinedPieData = [
     ...pieData,
     ...(subscriptionTotalMonthly > 0 ? [{ name: "구독서비스", value: subscriptionTotalMonthly }] : []),
