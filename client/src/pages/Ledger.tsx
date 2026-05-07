@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Upload, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Upload, Loader2, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -275,8 +275,14 @@ export default function Ledger() {
   const [uploadDefaultCardId, setUploadDefaultCardId] = useState<number | null>(null);
   const [isParsingUpload, setIsParsingUpload] = useState(false);
   const [isSavingUpload, setIsSavingUpload] = useState(false);
+  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const utils = trpc.useUtils();
+  const ledgerAnalysis = trpc.ai.ledgerAnalysis.useMutation({
+    onSuccess: (data) => { setAiAdvice(data.advice); setAiOpen(true); },
+    onError: (e) => toast.error(e.message),
+  });
   const { data: entries = [], isLoading } = trpc.ledger.list.useQuery({ year, month, page, pageSize: PAGE_SIZE });
   const { data: totalCount = 0 } = trpc.ledger.count.useQuery({ year, month });
   const { data: summary = [] } = trpc.ledger.monthSummary.useQuery({ year, month });
@@ -766,12 +772,12 @@ export default function Ledger() {
   };
 
   const prevMonth = () => {
-    setPage(1);
+    setPage(1); setAiAdvice(null); setAiOpen(false);
     if (month === 1) { setYear(y => y - 1); setMonth(12); }
     else setMonth(m => m - 1);
   };
   const nextMonth = () => {
-    setPage(1);
+    setPage(1); setAiAdvice(null); setAiOpen(false);
     if (month === 12) { setYear(y => y + 1); setMonth(1); }
     else setMonth(m => m + 1);
   };
@@ -797,6 +803,35 @@ export default function Ledger() {
           <p className="text-sm text-muted-foreground mt-0.5">수입·지출·저축 내역 관리</p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const pieTotal = expensePieData.reduce((s, d) => s + d.value, 0);
+              ledgerAnalysis.mutate({
+                year, month,
+                income,
+                fixedExpenses: fixedExpWithSubscriptions,
+                variableExpenses: Math.abs(varExp),
+                businessExpenses: Math.abs(businessExp),
+                savings: Math.abs(savings),
+                subscriptions: 0,
+                installments: totalInstallmentCost,
+                loans: totalLoanCost,
+                balance,
+                topCategories: expensePieData.map(d => ({
+                  name: d.name,
+                  amount: d.value,
+                  ratio: pieTotal > 0 ? (d.value / pieTotal) * 100 : 0,
+                })),
+              });
+            }}
+            disabled={ledgerAnalysis.isPending || (income === 0 && totalExp === 0)}
+            className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/30"
+          >
+            {ledgerAnalysis.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {ledgerAnalysis.isPending ? "분석 중..." : "AI 분석"}
+          </Button>
           <Button onClick={() => setUploadDialogOpen(true)} size="sm" variant="outline" className="gap-1.5">
             <Upload className="w-4 h-4" /> 카드내역 업로드
           </Button>
@@ -894,6 +929,63 @@ export default function Ledger() {
           ₩{formatAmount(balance)}
         </span>
       </div>
+
+      {/* AI 가계부 분석 */}
+      {(aiAdvice || ledgerAnalysis.isPending) && (
+        <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/20 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-violet-500" />
+              <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">AI 가계부 분석</span>
+              <span className="text-xs text-muted-foreground">{year}년 {month}월</span>
+            </div>
+            {aiAdvice && (
+              <button
+                onClick={() => setAiOpen(v => !v)}
+                className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 dark:text-violet-400 transition-colors"
+              >
+                {aiOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {aiOpen ? "접기" : "펼치기"}
+              </button>
+            )}
+          </div>
+          {ledgerAnalysis.isPending && (
+            <div className="border-t border-violet-200 dark:border-violet-800 px-4 py-3">
+              <div className="flex items-center gap-2 text-xs text-violet-600 dark:text-violet-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                <span>이달 수입·지출·저축 데이터 기반으로 AI 분석 중...</span>
+              </div>
+            </div>
+          )}
+          {aiOpen && aiAdvice && (
+            <div className="border-t border-violet-200 dark:border-violet-800 px-4 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+              {aiAdvice.split(/\n(?=\[)/).map((section, i) => {
+                const titleMatch = section.match(/^\[(.+?)\]\n?/);
+                const title = titleMatch?.[1];
+                const body = titleMatch ? section.slice(titleMatch[0].length).trim() : section.trim();
+                if (!body) return null;
+                const sectionColor: Record<string, string> = {
+                  "이달 재무 진단": "text-violet-600 dark:text-violet-400",
+                  "지출 패턴 분석": "text-blue-600 dark:text-blue-400",
+                  "이달의 절약 포인트": "text-emerald-600 dark:text-emerald-400",
+                  "저축률 평가": "text-amber-600 dark:text-amber-400",
+                  "다음 달 실천 계획": "text-teal-600 dark:text-teal-400",
+                };
+                const colorClass = title ? (sectionColor[title] ?? "text-violet-600 dark:text-violet-400") : "";
+                return (
+                  <div key={i} className={title ? "border-l-2 pl-3" : ""} style={title ? { borderColor: "currentColor" } : {}}>
+                    {title && <p className={`text-xs font-bold mb-1.5 ${colorClass}`}>{title}</p>}
+                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{body}</p>
+                  </div>
+                );
+              })}
+              <p className="text-[11px] text-muted-foreground pt-2 border-t border-violet-100 dark:border-violet-900">
+                AI 분석은 참고용입니다. 실제 재무 결정은 본인 상황에 맞게 판단하세요.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 항목별 비율 차트 */}
       {expensePieData.length > 0 && (

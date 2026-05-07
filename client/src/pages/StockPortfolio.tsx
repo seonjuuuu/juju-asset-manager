@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, RefreshCw, Loader2, TrendingUp, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw, Loader2, TrendingUp, Search, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
@@ -54,6 +54,8 @@ export default function StockPortfolio() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [portfolioMemo, setPortfolioMemo] = useState("");
+  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const skipDebounceRef = useRef(false);
   const memoReadyRef = useRef(false);
@@ -87,6 +89,11 @@ export default function StockPortfolio() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  const portfolioAnalysis = trpc.ai.portfolioAnalysis.useMutation({
+    onSuccess: (data) => { setAiAdvice(data.advice); setAiOpen(true); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const utils = trpc.useUtils();
   const { data: stocks = [], isLoading } = trpc.stock.list.useQuery({});
@@ -325,6 +332,35 @@ export default function StockPortfolio() {
     }
   };
 
+  const handleAiAnalysis = () => {
+    if (stocks.length === 0) { toast.info("분석할 종목이 없습니다"); return; }
+    const totalBuy = stocks.reduce((s, r) => s + (r.buyAmount ?? 0), 0);
+    const totalCurrent = stocks.reduce((s, r) => s + (r.currentAmount ?? 0), 0);
+    const totalReturn = totalBuy > 0 ? ((totalCurrent - totalBuy) / totalBuy) * 100 : 0;
+    const sectorMap: Record<string, number> = {};
+    stocks.forEach(s => { const k = s.sector ?? "기타"; sectorMap[k] = (sectorMap[k] ?? 0) + (s.currentAmount ?? 0); });
+    const sectorBreakdown = Object.entries(sectorMap).map(([sector, amount]) => ({
+      sector, amount, weight: totalCurrent > 0 ? (amount / totalCurrent) * 100 : 0,
+    }));
+    const domesticAmt = stocks.filter(s => s.market !== "해외").reduce((s, r) => s + (r.currentAmount ?? 0), 0);
+    const domesticRatio = totalCurrent > 0 ? (domesticAmt / totalCurrent) * 100 : 0;
+    portfolioAnalysis.mutate({
+      totalBuy, totalCurrent, totalReturn,
+      stocks: stocks.map(s => ({
+        name: s.stockName,
+        market: s.market ?? "국내",
+        sector: s.sector ?? "기타",
+        weight: totalCurrent > 0 ? ((s.currentAmount ?? 0) / totalCurrent) * 100 : 0,
+        returnRate: s.returnRate ? parseFloat(s.returnRate) : null,
+        buyAmount: s.buyAmount ?? 0,
+        currentAmount: s.currentAmount ?? 0,
+      })),
+      sectorBreakdown,
+      domesticRatio,
+      foreignRatio: 100 - domesticRatio,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -366,6 +402,77 @@ export default function StockPortfolio() {
           <p className="text-xs text-muted-foreground mb-1">수익률</p>
           <p className={`text-xl font-bold ${returnRateColor(totalReturn)}`}>{formatReturnRate(totalReturn)}</p>
         </div>
+      </div>
+
+      {/* AI 포트폴리오 분석 */}
+      <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/20 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-violet-500" />
+            <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">AI 포트폴리오 분석</span>
+            <span className="text-xs text-muted-foreground hidden sm:inline">실시간 지수 반영 · 리밸런싱 · 종목 추천</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {aiAdvice && (
+              <button
+                onClick={() => setAiOpen(v => !v)}
+                className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 dark:text-violet-400 transition-colors"
+              >
+                {aiOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {aiOpen ? "접기" : "펼치기"}
+              </button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleAiAnalysis}
+              disabled={portfolioAnalysis.isPending || stocks.length === 0}
+              className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/30"
+            >
+              {portfolioAnalysis.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {portfolioAnalysis.isPending ? "시장 데이터 수집 중..." : aiAdvice ? "다시 분석" : "AI 분석 시작"}
+            </Button>
+          </div>
+        </div>
+        {portfolioAnalysis.isPending && (
+          <div className="border-t border-violet-200 dark:border-violet-800 px-4 py-3">
+            <div className="flex items-center gap-2 text-xs text-violet-600 dark:text-violet-400">
+              <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+              <span>KOSPI · KOSDAQ · S&P500 · NASDAQ 실시간 지수 조회 후 AI 분석 중...</span>
+            </div>
+          </div>
+        )}
+        {aiOpen && aiAdvice && (
+          <div className="border-t border-violet-200 dark:border-violet-800 px-4 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+            {aiAdvice.split(/\n(?=\[)/).map((section, i) => {
+              const titleMatch = section.match(/^\[(.+?)\]\n?/);
+              const title = titleMatch?.[1];
+              const body = titleMatch ? section.slice(titleMatch[0].length).trim() : section.trim();
+              if (!body) return null;
+              const sectionColor: Record<string, string> = {
+                "오늘의 시장 맥락": "text-blue-600 dark:text-blue-400",
+                "포트폴리오 종합 진단": "text-violet-600 dark:text-violet-400",
+                "섹터 비중 분석": "text-emerald-600 dark:text-emerald-400",
+                "주목할 만한 분야 (지금 이 시점)": "text-amber-600 dark:text-amber-400",
+                "추가를 고려할 종목 힌트": "text-orange-600 dark:text-orange-400",
+                "리밸런싱 액션 플랜": "text-teal-600 dark:text-teal-400",
+                "내 종목 중 주의 신호": "text-rose-600 dark:text-rose-400",
+              };
+              const colorClass = title ? (sectionColor[title] ?? "text-violet-600 dark:text-violet-400") : "";
+              return (
+                <div key={i} className={title ? "border-l-2 border-current pl-3" : ""} style={title ? { borderColor: "currentColor" } : {}}>
+                  {title && (
+                    <p className={`text-xs font-bold mb-1.5 ${colorClass}`}>{title}</p>
+                  )}
+                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{body}</p>
+                </div>
+              );
+            })}
+            <p className="text-[11px] text-muted-foreground pt-2 border-t border-violet-100 dark:border-violet-900">
+              AI 분석은 참고용이며 투자 권유가 아닙니다. 실시간 시장 데이터 기반이지만 투자 결정은 본인 판단으로 하세요.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 자동 조회 안내 */}

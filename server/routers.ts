@@ -328,7 +328,7 @@ const debtInput = z.object({
 });
 
 // ─── Router ───────────────────────────────────────────────────────────────────
-async function callGroq(prompt: string): Promise<string> {
+async function callGroq(prompt: string, maxTokens = 1024): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("GROQ_API_KEY not set");
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -338,7 +338,7 @@ async function callGroq(prompt: string): Promise<string> {
       model: "llama-3.1-8b-instant",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
-      max_tokens: 1024,
+      max_tokens: maxTokens,
     }),
   });
   if (!res.ok) {
@@ -1349,6 +1349,223 @@ export const appRouter = router({
 [주의할 점]
 (걱정되는 부분을 부드럽게, 겁주지 않고 조언해주세요)`;
         const result = await callGroq(prompt);
+        return { advice: result };
+      }),
+    portfolioAnalysis: protectedProcedure
+      .input(z.object({
+        totalBuy: z.number(),
+        totalCurrent: z.number(),
+        totalReturn: z.number(),
+        stocks: z.array(z.object({
+          name: z.string(),
+          market: z.string(),
+          sector: z.string(),
+          weight: z.number(),
+          returnRate: z.number().nullable(),
+          buyAmount: z.number(),
+          currentAmount: z.number(),
+        })),
+        sectorBreakdown: z.array(z.object({
+          sector: z.string(),
+          weight: z.number(),
+          amount: z.number(),
+        })),
+        domesticRatio: z.number(),
+        foreignRatio: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        // 실시간 주요 지수 조회 (Yahoo Finance)
+        type IndexMeta = { regularMarketPrice?: number; chartPreviousClose?: number; regularMarketChangePercent?: number };
+        async function fetchIndex(symbol: string): Promise<{ price: number; change: number } | null> {
+          try {
+            const res = await fetch(
+              `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
+              { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(4000) }
+            );
+            if (!res.ok) return null;
+            const data = await res.json() as { chart?: { result?: Array<{ meta?: IndexMeta }> } };
+            const meta = data?.chart?.result?.[0]?.meta;
+            if (!meta?.regularMarketPrice) return null;
+            const prev = meta.chartPreviousClose ?? meta.regularMarketPrice;
+            const change = meta.regularMarketChangePercent != null
+              ? meta.regularMarketChangePercent
+              : ((meta.regularMarketPrice - prev) / prev) * 100;
+            return { price: meta.regularMarketPrice, change };
+          } catch { return null; }
+        }
+
+        const [kospi, kosdaq, sp500, nasdaq, usdkrw] = await Promise.all([
+          fetchIndex("^KS11"),
+          fetchIndex("^KQ11"),
+          fetchIndex("^GSPC"),
+          fetchIndex("^IXIC"),
+          fetchIndex("KRW=X"),
+        ]);
+
+        const fmtIdx = (v: { price: number; change: number } | null, decimals = 0) =>
+          v ? `${v.price.toLocaleString("ko-KR", { maximumFractionDigits: decimals })} (${v.change >= 0 ? "+" : ""}${v.change.toFixed(2)}%)` : "조회 불가";
+
+        const today = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+
+        const stockLines = input.stocks
+          .sort((a, b) => b.weight - a.weight)
+          .map(s => {
+            const ret = s.returnRate !== null ? `${s.returnRate >= 0 ? "+" : ""}${s.returnRate.toFixed(2)}%` : "수익률 미입력";
+            const profit = s.currentAmount - s.buyAmount;
+            const profitStr = profit >= 0 ? `+${profit.toLocaleString()}원` : `${profit.toLocaleString()}원`;
+            return `  - ${s.name} [${s.market}/${s.sector}]: 비중 ${s.weight.toFixed(1)}%, 수익률 ${ret}, 평가손익 ${profitStr}`;
+          }).join("\n");
+
+        const sectorLines = input.sectorBreakdown
+          .sort((a, b) => b.weight - a.weight)
+          .map(s => `  - ${s.sector}: ${s.weight.toFixed(1)}% (${s.amount.toLocaleString()}원)`)
+          .join("\n");
+
+        const topSector = input.sectorBreakdown.sort((a, b) => b.weight - a.weight)[0];
+        const isConcentrated = topSector?.weight > 50;
+        const hasForeign = input.foreignRatio > 0;
+        const profitStocks = input.stocks.filter(s => s.returnRate !== null && s.returnRate > 10).sort((a, b) => (b.returnRate ?? 0) - (a.returnRate ?? 0));
+        const lossStocks = input.stocks.filter(s => s.returnRate !== null && s.returnRate < -10).sort((a, b) => (a.returnRate ?? 0) - (b.returnRate ?? 0));
+
+        const prompt = `당신은 친근하고 따뜻하면서도 전문성 있는 한국인 투자 상담사예요. 아래 사용자의 주식 포트폴리오와 오늘의 실시간 시장 데이터를 보고, 마치 오랜 친구이자 전문가처럼 깊이 있고 솔직하게 분석해주세요.
+
+=== 오늘 날짜: ${today} ===
+
+[실시간 시장 현황]
+- KOSPI: ${fmtIdx(kospi)}
+- KOSDAQ: ${fmtIdx(kosdaq)}
+- S&P 500: ${fmtIdx(sp500)}
+- NASDAQ: ${fmtIdx(nasdaq)}
+- USD/KRW 환율: ${fmtIdx(usdkrw, 1)}원
+
+[내 포트폴리오 요약]
+- 총 매수원금: ${input.totalBuy.toLocaleString()}원
+- 총 평가금액: ${input.totalCurrent.toLocaleString()}원
+- 전체 수익률: ${input.totalReturn >= 0 ? "+" : ""}${input.totalReturn.toFixed(2)}% (평가손익: ${(input.totalCurrent - input.totalBuy).toLocaleString()}원)
+- 국내/해외 비중: ${input.domesticRatio.toFixed(1)}% / ${input.foreignRatio.toFixed(1)}%
+- 총 종목 수: ${input.stocks.length}개
+- 주요 집중 섹터: ${topSector?.sector ?? "없음"} (${topSector?.weight.toFixed(1) ?? 0}%)
+- 섹터 집중도: ${isConcentrated ? "⚠️ 특정 섹터 집중 위험" : "양호"}
+${profitStocks.length > 0 ? `- 수익 상위 종목: ${profitStocks.slice(0, 3).map(s => `${s.name}(+${s.returnRate?.toFixed(1)}%)`).join(", ")}` : ""}
+${lossStocks.length > 0 ? `- 손실 하위 종목: ${lossStocks.slice(0, 3).map(s => `${s.name}(${s.returnRate?.toFixed(1)}%)`).join(", ")}` : ""}
+
+[섹터별 비중 상세]
+${sectorLines}
+
+[종목별 현황 상세]
+${stockLines}
+
+아래 형식 그대로 답변해주세요. 마크다운 기호(**,##,*,- 등) 없이 순수 텍스트로만 작성하고, 각 항목은 번호를 매겨 구체적으로 적어주세요. 친근하지만 전문적인 말투를 유지해주세요.
+
+[오늘의 시장 맥락]
+(오늘 실시간 지수 데이터를 기반으로 현재 시장 분위기를 2~3문장으로 설명해주세요. 사용자 포트폴리오와의 연관성도 언급)
+
+[포트폴리오 종합 진단]
+(총 수익률, 섹터 구성, 국내/해외 비중을 종합해서 잘하고 있는 점과 개선할 점을 구체적으로 3~4문장)
+
+[섹터 비중 분석]
+1. (현재 가장 비중 큰 섹터 평가 — 적정한지, 과한지)
+2. (비어있거나 부족한 섹터 — 추가를 고려할 만한 이유)
+3. (국내/해외 비중 평가 — 현재 환율과 시장 상황 감안)
+
+[주목할 만한 분야 (지금 이 시점)]
+1. (현재 글로벌 트렌드 기반 주목 섹터 — 구체적 이유 포함)
+2. (국내 시장에서 주목할 섹터)
+3. (해외 시장에서 주목할 섹터)
+
+[추가를 고려할 종목 힌트]
+국내:
+1. (구체적인 종목 또는 유형, 이유)
+2.
+해외:
+1. (구체적인 종목 또는 유형, 이유)
+2.
+
+[리밸런싱 액션 플랜]
+1. (지금 당장 해야 할 것 — 구체적)
+2. (1~3개월 내 검토할 것)
+3. (장기적으로 고려할 것)
+
+[내 종목 중 주의 신호]
+(손실이 크거나 비중이 과도하거나 섹터 리스크가 있는 종목을 구체적으로, 부드럽게)`;
+
+        const result = await callGroq(prompt, 2000);
+        return { advice: result };
+      }),
+    ledgerAnalysis: protectedProcedure
+      .input(z.object({
+        year: z.number(),
+        month: z.number(),
+        income: z.number(),
+        fixedExpenses: z.number(),
+        variableExpenses: z.number(),
+        businessExpenses: z.number(),
+        savings: z.number(),
+        subscriptions: z.number(),
+        installments: z.number(),
+        loans: z.number(),
+        balance: z.number(),
+        topCategories: z.array(z.object({
+          name: z.string(),
+          amount: z.number(),
+          ratio: z.number(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        const totalExp = input.fixedExpenses + input.variableExpenses + input.businessExpenses
+          + input.subscriptions + input.installments + input.loans;
+        const savingsRate = input.income > 0 ? Math.round((input.savings / input.income) * 100) : 0;
+        const expenseRate = input.income > 0 ? Math.round((totalExp / input.income) * 100) : 0;
+        const today = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+
+        const categoryLines = input.topCategories
+          .map(c => `  - ${c.name}: ${c.amount.toLocaleString()}원 (${c.ratio.toFixed(1)}%)`)
+          .join("\n");
+
+        const prompt = `당신은 친근하고 따뜻하면서도 솔직한 한국인 가계부 분석 전문가예요. 아래 ${input.year}년 ${input.month}월 가계부 데이터를 보고 마치 오랜 친구처럼 깊이 있게 분석해주세요.
+
+=== 분석 기준일: ${today} ===
+
+[${input.year}년 ${input.month}월 재무 현황]
+- 총 소득: ${input.income.toLocaleString()}원
+- 총 지출: ${totalExp.toLocaleString()}원 (소득 대비 ${expenseRate}%)
+  · 고정지출: ${input.fixedExpenses.toLocaleString()}원
+  · 변동지출: ${input.variableExpenses.toLocaleString()}원
+  · 구독서비스: ${input.subscriptions.toLocaleString()}원
+  · 할부결제: ${input.installments.toLocaleString()}원
+  · 대출상환: ${input.loans.toLocaleString()}원
+  · 사업지출: ${input.businessExpenses.toLocaleString()}원
+- 저축/투자: ${input.savings.toLocaleString()}원 (저축률 ${savingsRate}%)
+- 잔액 (소득-지출-저축): ${input.balance.toLocaleString()}원
+- 잔액 상태: ${input.balance >= 0 ? "흑자" : "적자 ⚠️"}
+
+[지출 세부 항목 TOP]
+${categoryLines || "  - 데이터 없음"}
+
+아래 형식으로 답변해주세요. 마크다운 기호(**,##,*,- 등) 없이 순수 텍스트로만 작성하세요. 숫자는 구체적으로 언급해주고, 친근하고 따뜻한 말투를 유지해주세요.
+
+[이달 재무 진단]
+(이번 달 전반적인 재무 상태를 소득/지출/저축 균형 중심으로 3~4문장. 잘하고 있는 점을 먼저 말해주세요)
+
+[지출 패턴 분석]
+1. (가장 큰 지출 항목 평가 — 적정한지, 줄일 여지가 있는지)
+2. (변동지출에서 눈에 띄는 항목 분석)
+3. (고정비용 구조 평가 — 구독·할부·대출 합산 부담도)
+
+[이달의 절약 포인트]
+1. (가장 효과적으로 줄일 수 있는 항목 — 구체적 금액 제안)
+2. (다음으로 절약 가능한 항목)
+3. (장기적으로 재검토할 고정비용)
+
+[저축률 평가]
+(현재 ${savingsRate}% 저축률에 대한 솔직한 평가. 이 월 소득 기준으로 권장 저축액과 비교해주세요)
+
+[다음 달 실천 계획]
+1. (당장 실천할 수 있는 구체적인 행동)
+2. (이번 달 데이터 기반 개선 목표 — 금액 포함)
+3. (중장기적으로 신경 쓸 재무 습관)`;
+
+        const result = await callGroq(prompt, 1800);
         return { advice: result };
       }),
   }),
