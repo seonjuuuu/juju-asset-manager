@@ -1463,7 +1463,26 @@ export default function Ledger() {
             </div>
             <div>
               <Label className="text-xs">날짜</Label>
-              <Input type="date" value={form.entryDate} onChange={e => setForm(f => ({ ...f, entryDate: e.target.value, year: new Date(e.target.value).getFullYear(), month: new Date(e.target.value).getMonth() + 1 }))} className="mt-1" />
+              <Input
+                type="text"
+                value={form.entryDate}
+                onChange={e => {
+                  const raw = e.target.value;
+                  const digits = raw.replace(/\D/g, "");
+                  const formatted = digits.length === 8
+                    ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+                    : raw;
+                  const d = new Date(formatted);
+                  const valid = formatted.length === 10 && !isNaN(d.getTime());
+                  setForm(f => ({
+                    ...f,
+                    entryDate: formatted,
+                    ...(valid ? { year: d.getFullYear(), month: d.getMonth() + 1 } : {}),
+                  }));
+                }}
+                placeholder="YYYY-MM-DD"
+                className="mt-1"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

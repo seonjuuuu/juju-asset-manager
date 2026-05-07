@@ -6,8 +6,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Users, AlertCircle, ExternalLink, ArrowUpFromLine } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, AlertCircle, ExternalLink, ArrowUpFromLine, CalendarIcon } from "lucide-react";
 import ExcelJS from "exceljs";
 import { CurrencyInput } from "@/components/ui/currency-input";
 
@@ -26,6 +28,7 @@ type LaborCost = {
   reportDate: string | null;
   taxPaymentDate: string | null;
   taxPaymentAccount: string | null;
+  simplifiedStatementIncluded: boolean | null;
   linkedExpenseId: number | null;
   note: string | null;
 };
@@ -46,6 +49,7 @@ type FormState = {
   reportDate: string;
   taxPaymentDate: string;
   taxPaymentAccount: string;
+  simplifiedStatementIncluded: boolean;
   note: string;
 };
 
@@ -58,8 +62,15 @@ const defaultForm = (): FormState => ({
   reportDate: "",
   taxPaymentDate: "",
   taxPaymentAccount: "",
+  simplifiedStatementIncluded: false,
   note: "",
 });
+
+function autoFormatDate(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  return raw;
+}
 
 function calcWithholding(gross: number, rateStr: string) {
   const rate = parseFloat(rateStr) || 0;
@@ -85,6 +96,7 @@ function LaborCostDialog({
   onSave: (form: FormState) => void;
   accountList: AccountRow[];
 }) {
+  const [calOpen, setCalOpen] = useState<"payment" | "report" | "tax" | null>(null);
   const [form, setForm] = useState<FormState>(
     editing
       ? {
@@ -96,6 +108,7 @@ function LaborCostDialog({
           reportDate: editing.reportDate ?? "",
           taxPaymentDate: editing.taxPaymentDate ?? "",
           taxPaymentAccount: editing.taxPaymentAccount ?? "",
+          simplifiedStatementIncluded: editing.simplifiedStatementIncluded ?? false,
           note: editing.note ?? "",
         }
       : defaultForm()
@@ -109,19 +122,21 @@ function LaborCostDialog({
   );
 
   function handleTaxPaymentDateChange(val: string) {
-    if (val && form.reportDate && val < form.reportDate) {
+    const formatted = autoFormatDate(val);
+    if (formatted.length === 10 && form.reportDate && formatted < form.reportDate) {
       toast.error("납부일은 신고일보다 이전일 수 없습니다");
       return;
     }
-    set("taxPaymentDate", val);
+    set("taxPaymentDate", formatted);
   }
 
   function handleReportDateChange(val: string) {
-    if (val && form.taxPaymentDate && val > form.taxPaymentDate) {
+    const formatted = autoFormatDate(val);
+    if (formatted.length === 10 && form.taxPaymentDate && formatted > form.taxPaymentDate) {
       toast.error("신고일은 납부일보다 이후일 수 없습니다");
       return;
     }
-    set("reportDate", val);
+    set("reportDate", formatted);
   }
 
   return (
@@ -187,28 +202,92 @@ function LaborCostDialog({
           )}
 
           <div className="space-y-3 rounded-lg border border-border p-3">
-            <p className="text-xs font-semibold text-foreground">처리 일자</p>
+            <p className="text-xs font-semibold text-foreground">처리 일자 <span className="font-normal text-muted-foreground">(직접 입력 또는 달력 선택)</span></p>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">지급일</Label>
-                <Input type="date" value={form.paymentDate} onChange={e => set("paymentDate", e.target.value)} />
+                <div className="flex gap-1.5">
+                  <Input
+                    type="text"
+                    placeholder="YYYY-MM-DD"
+                    value={form.paymentDate}
+                    onChange={e => set("paymentDate", autoFormatDate(e.target.value))}
+                    className="flex-1"
+                  />
+                  <Popover open={calOpen === "payment"} onOpenChange={o => setCalOpen(o ? "payment" : null)}>
+                    <PopoverTrigger asChild>
+                      <Button type="button" variant="outline" size="icon" className="flex-shrink-0">
+                        <CalendarIcon className="w-4 h-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={form.paymentDate ? new Date(form.paymentDate) : undefined}
+                        onSelect={d => { if (d) { set("paymentDate", d.toISOString().slice(0, 10)); setCalOpen(null); } }}
+                        captionLayout="dropdown" fromYear={2020} toYear={2035}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">신고일</Label>
-                <Input type="date" value={form.reportDate} onChange={e => handleReportDateChange(e.target.value)} />
+                <div className="flex gap-1.5">
+                  <Input
+                    type="text"
+                    placeholder="YYYY-MM-DD"
+                    value={form.reportDate}
+                    onChange={e => handleReportDateChange(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Popover open={calOpen === "report"} onOpenChange={o => setCalOpen(o ? "report" : null)}>
+                    <PopoverTrigger asChild>
+                      <Button type="button" variant="outline" size="icon" className="flex-shrink-0">
+                        <CalendarIcon className="w-4 h-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={form.reportDate ? new Date(form.reportDate) : undefined}
+                        onSelect={d => { if (d) { handleReportDateChange(d.toISOString().slice(0, 10)); setCalOpen(null); } }}
+                        captionLayout="dropdown" fromYear={2020} toYear={2035}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <p className="text-[10px] text-muted-foreground">원천징수이행상황신고서</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">납부일</Label>
-                <Input
-                  type="date"
-                  value={form.taxPaymentDate}
-                  min={form.reportDate || undefined}
-                  onChange={e => handleTaxPaymentDateChange(e.target.value)}
-                />
-                {form.reportDate && <p className="text-[10px] text-muted-foreground">신고일({form.reportDate}) 이후만 선택 가능</p>}
+                <div className="flex gap-1.5">
+                  <Input
+                    type="text"
+                    placeholder="YYYY-MM-DD"
+                    value={form.taxPaymentDate}
+                    onChange={e => handleTaxPaymentDateChange(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Popover open={calOpen === "tax"} onOpenChange={o => setCalOpen(o ? "tax" : null)}>
+                    <PopoverTrigger asChild>
+                      <Button type="button" variant="outline" size="icon" className="flex-shrink-0">
+                        <CalendarIcon className="w-4 h-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={form.taxPaymentDate ? new Date(form.taxPaymentDate) : undefined}
+                        onSelect={d => { if (d) { handleTaxPaymentDateChange(d.toISOString().slice(0, 10)); setCalOpen(null); } }}
+                        captionLayout="dropdown" fromYear={2020} toYear={2035}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                {form.reportDate && <p className="text-[10px] text-muted-foreground">신고일({form.reportDate}) 이후</p>}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">납부 계좌</Label>
@@ -228,6 +307,24 @@ function LaborCostDialog({
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+            <div>
+              <p className="text-sm font-medium">간이지급명세서 제출 여부</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">국세청 간이지급명세서에 이 건이 포함되어 제출되었나요?</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => set("simplifiedStatementIncluded", !form.simplifiedStatementIncluded)}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                form.simplifiedStatementIncluded ? "bg-primary" : "bg-muted"
+              }`}
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                form.simplifiedStatementIncluded ? "translate-x-5" : "translate-x-0"
+              }`} />
+            </button>
           </div>
 
           <div className="space-y-1">
@@ -292,6 +389,7 @@ export default function LaborCosts() {
       reportDate: form.reportDate || null,
       taxPaymentDate: form.taxPaymentDate || null,
       taxPaymentAccount: form.taxPaymentAccount || null,
+      simplifiedStatementIncluded: form.simplifiedStatementIncluded,
       note: form.note || null,
     };
     if (editing) updateMutation.mutate({ id: editing.id, data: payload });
@@ -518,44 +616,42 @@ export default function LaborCosts() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" style={{ minWidth: "860px" }}>
                 <thead>
                   <tr className="border-b text-muted-foreground">
-                    <th className="text-left py-2 px-3 font-medium">이름</th>
-                    <th className="text-left py-2 px-3 font-medium">업무 내용</th>
-                    <th className="text-right py-2 px-3 font-medium">총 지급액</th>
-                    <th className="text-right py-2 px-3 font-medium">원천징수</th>
-                    <th className="text-right py-2 px-3 font-medium">실지급액</th>
-                    <th className="text-center py-2 px-3 font-medium">지급일</th>
-                    <th className="text-center py-2 px-3 font-medium">신고일</th>
-                    <th className="text-center py-2 px-3 font-medium">납부일</th>
-                    <th className="text-left py-2 px-3 font-medium">납부계좌</th>
-                    <th className="text-center py-2 px-3 font-medium">상태</th>
+                    <th className="text-left py-2 px-3 font-medium whitespace-nowrap">이름</th>
+                    <th className="text-left py-2 px-3 font-medium whitespace-nowrap">업무 내용</th>
+                    <th className="text-right py-2 px-3 font-medium whitespace-nowrap">총 지급액</th>
+                    <th className="text-right py-2 px-3 font-medium whitespace-nowrap">원천징수 / 실지급액</th>
+                    <th className="text-center py-2 px-3 font-medium whitespace-nowrap">지급일</th>
+                    <th className="text-center py-2 px-3 font-medium whitespace-nowrap">신고일</th>
+                    <th className="text-center py-2 px-3 font-medium whitespace-nowrap">납부일</th>
+                    <th className="text-center py-2 px-3 font-medium whitespace-nowrap">간이지급명세서</th>
+                    <th className="text-center py-2 px-3 font-medium whitespace-nowrap">상태</th>
                     <th className="py-2 px-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(r => (
                     <tr key={r.id} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="py-2.5 px-3 font-medium">{r.freelancerName}</td>
+                      <td className="py-2.5 px-3 font-medium whitespace-nowrap">{r.freelancerName}</td>
                       <td className="py-2.5 px-3 text-muted-foreground">{r.description ?? "—"}</td>
-                      <td className="py-2.5 px-3 text-right">{fmt(r.grossAmount)}</td>
-                      <td className="py-2.5 px-3 text-right text-red-500">
-                        <div>{fmt(r.withholdingAmount)}<span className="text-xs text-muted-foreground ml-1">({r.withholdingRate}%)</span></div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5">
-                          소득세 {fmt(Math.round(r.grossAmount * 3 / 100))} · 지방 {fmt(Math.round(r.grossAmount * 0.3 / 100))}
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">{fmt(r.grossAmount)}</td>
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <div className="text-red-500">{fmt(r.withholdingAmount)}<span className="text-xs text-muted-foreground ml-1">({r.withholdingRate}%)</span></div>
+                        <div className="font-semibold text-emerald-600 mt-0.5">
+                          실지급 {fmt(r.netAmount)}
+                          {r.linkedExpenseId && <span className="text-[10px] text-blue-500 font-normal ml-1">사업비용 반영됨</span>}
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-right font-semibold text-emerald-600">
-                        <div>{fmt(r.netAmount)}</div>
-                        {r.linkedExpenseId && (
-                          <div className="text-[10px] text-blue-500 font-normal mt-0.5">사업비용 반영됨</div>
-                        )}
+                      <td className="py-2.5 px-3 text-center text-muted-foreground whitespace-nowrap">{r.paymentDate ?? "—"}</td>
+                      <td className="py-2.5 px-3 text-center text-muted-foreground whitespace-nowrap">{r.reportDate ?? "—"}</td>
+                      <td className="py-2.5 px-3 text-center text-muted-foreground whitespace-nowrap">{r.taxPaymentDate ?? "—"}</td>
+                      <td className="py-2.5 px-3 text-center">
+                        {r.simplifiedStatementIncluded
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 whitespace-nowrap">제출완료</span>
+                          : <span className="text-xs text-muted-foreground whitespace-nowrap">미제출</span>}
                       </td>
-                      <td className="py-2.5 px-3 text-center text-muted-foreground">{r.paymentDate ?? "—"}</td>
-                      <td className="py-2.5 px-3 text-center text-muted-foreground">{r.reportDate ?? "—"}</td>
-                      <td className="py-2.5 px-3 text-center text-muted-foreground">{r.taxPaymentDate ?? "—"}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground text-xs">{r.taxPaymentAccount ?? "—"}</td>
                       <td className="py-2.5 px-3 text-center">
                         <StatusBadge paymentDate={r.paymentDate} reportDate={r.reportDate} taxPaymentDate={r.taxPaymentDate} />
                       </td>
@@ -575,10 +671,12 @@ export default function LaborCosts() {
                 <tfoot>
                   <tr className="border-t bg-muted/30">
                     <td colSpan={2} className="py-2 px-3 font-semibold text-muted-foreground">합계</td>
-                    <td className="py-2 px-3 text-right font-bold">{fmt(filtered.reduce((s, r) => s + r.grossAmount, 0))}</td>
-                    <td className="py-2 px-3 text-right font-bold text-red-500">{fmt(filtered.reduce((s, r) => s + r.withholdingAmount, 0))}</td>
-                    <td className="py-2 px-3 text-right font-bold text-emerald-600">{fmt(filtered.reduce((s, r) => s + r.netAmount, 0))}</td>
-                    <td colSpan={6} />
+                    <td className="py-2 px-3 text-right font-bold whitespace-nowrap">{fmt(filtered.reduce((s, r) => s + r.grossAmount, 0))}</td>
+                    <td className="py-2 px-3 text-right whitespace-nowrap">
+                      <div className="font-bold text-red-500">{fmt(filtered.reduce((s, r) => s + r.withholdingAmount, 0))}</div>
+                      <div className="font-bold text-emerald-600">실지급 {fmt(filtered.reduce((s, r) => s + r.netAmount, 0))}</div>
+                    </td>
+                    <td colSpan={5} />
                   </tr>
                 </tfoot>
               </table>

@@ -8,14 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Upload, Landmark } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Upload, Landmark, Download } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import * as XLSX from "xlsx";
 
 const fmt = (n: number) => n.toLocaleString("ko-KR") + "원";
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
-const CATEGORIES = ["매출입금", "경비결제", "세금납부", "급여지급", "대출상환", "이자수입", "이체", "기타"];
+const CATEGORIES = ["매출입금", "경비결제", "카드값", "세금납부", "급여지급", "대출상환", "이자수입", "이체", "개인사용", "기타"];
 
 type TxType = "입금" | "출금";
 
@@ -71,11 +71,14 @@ function scoreSheet(rows: unknown[][]): number {
 
 function detectHeaderRow(rows: unknown[][]): number {
   const keywords = ["날짜", "일자", "거래일", "적요", "내용", "입금", "출금", "잔액"];
-  for (let i = 0; i < Math.min(10, rows.length); i++) {
+  let bestRow = 0;
+  let bestScore = 1;
+  for (let i = 0; i < Math.min(15, rows.length); i++) {
     const cells = (rows[i] ?? []).map(c => String(c ?? "").trim());
-    if (cells.filter(c => keywords.some(k => c.includes(k))).length >= 2) return i;
+    const score = cells.filter(c => keywords.some(k => c.includes(k))).length;
+    if (score > bestScore) { bestScore = score; bestRow = i; }
   }
-  return 0;
+  return bestRow;
 }
 
 function parseDate(raw: string | number): string {
@@ -94,20 +97,21 @@ function parseAmount(raw: unknown): number {
 
 function detectBankColumns(headers: string[]): {
   dateIdx: number; descIdx: number; counterpartyIdx: number;
-  depositIdx: number; withdrawIdx: number; balanceIdx: number;
+  depositIdx: number; withdrawIdx: number; balanceIdx: number; noteIdx: number;
 } {
   let dateIdx = -1, descIdx = -1, counterpartyIdx = -1;
-  let depositIdx = -1, withdrawIdx = -1, balanceIdx = -1;
+  let depositIdx = -1, withdrawIdx = -1, balanceIdx = -1, noteIdx = -1;
   headers.forEach((h, i) => {
     const t = h.replace(/\s/g, "");
     if (dateIdx < 0 && /날짜|일자|거래일|거래일시/.test(t)) dateIdx = i;
-    if (descIdx < 0 && /적요|내용|거래내용|메모/.test(t)) descIdx = i;
+    if (descIdx < 0 && /적요|내용|거래내용/.test(t)) descIdx = i;
+    if (noteIdx < 0 && /메모|비고/.test(t)) noteIdx = i;
     if (counterpartyIdx < 0 && /거래처|상대방|의뢰인|받는분|보내는분/.test(t)) counterpartyIdx = i;
     if (depositIdx < 0 && /입금액|입금|들어온금액/.test(t)) depositIdx = i;
     if (withdrawIdx < 0 && /출금액|출금|나간금액/.test(t)) withdrawIdx = i;
     if (balanceIdx < 0 && /잔액|잔고/.test(t)) balanceIdx = i;
   });
-  return { dateIdx, descIdx, counterpartyIdx, depositIdx, withdrawIdx, balanceIdx };
+  return { dateIdx, descIdx, counterpartyIdx, depositIdx, withdrawIdx, balanceIdx, noteIdx };
 }
 
 function parseBankXls(file: File): Promise<UploadRow[]> {
@@ -131,7 +135,7 @@ function parseBankXls(file: File): Promise<UploadRow[]> {
         const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false }) as unknown[][];
         const headerIdx = detectHeaderRow(allRows);
         const headers = (allRows[headerIdx] ?? []).map(c => String(c ?? "").trim());
-        const { dateIdx, descIdx, counterpartyIdx, depositIdx, withdrawIdx, balanceIdx } = detectBankColumns(headers);
+        const { dateIdx, descIdx, counterpartyIdx, depositIdx, withdrawIdx, balanceIdx, noteIdx } = detectBankColumns(headers);
 
         const rows: UploadRow[] = [];
         for (let i = headerIdx + 1; i < allRows.length; i++) {
@@ -139,6 +143,7 @@ function parseBankXls(file: File): Promise<UploadRow[]> {
           const dateRaw = dateIdx >= 0 ? String(row[dateIdx] ?? "") : "";
           const descRaw = descIdx >= 0 ? String(row[descIdx] ?? "").trim() : "";
           const counterpartyRaw = counterpartyIdx >= 0 ? String(row[counterpartyIdx] ?? "").trim() : "";
+          const noteRaw = noteIdx >= 0 ? String(row[noteIdx] ?? "").trim() : "";
           const deposit = depositIdx >= 0 ? parseAmount(row[depositIdx]) : 0;
           const withdraw = withdrawIdx >= 0 ? parseAmount(row[withdrawIdx]) : 0;
           const balanceRaw = balanceIdx >= 0 ? parseAmount(row[balanceIdx]) : 0;
@@ -150,14 +155,14 @@ function parseBankXls(file: File): Promise<UploadRow[]> {
           rows.push({
             transactionDate: date,
             transactionType: deposit > 0 ? "입금" : "출금",
-            description: descRaw || counterpartyRaw,
+            description: counterpartyRaw || descRaw,
             counterparty: counterpartyRaw,
             depositAmount: deposit,
             withdrawAmount: withdraw,
             balance: balanceRaw || null,
             accountName: "",
             category: "",
-            note: "",
+            note: noteRaw,
             skip: false,
           });
         }
@@ -176,8 +181,12 @@ export default function BusinessBankLedger() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [yearOnly, setYearOnly] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(now.getFullYear());
+  const [searchMode, setSearchMode] = useState<"period" | "range">("period");
+  const [rangeStart, setRangeStart] = useState(`${now.getFullYear()}-01-01`);
+  const [rangeEnd, setRangeEnd] = useState(now.toISOString().slice(0, 10));
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -186,11 +195,14 @@ export default function BusinessBankLedger() {
 
   const [uploadRows, setUploadRows] = useState<UploadRow[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [defaultAccountName, setDefaultAccountName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
-  const { data: entries = [], isLoading } = trpc.businessBankLedger.list.useQuery({ year, month });
+  const { data: entries = [], isLoading } = trpc.businessBankLedger.list.useQuery(
+    searchMode === "range"
+      ? { startDate: rangeStart, endDate: rangeEnd }
+      : { year, month: yearOnly ? undefined : month }
+  );
 
   const createMutation = trpc.businessBankLedger.create.useMutation({
     onSuccess: () => { utils.businessBankLedger.list.invalidate(); toast.success("추가되었습니다"); setDialogOpen(false); },
@@ -214,12 +226,49 @@ export default function BusinessBankLedger() {
     onError: () => toast.error("삭제 실패"),
   });
 
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+
   const totalDeposit = useMemo(() => entries.reduce((s, e) => s + e.depositAmount, 0), [entries]);
   const totalWithdraw = useMemo(() => entries.reduce((s, e) => s + e.withdrawAmount, 0), [entries]);
   const netAmount = totalDeposit - totalWithdraw;
 
-  const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12); } else setMonth(m => m - 1); };
-  const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1); } else setMonth(m => m + 1); };
+  const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+  const pagedEntries = useMemo(() => entries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [entries, page]);
+
+  const prevMonth = () => {
+    setPage(1);
+    if (yearOnly) { setYear(y => y - 1); return; }
+    if (month === 1) { setYear(y => y - 1); setMonth(12); } else setMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    setPage(1);
+    if (yearOnly) { setYear(y => y + 1); return; }
+    if (month === 12) { setYear(y => y + 1); setMonth(1); } else setMonth(m => m + 1);
+  };
+
+  function exportExcel() {
+    const data = entries.map(e => ({
+      날짜: e.transactionDate,
+      구분: e.transactionType,
+      "적요/내용": e.description,
+      거래처: e.counterparty ?? "",
+      입금액: e.depositAmount || "",
+      출금액: e.withdrawAmount || "",
+      잔액: e.balance ?? "",
+      카테고리: e.category ?? "",
+      메모: e.note ?? "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "통장내역");
+    const filename = searchMode === "range"
+      ? `통장내역_${rangeStart}_${rangeEnd}.xlsx`
+      : yearOnly
+        ? `통장내역_${year}.xlsx`
+        : `통장내역_${year}_${String(month).padStart(2, "0")}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  }
 
   function openCreate() {
     setEditingId(null);
@@ -236,7 +285,7 @@ export default function BusinessBankLedger() {
       counterparty: e.counterparty ?? "",
       depositAmount: e.depositAmount,
       withdrawAmount: e.withdrawAmount,
-      balance: e.balance != null ? String(e.balance) : "",
+      balance: e.balance != null ? e.balance.toLocaleString("ko-KR") : "",
       accountName: e.accountName ?? "",
       category: e.category ?? "",
       note: e.note ?? "",
@@ -274,7 +323,7 @@ export default function BusinessBankLedger() {
     try {
       const rows = await parseBankXls(file);
       if (rows.length === 0) { toast.error("인식된 거래 내역이 없습니다"); return; }
-      setUploadRows(rows.map(r => ({ ...r, accountName: defaultAccountName })));
+      setUploadRows(rows);
       setUploadOpen(true);
     } catch {
       toast.error("파일 파싱 실패");
@@ -313,6 +362,9 @@ export default function BusinessBankLedger() {
         </div>
         <div className="flex items-center gap-2">
           <input ref={fileRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={handleFileChange} />
+          <Button variant="outline" size="sm" onClick={exportExcel} disabled={entries.length === 0} className="gap-1.5">
+            <Download className="w-4 h-4" /> 엑셀 내보내기
+          </Button>
           <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-1.5">
             <Upload className="w-4 h-4" /> 통장내역 업로드
           </Button>
@@ -345,40 +397,67 @@ export default function BusinessBankLedger() {
             <p className="text-lg font-bold">{entries.length}건</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          {(year !== now.getFullYear() || month !== now.getMonth() + 1) && (
-            <Button variant="outline" size="sm" className="h-7 text-xs px-2 mr-1"
-              onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth() + 1); }}>
-              오늘
-            </Button>
+        <div className="flex items-center gap-2">
+          {/* 모드 탭 */}
+          <div className="flex rounded-lg border border-border overflow-hidden text-xs">
+            <button
+              onClick={() => setSearchMode("period")}
+              className={`px-3 py-1.5 font-medium transition-colors ${searchMode === "period" ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground"}`}>
+              월/연도
+            </button>
+            <button
+              onClick={() => setSearchMode("range")}
+              className={`px-3 py-1.5 font-medium transition-colors border-l border-border ${searchMode === "range" ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground"}`}>
+              기간
+            </button>
+          </div>
+
+          {searchMode === "period" ? (
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-7 text-xs px-2"
+                onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth() + 1); setYearOnly(false); }}>
+                오늘
+              </Button>
+              <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
+              <Popover open={pickerOpen} onOpenChange={open => { setPickerOpen(open); if (open) setPickerYear(year); }}>
+                <PopoverTrigger asChild>
+                  <button className="text-sm font-medium w-24 text-center hover:bg-muted rounded px-2 py-1 transition-colors">
+                    {year}.{yearOnly ? "전체" : String(month).padStart(2, "0")}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-3" align="end">
+                  <div className="flex items-center justify-between mb-3">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y - 1)}><ChevronLeft className="w-4 h-4" /></Button>
+                    <span className="text-sm font-semibold">{pickerYear}년</span>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y + 1)}><ChevronRight className="w-4 h-4" /></Button>
+                  </div>
+                  <button
+                    onClick={() => { setYear(pickerYear); setYearOnly(true); setPickerOpen(false); }}
+                    className={`w-full rounded py-1.5 text-sm font-medium transition-colors mb-1 ${yearOnly && pickerYear === year ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"}`}>
+                    {pickerYear}년 전체
+                  </button>
+                  <div className="grid grid-cols-4 gap-1">
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => {
+                      const isSelected = !yearOnly && pickerYear === year && m === month;
+                      return (
+                        <button key={m} onClick={() => { setYear(pickerYear); setMonth(m); setYearOnly(false); setPickerOpen(false); }}
+                          className={`rounded py-1.5 text-sm font-medium transition-colors ${isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"}`}>
+                          {m}월
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <Input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)} className="h-8 w-36 text-sm" />
+              <span className="text-muted-foreground text-sm">~</span>
+              <Input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} className="h-8 w-36 text-sm" />
+            </div>
           )}
-          <Button variant="ghost" size="icon" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
-          <Popover open={pickerOpen} onOpenChange={open => { setPickerOpen(open); if (open) setPickerYear(year); }}>
-            <PopoverTrigger asChild>
-              <button className="text-sm font-medium w-20 text-center hover:bg-muted rounded px-2 py-1 transition-colors">
-                {year}.{String(month).padStart(2, "0")}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-3" align="center">
-              <div className="flex items-center justify-between mb-3">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y - 1)}><ChevronLeft className="w-4 h-4" /></Button>
-                <span className="text-sm font-semibold">{pickerYear}년</span>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPickerYear(y => y + 1)}><ChevronRight className="w-4 h-4" /></Button>
-              </div>
-              <div className="grid grid-cols-4 gap-1">
-                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => {
-                  const isSelected = pickerYear === year && m === month;
-                  return (
-                    <button key={m} onClick={() => { setYear(pickerYear); setMonth(m); setPickerOpen(false); }}
-                      className={`rounded py-1.5 text-sm font-medium transition-colors ${isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"}`}>
-                      {m}월
-                    </button>
-                  );
-                })}
-              </div>
-            </PopoverContent>
-          </Popover>
-          <Button variant="ghost" size="icon" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
         </div>
       </div>
 
@@ -394,17 +473,16 @@ export default function BusinessBankLedger() {
               <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">입금액</th>
               <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">출금액</th>
               <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">잔액</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">통장</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">카테고리</th>
               <th className="px-4 py-3 w-16"></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={10} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
+              <tr><td colSpan={9} className="text-center py-10 text-muted-foreground text-sm">로딩 중...</td></tr>
             ) : entries.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-14">
+                <td colSpan={9} className="text-center py-14">
                   <Landmark className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
                   <p className="text-muted-foreground text-sm">이번 달 통장 내역이 없습니다</p>
                   <Button variant="outline" size="sm" className="mt-3" onClick={openCreate}>
@@ -414,7 +492,7 @@ export default function BusinessBankLedger() {
               </tr>
             ) : (
               <>
-                {entries.map(e => (
+                {pagedEntries.map(e => (
                   <tr key={e.id} className="border-t border-border hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{e.transactionDate}</td>
                     <td className="px-4 py-3 text-center">
@@ -435,7 +513,6 @@ export default function BusinessBankLedger() {
                     <td className="px-4 py-3 text-sm text-right text-muted-foreground">
                       {e.balance != null ? fmt(e.balance) : "—"}
                     </td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{e.accountName ?? "—"}</td>
                     <td className="px-4 py-3">
                       {e.category ? (
                         <Badge variant="secondary" className="text-xs">{e.category}</Badge>
@@ -456,10 +533,12 @@ export default function BusinessBankLedger() {
                   </tr>
                 ))}
                 <tr className="border-t-2 border-border bg-muted/20">
-                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-right">합계</td>
+                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-right text-muted-foreground">
+                    전체 합계 ({entries.length}건)
+                  </td>
                   <td className="px-4 py-3 text-sm font-bold text-right text-emerald-600 dark:text-emerald-400">{fmt(totalDeposit)}</td>
                   <td className="px-4 py-3 text-sm font-bold text-right text-red-500">{fmt(totalWithdraw)}</td>
-                  <td colSpan={4} />
+                  <td colSpan={3} />
                 </tr>
               </>
             )}
@@ -467,20 +546,51 @@ export default function BusinessBankLedger() {
         </table>
       </div>
 
+      {/* 페이지네이션 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={page === 1}>
+            <ChevronLeft className="w-3 h-3 -mr-1" /><ChevronLeft className="w-3 h-3" />
+          </Button>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+              .reduce<(number | "...")[]>((acc, p, i, arr) => {
+                if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("...");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "..." ? (
+                  <span key={`dot-${i}`} className="px-1 text-muted-foreground text-sm">…</span>
+                ) : (
+                  <button key={p} onClick={() => setPage(p as number)}
+                    className={`h-8 w-8 rounded-md text-sm font-medium transition-colors ${page === p ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"}`}>
+                    {p}
+                  </button>
+                )
+              )}
+          </div>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+            <ChevronRight className="w-3 h-3" /><ChevronRight className="w-3 h-3 -ml-1" />
+          </Button>
+        </div>
+      )}
+
       {/* 추가/수정 다이얼로그 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{editingId !== null ? "내역 수정" : "내역 추가"}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">거래일 *</Label>
-                <Input type="date" value={form.transactionDate} onChange={e => setForm(f => ({ ...f, transactionDate: e.target.value }))} className="mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs">통장명</Label>
-                <Input value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} placeholder="예: 기업은행 사업자통장" className="mt-1" />
-              </div>
+            <div>
+              <Label className="text-xs">거래일 *</Label>
+              <Input type="date" value={form.transactionDate} onChange={e => setForm(f => ({ ...f, transactionDate: e.target.value }))} className="mt-1" />
             </div>
             <div>
               <Label className="text-xs">적요/내용 *</Label>
@@ -503,7 +613,15 @@ export default function BusinessBankLedger() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">잔액 (원)</Label>
-                <Input value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} placeholder="선택" className="mt-1" />
+                <Input
+                  value={form.balance}
+                  onChange={e => {
+                    const digits = e.target.value.replace(/[^0-9]/g, "");
+                    setForm(f => ({ ...f, balance: digits ? Number(digits).toLocaleString("ko-KR") : "" }));
+                  }}
+                  placeholder="선택"
+                  className="mt-1"
+                />
               </div>
               <div>
                 <Label className="text-xs">카테고리</Label>
@@ -530,35 +648,23 @@ export default function BusinessBankLedger() {
 
       {/* 업로드 미리보기 다이얼로그 */}
       <Dialog open={uploadOpen} onOpenChange={open => { if (!open) { setUploadOpen(false); setUploadRows([]); } }}>
-        <DialogContent className="max-w-6xl max-h-[85vh] flex flex-col">
+        <DialogContent className="w-[95vw] max-w-[95vw] max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>통장내역 가져오기 ({uploadRows.filter(r => !r.skip).length}건 선택)</DialogTitle>
           </DialogHeader>
-          <div className="flex items-center gap-3 mb-2">
-            <Label className="text-xs whitespace-nowrap">통장명 일괄 적용</Label>
-            <Input
-              className="h-8 text-sm max-w-56"
-              placeholder="예: 기업은행 사업자통장"
-              value={defaultAccountName}
-              onChange={e => {
-                setDefaultAccountName(e.target.value);
-                setUploadRows(rows => rows.map(r => ({ ...r, accountName: e.target.value })));
-              }}
-            />
-          </div>
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-background">
+              <thead className="sticky top-0 bg-background z-10">
                 <tr className="border-b">
                   <th className="text-center py-2 px-2 font-medium w-10">포함</th>
                   <th className="text-left py-2 px-2 font-medium whitespace-nowrap">거래일</th>
-                  <th className="text-center py-2 px-2 font-medium">구분</th>
+                  <th className="text-center py-2 px-2 font-medium whitespace-nowrap">구분</th>
                   <th className="text-left py-2 px-2 font-medium">적요/내용</th>
                   <th className="text-left py-2 px-2 font-medium">거래처</th>
                   <th className="text-right py-2 px-2 font-medium whitespace-nowrap">입금액</th>
                   <th className="text-right py-2 px-2 font-medium whitespace-nowrap">출금액</th>
-                  <th className="text-left py-2 px-2 font-medium">통장명</th>
-                  <th className="text-left py-2 px-2 font-medium">카테고리</th>
+                  <th className="text-left py-2 px-2 font-medium">메모</th>
+                  <th className="text-left py-2 px-2 font-medium whitespace-nowrap">카테고리</th>
                 </tr>
               </thead>
               <tbody>
@@ -578,22 +684,22 @@ export default function BusinessBankLedger() {
                       </select>
                     </td>
                     <td className="py-1.5 px-2">
-                      <Input className="h-7 text-xs w-40" value={row.description}
+                      <Input className="h-7 text-xs w-44" value={row.description}
                         onChange={e => setUploadRows(rows => rows.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
                     </td>
                     <td className="py-1.5 px-2">
-                      <Input className="h-7 text-xs w-28" value={row.counterparty}
+                      <Input className="h-7 text-xs w-32" value={row.counterparty}
                         onChange={e => setUploadRows(rows => rows.map((r, j) => j === i ? { ...r, counterparty: e.target.value } : r))} />
                     </td>
-                    <td className="py-1.5 px-2 text-right text-xs font-semibold text-emerald-600">
+                    <td className="py-1.5 px-2 text-right text-xs font-semibold text-emerald-600 whitespace-nowrap">
                       {row.depositAmount > 0 ? row.depositAmount.toLocaleString("ko-KR") : "—"}
                     </td>
-                    <td className="py-1.5 px-2 text-right text-xs font-semibold text-red-500">
+                    <td className="py-1.5 px-2 text-right text-xs font-semibold text-red-500 whitespace-nowrap">
                       {row.withdrawAmount > 0 ? row.withdrawAmount.toLocaleString("ko-KR") : "—"}
                     </td>
                     <td className="py-1.5 px-2">
-                      <Input className="h-7 text-xs w-32" value={row.accountName}
-                        onChange={e => setUploadRows(rows => rows.map((r, j) => j === i ? { ...r, accountName: e.target.value } : r))} />
+                      <Input className="h-7 text-xs w-36" value={row.note}
+                        onChange={e => setUploadRows(rows => rows.map((r, j) => j === i ? { ...r, note: e.target.value } : r))} />
                     </td>
                     <td className="py-1.5 px-2">
                       <select className="h-7 text-xs rounded border border-input bg-background px-2" value={row.category}

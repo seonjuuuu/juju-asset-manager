@@ -1,4 +1,4 @@
-import { and, desc, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import {
@@ -1647,9 +1647,16 @@ export async function deleteBusinessExpense(userId: number, id: number) {
 }
 
 // ─── 인건비 ───────────────────────────────────────────────────────────────────
+async function ensureLaborCostExtraColumns(db: Awaited<ReturnType<typeof getDb>>) {
+  if (!db) return;
+  await db.execute(sql`ALTER TABLE labor_costs ADD COLUMN IF NOT EXISTS simplified_statement_included boolean DEFAULT false`);
+  await db.execute(sql`ALTER TABLE labor_costs ADD COLUMN IF NOT EXISTS withholding_ledger_entry_id integer`);
+}
+
 export async function listLaborCosts(userId: number) {
   const db = await getDb();
   if (!db) return [];
+  await ensureLaborCostExtraColumns(db);
   return db.select().from(laborCosts)
     .where(eq(laborCosts.userId, userId))
     .orderBy(desc(laborCosts.paymentDate), desc(laborCosts.createdAt));
@@ -1659,27 +1666,70 @@ function laborExpenseDescription(name: string, desc: string | null | undefined) 
   return desc ? `${name} 인건비 (${desc})` : `${name} 인건비`;
 }
 
+async function createLaborLedgerEntries(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  userId: number,
+  paymentDate: string,
+  name: string,
+  description: string | null | undefined,
+  netAmount: number,
+  withholdingAmount: number,
+) {
+  const [y, m] = paymentDate.split("-").map(Number);
+  const expDesc = laborExpenseDescription(name, description as string | null);
+
+  // 실지급액 가계부 항목
+  const [netRow] = await db.insert(ledgerEntries).values({
+    userId, entryDate: paymentDate as unknown as string, year: y, month: m,
+    mainCategory: "사업지출", subCategory: "인건비",
+    description: expDesc,
+    amount: -Math.abs(netAmount),
+    note: `[인건비] ${name} 실지급액`,
+  }).returning({ id: ledgerEntries.id });
+
+  // 원천징수액 가계부 항목
+  let withholdingLedgerId: number | null = null;
+  if (withholdingAmount > 0) {
+    const [whRow] = await db.insert(ledgerEntries).values({
+      userId, entryDate: paymentDate as unknown as string, year: y, month: m,
+      mainCategory: "사업지출", subCategory: "원천세",
+      description: `${name} 원천징수`,
+      amount: -Math.abs(withholdingAmount),
+      note: `[인건비] ${name} 원천징수액`,
+    }).returning({ id: ledgerEntries.id });
+    withholdingLedgerId = whRow?.id ?? null;
+  }
+
+  // 사업지출 테이블 항목
+  const [exp] = await db.insert(businessExpenses).values({
+    userId, expenseDate: paymentDate as unknown as string, year: y, month: m,
+    category: "인건비", vendor: name, description: expDesc,
+    amount: netAmount, isTaxDeductible: true,
+    ledgerEntryId: netRow?.id ?? null,
+  }).returning({ id: businessExpenses.id });
+
+  return { linkedExpenseId: exp?.id ?? null, netLedgerEntryId: netRow?.id ?? null, withholdingLedgerId };
+}
+
 export async function createLaborCost(userId: number, data: Omit<InsertLaborCost, "userId" | "id" | "createdAt" | "updatedAt">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   let linkedExpenseId: number | undefined;
+  let withholdingLedgerEntryId: number | null = null;
+
   if (data.paymentDate && data.netAmount) {
-    const [y, m] = data.paymentDate.split("-").map(Number);
-    const expDesc = laborExpenseDescription(data.freelancerName, data.description as string | null);
-    await db.insert(businessExpenses).values({
-      userId, expenseDate: data.paymentDate as unknown as string,
-      year: y, month: m, category: "인건비",
-      vendor: data.freelancerName, description: expDesc,
-      amount: data.netAmount, isTaxDeductible: true,
-    });
-    const exp = await db.select().from(businessExpenses)
-      .where(eq(businessExpenses.userId, userId))
-      .orderBy(desc(businessExpenses.createdAt)).limit(1);
-    linkedExpenseId = exp[0]?.id;
+    const result = await createLaborLedgerEntries(
+      db, userId, data.paymentDate as string,
+      data.freelancerName, data.description as string | null,
+      data.netAmount, data.withholdingAmount ?? 0,
+    );
+    linkedExpenseId = result.linkedExpenseId ?? undefined;
+    withholdingLedgerEntryId = result.withholdingLedgerId;
   }
 
-  await db.insert(laborCosts).values({ ...data, userId, linkedExpenseId });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await db.insert(laborCosts).values({ ...data, userId, linkedExpenseId, withholdingLedgerEntryId } as any);
   const result = await db.select().from(laborCosts)
     .where(eq(laborCosts.userId, userId))
     .orderBy(desc(laborCosts.createdAt)).limit(1);
@@ -1692,42 +1742,79 @@ export async function updateLaborCost(userId: number, id: number, data: Partial<
 
   const current = await db.select().from(laborCosts)
     .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId))).limit(1);
-  const cur = current[0];
+  const cur = current[0] as typeof current[0] & { withholdingLedgerEntryId?: number | null };
   if (!cur) throw new Error("Not found");
 
   const newPaymentDate = "paymentDate" in data ? data.paymentDate : cur.paymentDate;
   const newNetAmount = "netAmount" in data ? data.netAmount : cur.netAmount;
+  const newWithholdingAmount = "withholdingAmount" in data ? data.withholdingAmount : cur.withholdingAmount;
   const newName = "freelancerName" in data ? data.freelancerName! : cur.freelancerName;
   const newDesc = "description" in data ? data.description : cur.description;
 
   let linkedExpenseId = cur.linkedExpenseId;
+  let withholdingLedgerEntryId = cur.withholdingLedgerEntryId ?? null;
 
   if (newPaymentDate && newNetAmount) {
     const [y, m] = newPaymentDate.split("-").map(Number);
     const expDesc = laborExpenseDescription(newName, newDesc as string | null);
+
     if (linkedExpenseId) {
+      // 기존 businessExpenses의 ledgerEntryId(실지급액 항목) 업데이트
+      const [existingExp] = await db.select({ ledgerEntryId: businessExpenses.ledgerEntryId })
+        .from(businessExpenses)
+        .where(and(eq(businessExpenses.id, linkedExpenseId), eq(businessExpenses.userId, userId)));
+      if (existingExp?.ledgerEntryId) {
+        await db.update(ledgerEntries).set({
+          entryDate: newPaymentDate as unknown as string, year: y, month: m,
+          description: expDesc, amount: -Math.abs(newNetAmount),
+        }).where(and(eq(ledgerEntries.id, existingExp.ledgerEntryId), eq(ledgerEntries.userId, userId)));
+      }
+      // 원천징수 가계부 항목 업데이트 or 생성
+      if (withholdingLedgerEntryId) {
+        await db.update(ledgerEntries).set({
+          entryDate: newPaymentDate as unknown as string, year: y, month: m,
+          description: `${newName} 원천징수`, amount: -Math.abs(newWithholdingAmount ?? 0),
+        }).where(and(eq(ledgerEntries.id, withholdingLedgerEntryId), eq(ledgerEntries.userId, userId)));
+      } else if ((newWithholdingAmount ?? 0) > 0) {
+        const [whRow] = await db.insert(ledgerEntries).values({
+          userId, entryDate: newPaymentDate as unknown as string, year: y, month: m,
+          mainCategory: "사업지출", subCategory: "원천세",
+          description: `${newName} 원천징수`, amount: -Math.abs(newWithholdingAmount ?? 0),
+          note: `[인건비] ${newName} 원천징수액`,
+        }).returning({ id: ledgerEntries.id });
+        withholdingLedgerEntryId = whRow?.id ?? null;
+      }
       await db.update(businessExpenses).set({
         expenseDate: newPaymentDate as unknown as string, year: y, month: m,
         vendor: newName, description: expDesc, amount: newNetAmount,
       }).where(and(eq(businessExpenses.id, linkedExpenseId), eq(businessExpenses.userId, userId)));
     } else {
-      await db.insert(businessExpenses).values({
-        userId, expenseDate: newPaymentDate as unknown as string,
-        year: y, month: m, category: "인건비",
-        vendor: newName, description: expDesc,
-        amount: newNetAmount, isTaxDeductible: true,
-      });
-      const exp = await db.select().from(businessExpenses)
-        .where(eq(businessExpenses.userId, userId))
-        .orderBy(desc(businessExpenses.createdAt)).limit(1);
-      linkedExpenseId = exp[0]?.id;
+      // 신규 생성
+      const result = await createLaborLedgerEntries(
+        db, userId, newPaymentDate, newName, newDesc as string | null,
+        newNetAmount, newWithholdingAmount ?? 0,
+      );
+      linkedExpenseId = result.linkedExpenseId;
+      withholdingLedgerEntryId = result.withholdingLedgerId;
     }
   } else if (!newPaymentDate && linkedExpenseId) {
+    // 지급일 제거 시 연결 항목 전부 삭제
+    const [existingExp] = await db.select({ ledgerEntryId: businessExpenses.ledgerEntryId })
+      .from(businessExpenses)
+      .where(and(eq(businessExpenses.id, linkedExpenseId), eq(businessExpenses.userId, userId)));
+    if (existingExp?.ledgerEntryId) {
+      await db.delete(ledgerEntries).where(and(eq(ledgerEntries.id, existingExp.ledgerEntryId), eq(ledgerEntries.userId, userId)));
+    }
+    if (withholdingLedgerEntryId) {
+      await db.delete(ledgerEntries).where(and(eq(ledgerEntries.id, withholdingLedgerEntryId), eq(ledgerEntries.userId, userId)));
+    }
     await db.delete(businessExpenses).where(and(eq(businessExpenses.id, linkedExpenseId), eq(businessExpenses.userId, userId)));
     linkedExpenseId = null;
+    withholdingLedgerEntryId = null;
   }
 
-  await db.update(laborCosts).set({ ...data, linkedExpenseId })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await db.update(laborCosts).set({ ...data, linkedExpenseId, withholdingLedgerEntryId } as any)
     .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId)));
   const result = await db.select().from(laborCosts)
     .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId))).limit(1);
@@ -1739,10 +1826,18 @@ export async function deleteLaborCost(userId: number, id: number) {
   if (!db) throw new Error("DB not available");
   const current = await db.select().from(laborCosts)
     .where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId))).limit(1);
-  if (current[0]?.linkedExpenseId) {
-    await db.delete(businessExpenses).where(
-      and(eq(businessExpenses.id, current[0].linkedExpenseId), eq(businessExpenses.userId, userId))
-    );
+  const cur = current[0] as typeof current[0] & { withholdingLedgerEntryId?: number | null };
+  if (cur?.linkedExpenseId) {
+    const [exp] = await db.select({ ledgerEntryId: businessExpenses.ledgerEntryId })
+      .from(businessExpenses)
+      .where(and(eq(businessExpenses.id, cur.linkedExpenseId), eq(businessExpenses.userId, userId)));
+    if (exp?.ledgerEntryId) {
+      await db.delete(ledgerEntries).where(and(eq(ledgerEntries.id, exp.ledgerEntryId), eq(ledgerEntries.userId, userId)));
+    }
+    await db.delete(businessExpenses).where(and(eq(businessExpenses.id, cur.linkedExpenseId), eq(businessExpenses.userId, userId)));
+  }
+  if (cur?.withholdingLedgerEntryId) {
+    await db.delete(ledgerEntries).where(and(eq(ledgerEntries.id, cur.withholdingLedgerEntryId), eq(ledgerEntries.userId, userId)));
   }
   await db.delete(laborCosts).where(and(eq(laborCosts.id, id), eq(laborCosts.userId, userId)));
   return { id };
@@ -1842,13 +1937,17 @@ async function ensureBusinessBankLedgerTable(db: NonNullable<Awaited<ReturnType<
   `);
 }
 
-export async function listBusinessBankLedger(userId: number, year?: number, month?: number) {
+export async function listBusinessBankLedger(userId: number, year?: number, month?: number, startDate?: string, endDate?: string) {
   const db = await getDb();
   if (!db) return [];
   await ensureBusinessBankLedgerTable(db);
   const conditions = [eq(businessBankLedger.userId, userId)];
-  if (year !== undefined) conditions.push(eq(businessBankLedger.year, year));
-  if (month !== undefined) conditions.push(eq(businessBankLedger.month, month));
+  if (startDate !== undefined) conditions.push(gte(businessBankLedger.transactionDate, startDate));
+  if (endDate !== undefined) conditions.push(lte(businessBankLedger.transactionDate, endDate));
+  if (startDate === undefined && endDate === undefined) {
+    if (year !== undefined) conditions.push(eq(businessBankLedger.year, year));
+    if (month !== undefined) conditions.push(eq(businessBankLedger.month, month));
+  }
   return db.select().from(businessBankLedger)
     .where(and(...conditions))
     .orderBy(desc(businessBankLedger.transactionDate), desc(businessBankLedger.createdAt));

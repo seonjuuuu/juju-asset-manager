@@ -1141,6 +1141,7 @@ export const appRouter = router({
         reportDate: z.string().nullable().optional(),
         taxPaymentDate: z.string().nullable().optional(),
         taxPaymentAccount: z.string().nullable().optional(),
+        simplifiedStatementIncluded: z.boolean().optional(),
         note: z.string().nullable().optional(),
       }))
       .mutation(({ input, ctx }) => db.createLaborCost(ctx.user.id, input)),
@@ -1158,6 +1159,7 @@ export const appRouter = router({
           reportDate: z.string().nullable().optional(),
           taxPaymentDate: z.string().nullable().optional(),
           taxPaymentAccount: z.string().nullable().optional(),
+          simplifiedStatementIncluded: z.boolean().optional(),
           note: z.string().nullable().optional(),
         }),
       }))
@@ -1233,8 +1235,8 @@ export const appRouter = router({
   }),
   businessBankLedger: router({
     list: protectedProcedure
-      .input(z.object({ year: z.number().int().optional(), month: z.number().int().min(1).max(12).optional() }))
-      .query(({ input, ctx }) => db.listBusinessBankLedger(ctx.user.id, input.year, input.month)),
+      .input(z.object({ year: z.number().int().optional(), month: z.number().int().min(1).max(12).optional(), startDate: z.string().optional(), endDate: z.string().optional() }))
+      .query(({ input, ctx }) => db.listBusinessBankLedger(ctx.user.id, input.year, input.month, input.startDate, input.endDate)),
     create: protectedProcedure
       .input(z.object({
         transactionDate: z.string(),
