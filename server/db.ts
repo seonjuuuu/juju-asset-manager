@@ -288,9 +288,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 }
 
+async function ensureUserExtraColumns(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_salary integer`);
+}
+
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
+  await ensureUserExtraColumns(db);
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -298,6 +303,7 @@ export async function getUserByOpenId(openId: string) {
 export async function getUserById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
+  await ensureUserExtraColumns(db);
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -377,10 +383,11 @@ export async function upsertUserContact(userId: number, data: Pick<InsertUserCon
 
 export async function updateUserProfile(
   userId: number,
-  data: { birthDate?: string | null; name?: string | null; navPreferences?: string | null },
+  data: { birthDate?: string | null; name?: string | null; navPreferences?: string | null; monthlySalary?: number | null },
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_salary integer`);
   await db.update(users).set(data).where(eq(users.id, userId));
   const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   return result[0];

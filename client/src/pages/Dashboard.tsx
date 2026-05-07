@@ -17,7 +17,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { BellRing, CalendarDays, CreditCard, Star, TrendingDown, TrendingUp } from "lucide-react";
+import { BellRing, CalendarDays, CreditCard, Sparkles, Star, TrendingDown, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
 
 function pad2(n: number) {
@@ -162,9 +162,17 @@ export default function Dashboard() {
   const { data: loanList = [] } = trpc.loan.list.useQuery();
   const { data: borrowedMoneyList = [] } = trpc.borrowedMoney.list.useQuery();
   const { data: fixedExpenses = [] } = trpc.fixedExpense.list.useQuery();
+  const { data: savingsList = [] } = trpc.savings.list.useQuery();
   const { data: cardList = [] } = trpc.card.list.useQuery();
   const { data: me } = trpc.auth.me.useQuery();
   const currentUserId = typeof (me as { id?: unknown } | null | undefined)?.id === "number" ? (me as { id: number }).id : null;
+
+  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const savingsAdvice = trpc.ai.savingsAdvice.useMutation({
+    onSuccess: (data) => { setAiAdvice(data.advice); setAiOpen(true); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const pendingBorrowedRequests = useMemo(() => {
     if (currentUserId === null) return [];
@@ -589,21 +597,19 @@ export default function Dashboard() {
   const currentMonthIncome = sumIncomeRows((yearly ?? []).filter(r => r.month === currentMonth));
   const currentMonthExpense = (() => {
     const rows = (yearly ?? []).filter(r => r.month === currentMonth);
-    const fixedExp = rows.find(r => r.mainCategory === "고정지출")?.total ?? 0;
     const varExp = rows.find(r => r.mainCategory === "변동지출")?.total ?? 0;
     const businessExp = rows.find(r => r.mainCategory === "사업지출")?.total ?? 0;
+    // 고정지출 관리 페이지 기준
+    const fixedExpFromList = (fixedExpenses as Array<{ isActive?: boolean | null; startDate?: string | null; expiryDate?: string | null; monthlyAmount: number }>)
+      .filter(e => fixedExpenseAppliesToMonth(e, currentYear, currentMonth))
+      .reduce((sum, e) => sum + (e.monthlyAmount ?? 0), 0);
     const subCost = (subscriptions ?? []).reduce((sum, sub) => {
-      const s = sub as {
-        price: number;
-        billingCycle: string;
-        sharedCount?: number;
-        billingDay?: number | null;
-        startDate?: string | null;
-        isPaused?: boolean | null;
-        pausedFrom?: string | null;
-      };
+      const s = sub as { price: number; billingCycle: string; sharedCount?: number; billingDay?: number | null; startDate?: string | null; isPaused?: boolean | null; pausedFrom?: string | null };
       return sum + ledgerSubCostForMonth(currentYear, currentMonth, s);
     }, 0);
+    const insCost = (insuranceList as Array<{ startDate: string; endDate?: string | null; paymentType: string; paymentDay?: number | null; paymentAmount: number }>)
+      .filter(ins => insuranceAppliesToMonth(ins, currentYear, currentMonth))
+      .reduce((sum, ins) => sum + ins.paymentAmount, 0);
     const installCost = installmentList.reduce((sum, inst) => {
       const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string; isInterestFree: boolean; interestRate: string | null };
       return sum + getInstallmentCostForMonth(i, currentYear, currentMonth);
@@ -612,8 +618,70 @@ export default function Dashboard() {
       const l = loan as { startDate: string; maturityDate: string | null; remainingPrincipal: number; monthlyPayment: number };
       return sum + getLoanCostForMonth(l, currentYear, currentMonth);
     }, 0);
-    return fixedExp + varExp + businessExp + subCost + installCost + loanCost;
+    return fixedExpFromList + varExp + businessExp + subCost + insCost + installCost + loanCost;
   })();
+
+  const aiInputData = useMemo(() => {
+    const rows = (yearly ?? []).filter(r => r.month === currentMonth);
+    const fixedExp = (fixedExpenses as Array<{ isActive?: boolean | null; startDate?: string | null; expiryDate?: string | null; monthlyAmount: number }>)
+      .filter(e => fixedExpenseAppliesToMonth(e, currentYear, currentMonth))
+      .reduce((sum, e) => sum + (e.monthlyAmount ?? 0), 0);
+    const varExp = rows.find(r => r.mainCategory === "변동지출")?.total ?? 0;
+    const businessExp = rows.find(r => r.mainCategory === "사업지출")?.total ?? 0;
+    const subCost = (subscriptions ?? []).reduce((sum, sub) => {
+      const s = sub as { price: number; billingCycle: string; sharedCount?: number; billingDay?: number | null; startDate?: string | null; isPaused?: boolean | null; pausedFrom?: string | null };
+      return sum + ledgerSubCostForMonth(currentYear, currentMonth, s);
+    }, 0);
+    const insCost = (insuranceList as Array<{ startDate: string; endDate?: string | null; paymentType: string; paymentDay?: number | null; paymentAmount: number }>)
+      .filter(ins => insuranceAppliesToMonth(ins, currentYear, currentMonth))
+      .reduce((sum, ins) => sum + ins.paymentAmount, 0);
+    const installCost = installmentList.reduce((sum, inst) => {
+      const i = inst as { totalAmount: number; months: number; startDate: string; endDate: string; isInterestFree: boolean; interestRate: string | null };
+      return sum + getInstallmentCostForMonth(i, currentYear, currentMonth);
+    }, 0);
+    const loanCost = loanList.reduce((sum, loan) => {
+      const l = loan as { startDate: string; maturityDate: string | null; remainingPrincipal: number; monthlyPayment: number };
+      return sum + getLoanCostForMonth(l, currentYear, currentMonth);
+    }, 0);
+    const key = monthKey(currentYear, currentMonth);
+    const borrowedRepayment = (borrowedMoneyList as Array<{
+      id: number; lenderUserId?: number | null; shareStatus?: string | null;
+      principalAmount: number; repaidAmount: number; repaymentType: string;
+      repaymentStartDate?: string | null; repaymentDueDate?: string | null;
+      paymentDay?: number | null; monthlyPayment: number;
+      totalInstallments?: number | null; installmentMode?: "equal" | "custom"; repaymentSchedule?: string | null;
+    }>).reduce((sum, item) => {
+      if (item.shareStatus && item.shareStatus !== "private" && item.shareStatus !== "accepted" && item.shareStatus !== "shared") return sum;
+      const isReceiving = currentUserId !== null && item.shareStatus !== "private" && item.lenderUserId === currentUserId;
+      if (isReceiving) return sum;
+      const remain = Math.max(0, item.principalAmount - item.repaidAmount);
+      if (remain <= 0) return sum;
+      if (item.repaymentType === "할부상환" && item.repaymentStartDate) {
+        const [sy, sm] = item.repaymentStartDate.split("-").map(Number);
+        const no = currentYear * 12 + currentMonth - (sy * 12 + sm) + 1;
+        if (no < 1 || (item.totalInstallments && no > item.totalInstallments)) return sum;
+        const schedule = (() => { try { const p = JSON.parse(item.repaymentSchedule ?? "[]"); return Array.isArray(p) ? p.map(v => Number(v) || 0) : []; } catch { return []; } })();
+        return sum + (item.installmentMode === "custom" ? schedule[no - 1] ?? 0 : item.monthlyPayment);
+      }
+      if (item.repaymentDueDate?.slice(0, 7) === key) return sum + remain;
+      return sum;
+    }, 0);
+    const monthlySavingsDeposit = (savingsList as Array<{ monthlyDeposit?: string | null }>)
+      .reduce((sum, s) => sum + (parseFloat(s.monthlyDeposit ?? "0") || 0), 0);
+    return {
+      monthlyIncome: currentMonthIncome,
+      fixedExpenses: fixedExp,
+      variableExpenses: varExp,
+      businessExpenses: businessExp,
+      subscriptions: subCost,
+      insurance: insCost,
+      installments: installCost,
+      loans: loanCost,
+      borrowedRepayment,
+      monthlySavingsDeposit,
+      currentSavings: summary?.savingsTotal ?? 0,
+    };
+  }, [yearly, subscriptions, insuranceList, installmentList, loanList, borrowedMoneyList, currentUserId, currentMonthIncome, summary, savingsList]);
 
   // 월별 수입 현황 스택 바 (사업소득 + 부수입 + 기타수입)
   const incomeStackData = useMemo(() => {
@@ -718,12 +786,64 @@ export default function Dashboard() {
       </Dialog>
 
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-foreground">
-          대시보드
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">{currentYear}년 자산 현황</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-foreground">대시보드</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{currentYear}년 자산 현황</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 self-start sm:self-auto"
+          disabled={savingsAdvice.isPending}
+          onClick={() => {
+            const profileData = me as { birthDate?: string | null; monthlySalary?: number | null } | null;
+            const birthDate = profileData?.birthDate;
+            const monthlySalary = profileData?.monthlySalary;
+            if (!birthDate && !monthlySalary) {
+              toast.error("내 정보에서 생년월일과 월 실수령액을 먼저 입력해주세요");
+              return;
+            }
+            const age = birthDate ? (() => {
+              const [by, bm, bd] = birthDate.split("-").map(Number);
+              const now = new Date();
+              let a = now.getFullYear() - by;
+              if (now.getMonth() + 1 < bm || (now.getMonth() + 1 === bm && now.getDate() < bd)) a--;
+              return a;
+            })() : 0;
+            savingsAdvice.mutate({ ...aiInputData, age, monthlySalary: monthlySalary ?? 0 });
+          }}
+        >
+          <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+          {savingsAdvice.isPending ? "분석 중..." : "AI 저축 분석"}
+        </Button>
       </div>
+
+      {aiOpen && aiAdvice && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50 dark:border-violet-900/50 dark:bg-violet-950/20 p-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
+              <span className="text-sm font-semibold text-foreground">AI 저축 분석 결과</span>
+            </div>
+            <button className="text-xs text-muted-foreground hover:text-foreground shrink-0" onClick={() => setAiOpen(false)}>닫기</button>
+          </div>
+          <div className="space-y-3">
+            {aiAdvice.split(/\n(?=\[)/).map((section, i) => {
+              const titleMatch = section.match(/^\[(.+?)\]\n?/);
+              const title = titleMatch?.[1];
+              const body = titleMatch ? section.slice(titleMatch[0].length).trim() : section.trim();
+              if (!body) return null;
+              return (
+                <div key={i}>
+                  {title && <p className="text-xs font-semibold text-violet-600 dark:text-violet-400 mb-1">{title}</p>}
+                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{body}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6 min-w-0">

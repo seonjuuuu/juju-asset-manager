@@ -328,6 +328,27 @@ const debtInput = z.object({
 });
 
 // ─── Router ───────────────────────────────────────────────────────────────────
+async function callGroq(prompt: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY not set");
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 1024,
+    }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Groq API error: ${res.status} - ${errBody}`);
+  }
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  return data.choices?.[0]?.message?.content ?? "분석 결과를 가져올 수 없습니다.";
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -346,6 +367,7 @@ export const appRouter = router({
           birthDate: z.string().nullable().optional(),
           name: z.string().nullable().optional(),
           navPreferences: z.string().nullable().optional(),
+          monthlySalary: z.number().int().nullable().optional(),
         }),
       )
       .mutation(({ input, ctx }) => db.updateUserProfile(ctx.user.id, input)),
@@ -1267,6 +1289,68 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .mutation(({ input, ctx }) => db.deleteBusinessBankLedgerEntry(ctx.user.id, input.id)),
+  }),
+  ai: router({
+    savingsAdvice: protectedProcedure
+      .input(z.object({
+        age: z.number(),
+        monthlySalary: z.number(),
+        monthlyIncome: z.number(),
+        fixedExpenses: z.number(),
+        variableExpenses: z.number(),
+        businessExpenses: z.number(),
+        subscriptions: z.number(),
+        insurance: z.number(),
+        installments: z.number(),
+        loans: z.number(),
+        borrowedRepayment: z.number(),
+        monthlySavingsDeposit: z.number(),
+        currentSavings: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        const totalExpense = input.fixedExpenses + input.variableExpenses + input.businessExpenses + input.subscriptions + input.insurance + input.installments + input.loans + input.borrowedRepayment;
+        const surplus = input.monthlySalary - totalExpense - input.monthlySavingsDeposit;
+        const savingsRate = input.monthlySalary > 0 ? Math.round((input.monthlySavingsDeposit / input.monthlySalary) * 100) : 0;
+        const prompt = `당신은 친근하고 따뜻한 한국인 재무 상담사예요. 아래 사용자의 이번 달 재무 현황을 보고, 마치 오랜 친구처럼 편하고 다정하게 저축 조언을 해주세요. 딱딱하지 않게, 공감하는 톤으로 이야기해주세요.
+
+[사용자 정보]
+- 나이: ${input.age}세
+- 월 실수령액: ${input.monthlySalary.toLocaleString()}원
+
+[이번 달 재무 현황]
+- 가계부 수입 합계: ${input.monthlyIncome.toLocaleString()}원
+- 고정지출: ${input.fixedExpenses.toLocaleString()}원
+- 변동지출 (가계부): ${input.variableExpenses.toLocaleString()}원
+- 사업지출: ${input.businessExpenses.toLocaleString()}원
+- 구독서비스: ${input.subscriptions.toLocaleString()}원
+- 보험료: ${input.insurance.toLocaleString()}원
+- 할부금: ${input.installments.toLocaleString()}원
+- 대출상환: ${input.loans.toLocaleString()}원
+- 빌린돈 상환: ${input.borrowedRepayment.toLocaleString()}원
+- 총 지출 합계: ${totalExpense.toLocaleString()}원
+- 월 저축 납입액 (예적금·파킹통장 등): ${input.monthlySavingsDeposit.toLocaleString()}원
+- 현재 저축률: ${savingsRate}% (월 납입액 / 월급)
+- 지출+저축 후 남는 돈: ${surplus.toLocaleString()}원
+- 현재 저축/현금성 자산 총액: ${input.currentSavings.toLocaleString()}원
+
+아래 형식으로 답변해주세요. 마크다운 기호(**,##,- 등) 없이 순수 텍스트로 작성하고, 친근하고 따뜻한 말투를 유지해주세요.
+
+[재무 진단]
+(나이와 월급 대비 현재 상황을 공감하는 말투로 2~3문장. 잘 하고 있는 점도 언급해주세요)
+
+[추천 월 저축액]
+(현실적인 저축 금액과 이유를 친근하게. 목표 저축률도 함께 알려주세요)
+
+[저축률 개선 팁]
+1.
+2.
+3.
+
+[주의할 점]
+(걱정되는 부분을 부드럽게, 겁주지 않고 조언해주세요)`;
+        const result = await callGroq(prompt);
+        return { advice: result };
+      }),
   }),
   exchangeRate: router({
     get: protectedProcedure
